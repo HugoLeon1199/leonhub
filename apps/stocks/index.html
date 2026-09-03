@@ -79,7 +79,7 @@ tbody tr:hover td{background:var(--panel-2)}
 tbody tr:hover td:first-child{background:var(--panel-2)}
 .sym{font-weight:700; letter-spacing:.3px}
 .name{color:var(--muted); font-size:12px; max-width:230px; overflow:hidden; text-overflow:ellipsis}
-.up{color:var(--up)} .down{color:var(--down)} .dim{color:var(--muted)}
+.up{color:var(--up)} .down{color:var(--down)} .dim{color:var(--muted)} .warn{color:var(--warn)}
 
 /* A percentile bar reads faster than the number alone: it says "cheap for this
    company" at a glance, which the raw ratio never does. */
@@ -147,6 +147,9 @@ const COLS = [
   {k:"npm", t:"Biên LN %",kind:"num", d:1},
   {k:"de",  t:"Nợ/VCSH",  kind:"num", d:2},
   {k:"dy",  t:"Cổ tức %", kind:"num", d:2},
+  {k:"fr",  t:"Room NN %", kind:"room",
+   hint:"Tỉ lệ cổ phiếu còn được phép bán cho nhà đầu tư nước ngoài. " +
+        "Gần 0% nghĩa là mã đã kín room — dòng tiền ngoại không thể vào thêm dù muốn."},
   {k:"f1",  t:"NN 1p",    kind:"flow", hint:"Khối ngoại mua ròng hôm nay (tỷ VND)"},
   {k:"f5",  t:"NN 5p",    kind:"flow", hint:"Khối ngoại mua ròng 5 phiên (tỷ VND)"},
   {k:"f20", t:"NN 20p",   kind:"flow", hint:"Khối ngoại mua ròng 20 phiên (tỷ VND)"},
@@ -174,6 +177,9 @@ const PRESETS = [
   { id:"cheap_vs_self", label:"Rẻ so với chính nó",
     hint:"P/E ở nhóm 25% thấp nhất lịch sử của mã, ROE ≥ 10%",
     fn:r => r.pe_p != null && r.pe_p <= 25 && r.roe >= 10 },
+  { id:"full_room", label:"Kín room ngoại",
+    hint:"Room còn dưới 1% — cầu ngoại bị chặn bởi trần sở hữu, không phải bởi định giá",
+    fn:r => r.fr != null && r.fr < 1 },
   { id:"bank", label:"Ngân hàng tốt",
     hint:"Có NIM, NPL ≤ 2%, ROE ≥ 15%",
     fn:r => r.nim != null && r.npl != null && r.npl <= 2 && r.roe >= 15 },
@@ -300,6 +306,13 @@ function cell(row, col){
     case "flow":
       if(v == null) return '<span class="dim">—</span>';
       return `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(1)}</span>`;
+    case "room":
+      if(v == null) return '<span class="dim">—</span>';
+      // Under ~1% is effectively full: the constraint, not the number, is what
+      // the reader needs to see.
+      return v < 1
+        ? '<span class="down" title="Đã kín room ngoại">Kín room</span>'
+        : `<span class="${v < 5 ? "warn" : "dim"}">${v.toFixed(1)}</span>`;
     default: {
       let out = fmt(v, col.d ?? 2);
       const pct = col.p ? row[col.p] : null;

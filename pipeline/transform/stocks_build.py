@@ -95,17 +95,44 @@ SANE_RANGE = {
     "de": (0, 100),
 }
 
+# Field-wise "latest non-null", not row-wise "latest row". Two sources write to
+# eq_quote and they do not carry the same columns: the SSI board has depth and
+# foreign detail but no share count, Vietcap has the share count. Taking the
+# newest row wholesale would blank out market cap for every ticker the moment an
+# SSI collection ran last -- which is exactly what happened (128 of 1,729 kept a
+# share count). Coalescing per column keeps each field's most recent real value.
 LATEST_QUOTE_SQL = """
-SELECT DISTINCT ON (symbol)
-    symbol, as_of, price, ref_price, volume, value, listed_share,
-    foreign_buy_value, foreign_sell_value, exchange, fetched_at
+SELECT
+    symbol,
+    max(as_of)                                                  AS as_of,
+    arg_max(price, fetched_at)     FILTER (WHERE price IS NOT NULL)     AS price,
+    arg_max(ref_price, fetched_at) FILTER (WHERE ref_price IS NOT NULL) AS ref_price,
+    arg_max(volume, fetched_at)    FILTER (WHERE volume IS NOT NULL)    AS volume,
+    arg_max(value, fetched_at)     FILTER (WHERE value IS NOT NULL)     AS value,
+    arg_max(foreign_buy_value, fetched_at)
+        FILTER (WHERE foreign_buy_value IS NOT NULL)            AS foreign_buy_value,
+    arg_max(foreign_sell_value, fetched_at)
+        FILTER (WHERE foreign_sell_value IS NOT NULL)           AS foreign_sell_value,
+    arg_max(exchange, fetched_at)  FILTER (WHERE exchange IS NOT NULL)  AS exchange,
+    max(fetched_at)                                             AS fetched_at
 FROM eq_quote
-ORDER BY symbol, fetched_at DESC
+WHERE as_of = (SELECT max(as_of) FROM eq_quote)
+GROUP BY symbol
 """
 
 LATEST_LISTING_SQL = """
 SELECT DISTINCT ON (symbol) symbol, organ_name, exchange, industry
 FROM eq_listing
+ORDER BY symbol, fetched_at DESC
+"""
+
+# Share count changes only on a corporate action, so unlike price it is safe --
+# and necessary -- to carry forward from whichever day last reported it. The SSI
+# board does not carry it at all.
+SHARE_COUNT_SQL = """
+SELECT DISTINCT ON (symbol) symbol, listed_share
+FROM eq_quote
+WHERE listed_share IS NOT NULL
 ORDER BY symbol, fetched_at DESC
 """
 
@@ -166,6 +193,20 @@ FROM latest l JOIN pct p USING (symbol, metric)
 """
 
 
+# Foreign ownership room, from the SSI board. Room is what decides whether
+# foreign demand can be expressed at all: a ticker at its cap cannot be bought
+# by non-residents however strong the interest, so a low room figure changes how
+# a foreign-flow reading should be interpreted.
+FOREIGN_ROOM_SQL = """
+SELECT DISTINCT ON (series)
+    split_part(series, '.', 3) AS symbol,
+    value
+FROM metric_ts
+WHERE series LIKE 'vn.board.%.foreign_room'
+ORDER BY series, fetched_at DESC
+"""
+
+
 def _rows(con, sql: str) -> list[dict[str, Any]]:
     cur = con.execute(sql)
     cols = [d[0] for d in cur.description]
@@ -178,6 +219,8 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         quotes = {r["symbol"]: r for r in _rows(con, LATEST_QUOTE_SQL)}
         listings = {r["symbol"]: r for r in _rows(con, LATEST_LISTING_SQL)}
         flows = {r["symbol"]: r for r in _rows(con, FOREIGN_FLOW_SQL)}
+        rooms = {r["symbol"]: r["value"] for r in _rows(con, FOREIGN_ROOM_SQL)}
+        shares = {r["symbol"]: r["listed_share"] for r in _rows(con, SHARE_COUNT_SQL)}
         trading_days = con.execute(
             "SELECT count(DISTINCT as_of) FROM eq_quote"
         ).fetchone()[0]
@@ -212,9 +255,20 @@ def build(dry_run: bool = False) -> dict[str, Any]:
                 row["ch"] = round((price - ref) / ref * 100, 2)
         if quote.get("volume"):
             row["v"] = int(quote["volume"])
-        if price and quote.get("listed_share"):
+        share_count = shares.get(symbol)
+        if price and share_count:
             # Market cap in billion VND, matching the fundamental panel's unit.
-            row["mc"] = round(price * quote["listed_share"] / 1e9, 1)
+            row["mc"] = round(price * share_count / 1e9, 1)
+
+        # Room as a share of the float, not the raw count: "362 million shares"
+        # means nothing without knowing the company's size, while "24% of the
+        # float is still open to foreigners" is directly readable.
+        room = rooms.get(symbol)
+        # SSI reports a negative room where foreign ownership already exceeds the
+        # current cap — real, but it means "no room, and over the limit", not a
+        # negative percentage. Clamped to zero so the column reads as headroom.
+        if room is not None and share_count:
+            row["fr"] = round(max(room, 0) / share_count * 100, 1)
 
         flow = flows.get(symbol)
         if flow:
