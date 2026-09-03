@@ -1,0 +1,25 @@
+# The live warehouse is never committed: it grows without bound and the repo
+# has a ~1GB soft cap. Only the monthly compressed snapshot goes in.
+warehouse/*.duckdb
+warehouse/*.duckdb.wal
+warehouse/_reader_snapshot.duckdb
+!warehouse/*.duckdb.gz
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+.env
+.DS_Store
+Thumbs.db
+
+# Scratch output from local runs
+*.tmp
+.tmp_*
+regions.json
+
+# vnstock drops this into the project directory on use. It is not ours: it tells
+# an AI assistant to install packages and post the user's API key to
+# vnstocks.com. Ignored so it can never be committed by accident.
+AGENTS.md

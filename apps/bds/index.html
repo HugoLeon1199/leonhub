@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Bất động sản — LEON Hub</title>
+<meta name="description" content="Giá rao bất động sản theo quận/huyện: trung vị giá/m², khoảng phân bố, lợi suất cho thuê và số mẫu. Dữ liệu tổng hợp từ tin rao công khai.">
+
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
+  --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
+  --up:#0c8a63; --down:#c2402f; --warn:#8a6412;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text); overflow:hidden;
+  font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex; flex-direction:column;
+}
+.bar{
+  flex:0 0 auto; background:var(--panel); border-bottom:1px solid var(--line);
+  padding:8px 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+}
+input,select{
+  background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  border-radius:7px; padding:6px 9px; font:inherit; font-size:13px;
+}
+input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px}
+#q{width:160px}
+.rng{display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted)}
+.rng input{width:64px; font-variant-numeric:tabular-nums}
+.spacer{flex:1}
+.count{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
+.btn{
+  appearance:none; border:1px solid var(--line); background:var(--panel-2); color:var(--muted);
+  border-radius:7px; padding:6px 11px; font:inherit; font-size:12.5px; cursor:pointer;
+}
+.btn:hover{color:var(--text)}
+
+.notice{
+  flex:0 0 auto; padding:6px 12px; background:var(--panel-2); border-bottom:1px solid var(--line);
+  font-size:11.5px; color:var(--muted);
+}
+.notice b{color:var(--warn)}
+
+.wrap{flex:1; overflow:auto; min-height:0}
+table{border-collapse:separate; border-spacing:0; width:100%; font-size:13px}
+th,td{padding:7px 10px; white-space:nowrap; border-bottom:1px solid var(--line)}
+th{
+  position:sticky; top:0; z-index:2; background:var(--panel); text-align:right;
+  font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted);
+  font-weight:600; cursor:pointer; user-select:none;
+}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){text-align:left}
+th[aria-sort]{color:var(--accent)}
+th[aria-sort="descending"] .dir::after{content:" ↓"}
+th[aria-sort="ascending"] .dir::after{content:" ↑"}
+td{text-align:right; font-variant-numeric:tabular-nums}
+tbody tr:hover td{background:var(--panel-2)}
+.dist{font-weight:600}
+.dim{color:var(--muted)}
+
+/* The spread between p25 and p75 says how uniform a district is: a wide bar
+   means the median hides very different streets. */
+.spread{display:inline-flex; align-items:center; gap:6px}
+.spread .bar{position:relative; width:56px; height:5px; background:var(--line); border-radius:3px}
+.spread .bar i{position:absolute; top:0; bottom:0; background:var(--accent); opacity:.75; border-radius:3px}
+
+.n-low{color:var(--warn)}
+.msg{padding:36px 20px; text-align:center; color:var(--muted)}
+.msg strong{display:block; color:var(--text); margin-bottom:6px; font-size:15px}
+.msg code{background:var(--panel-2); padding:2px 6px; border-radius:4px; font-size:12px}
+footer{
+  flex:0 0 auto; padding:5px 12px; background:var(--panel); border-top:1px solid var(--line);
+  font-size:11px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap;
+}
+footer b{color:var(--text); font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <input id="q" type="search" placeholder="Tìm quận / tỉnh…" aria-label="Tìm quận hoặc tỉnh" autocomplete="off">
+  <select id="reg" aria-label="Tỉnh/Thành"><option value="">Tất cả tỉnh/thành</option></select>
+  <select id="cat" aria-label="Loại hình"><option value="">Tất cả loại hình</option></select>
+  <span class="rng">Giá/m² <input id="pMin" type="number" placeholder="từ" aria-label="Giá từ"><input id="pMax" type="number" placeholder="đến" aria-label="Giá đến"></span>
+  <span class="rng">Lợi suất ≥ <input id="yMin" type="number" step="0.1" placeholder="%" aria-label="Lợi suất tối thiểu"></span>
+  <span class="rng">Mẫu ≥ <input id="nMin" type="number" placeholder="n" aria-label="Số mẫu tối thiểu"></span>
+  <span class="spacer"></span>
+  <span class="count" id="count">—</span>
+  <button class="btn" id="csv" type="button">Tải CSV</button>
+  <button class="btn" id="reset" type="button">Xóa lọc</button>
+</div>
+
+<div class="notice">
+  <b>Lưu ý:</b> đây là <b>giá rao</b> từ tin đăng công khai, không phải giá giao dịch thực tế.
+  Mỗi dòng là trung vị (median) sau khi loại tin trùng và cắt 5% đầu–cuối; chỉ hiển thị ô có từ 20 mẫu trở lên.
+</div>
+
+<div class="wrap">
+  <table>
+    <thead><tr id="head"></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+  <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
+</div>
+
+<footer>
+  <span>Nguồn: <b>tin rao Chợ Tốt</b>, tổng hợp bởi pipeline LEON</span>
+  <span>Cập nhật: <b id="upd">—</b></span>
+  <span id="cover"></span>
+  <span>Số liệu tham khảo, không phải khuyến nghị đầu tư.</span>
+</footer>
+
+<script>
+"use strict";
+
+const COLS = [
+  {k:"d",  t:"Quận / Huyện", kind:"dist"},
+  {k:"r",  t:"Tỉnh / Thành", kind:"text"},
+  {k:"i",  t:"Loại hình",    kind:"text"},
+  {k:"p",  t:"Giá/m² (tr)",  kind:"num", d:1},
+  {k:"_sp",t:"Khoảng 25–75%",kind:"spread",
+   hint:"Nửa số tin nằm trong khoảng này. Dải rộng nghĩa là trong quận có nhiều mặt bằng giá rất khác nhau."},
+  {k:"sz", t:"DT trung vị",  kind:"num", d:0, hint:"m²"},
+  {k:"y",  t:"Lợi suất %",   kind:"num", d:2,
+   hint:"Ước tính: trung vị giá thuê/m²/tháng × 12 ÷ trung vị giá bán/m². Chỉ tính khi có đủ 20 tin thuê."},
+  {k:"n",  t:"Mẫu bán",      kind:"n", hint:"Số tin rao bán sau khi loại trùng"},
+  {k:"yn", t:"Mẫu thuê",     kind:"n"},
+];
+
+const el = id => document.getElementById(id);
+let ROWS = [], sortKey = "p", sortDir = -1, maxSpread = 1;
+
+fetch("../../data/bds.json", {cache:"no-cache"})
+  .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
+  .then(rows => {
+    ROWS = rows;
+    maxSpread = Math.max(...rows.map(r => (r.p75 ?? 0) - (r.p25 ?? 0)), 1);
+    el("msg").hidden = true;
+    buildFacets();
+    buildHead();
+    readUrl();
+    render();
+    const updated = rows.map(r => r.u).filter(Boolean).sort().pop();
+    el("upd").textContent = updated ? new Date(updated).toLocaleDateString("vi-VN") : "—";
+    const districts = new Set(rows.map(r => r.r + "/" + r.d)).size;
+    el("cover").textContent = `${districts} quận/huyện · ${rows.length} dòng`;
+  })
+  .catch(() => {
+    el("msg").innerHTML =
+      "<strong>Chưa có dữ liệu</strong>" +
+      "Chạy <code>python -m pipeline.sources.chotot</code> rồi " +
+      "<code>python -m pipeline.transform.bds_aggregate</code>.";
+  });
+
+function buildFacets(){
+  [...new Set(ROWS.map(r => r.r).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b,"vi"))
+    .forEach(v => el("reg").add(new Option(v, v)));
+  [...new Set(ROWS.map(r => r.i).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b,"vi"))
+    .forEach(v => el("cat").add(new Option(v, v)));
+}
+
+function buildHead(){
+  COLS.forEach(col => {
+    const th = document.createElement("th");
+    th.innerHTML = col.t + '<span class="dir"></span>';
+    if(col.hint) th.title = col.hint;
+    th.addEventListener("click", () => {
+      const key = col.k === "_sp" ? "p75" : col.k;
+      if(sortKey === key) sortDir = -sortDir;
+      else { sortKey = key; sortDir = col.kind === "text" || col.kind === "dist" ? 1 : -1; }
+      render();
+    });
+    el("head").appendChild(th);
+  });
+}
+
+function filters(){
+  const num = id => { const v = parseFloat(el(id).value); return isFinite(v) ? v : null; };
+  return {
+    q: el("q").value.trim().toLowerCase(),
+    reg: el("reg").value,
+    cat: el("cat").value,
+    pMin: num("pMin"), pMax: num("pMax"),
+    yMin: num("yMin"), nMin: num("nMin"),
+  };
+}
+
+function passes(r, f){
+  if(f.q){
+    const hay = `${r.d ?? ""} ${r.r ?? ""}`.toLowerCase();
+    if(!hay.includes(f.q)) return false;
+  }
+  if(f.reg && r.r !== f.reg) return false;
+  if(f.cat && r.i !== f.cat) return false;
+  if(f.pMin != null && !(r.p >= f.pMin)) return false;
+  if(f.pMax != null && !(r.p <= f.pMax)) return false;
+  if(f.yMin != null && !(r.y >= f.yMin)) return false;
+  if(f.nMin != null && !(r.n >= f.nMin)) return false;
+  return true;
+}
+
+const fmt = (v, d) => v == null || !isFinite(v)
+  ? '<span class="dim">—</span>'
+  : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+
+function cell(row, col){
+  if(col.kind === "spread"){
+    const lo = row.p25, hi = row.p75;
+    if(lo == null || hi == null) return '<span class="dim">—</span>';
+    const width = Math.max(4, (hi - lo) / maxSpread * 100);
+    return `<span class="spread" title="25% số tin dưới ${lo.toFixed(1)}, 75% dưới ${hi.toFixed(1)} triệu/m²">` +
+           `<span class="dim">${lo.toFixed(0)}</span>` +
+           `<span class="bar"><i style="left:0;width:${width}%"></i></span>` +
+           `<span class="dim">${hi.toFixed(0)}</span></span>`;
+  }
+  const v = row[col.k];
+  switch(col.kind){
+    case "dist": return `<span class="dist">${v ?? ""}</span>`;
+    case "text": return v ? `<span class="dim">${v}</span>` : '<span class="dim">—</span>';
+    case "n":
+      if(v == null) return '<span class="dim">—</span>';
+      // Flag cells that only just clear the publishing threshold.
+      return `<span class="${v < 30 ? "n-low" : "dim"}" title="${v} tin sau khi loại trùng">${v}</span>`;
+    default: return fmt(v, col.d ?? 2);
+  }
+}
+
+function render(){
+  const f = filters();
+  const rows = ROWS.filter(r => passes(r, f));
+
+  rows.sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if(x == null && y == null) return 0;
+    if(x == null) return 1;
+    if(y == null) return -1;
+    if(typeof x === "string") return x.localeCompare(y, "vi") * sortDir;
+    return (x - y) * sortDir;
+  });
+
+  el("count").textContent = `${rows.length} / ${ROWS.length} dòng`;
+  [...el("head").children].forEach((th, i) => {
+    const key = COLS[i].k === "_sp" ? "p75" : COLS[i].k;
+    if(key === sortKey) th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+    else th.removeAttribute("aria-sort");
+  });
+
+  el("body").innerHTML = rows
+    .map(r => "<tr>" + COLS.map(c => `<td>${cell(r, c)}</td>`).join("") + "</tr>")
+    .join("");
+
+  window.__filtered = rows;
+}
+
+function syncUrl(){
+  const p = new URLSearchParams();
+  Object.entries(filters()).forEach(([k, v]) => { if(v) p.set(k, v); });
+  history.replaceState(null, "", p.toString() ? "?" + p.toString() : location.pathname);
+}
+
+function readUrl(){
+  const p = new URLSearchParams(location.search);
+  ["q","reg","cat","pMin","pMax","yMin","nMin"].forEach(k => {
+    if(p.get(k)) el(k).value = p.get(k);
+  });
+}
+
+["q","reg","cat","pMin","pMax","yMin","nMin"].forEach(id => {
+  el(id).addEventListener("input", () => { syncUrl(); render(); });
+});
+
+el("reset").addEventListener("click", () => {
+  ["q","reg","cat","pMin","pMax","yMin","nMin"].forEach(id => el(id).value = "");
+  syncUrl();
+  render();
+});
+
+el("csv").addEventListener("click", () => {
+  const rows = window.__filtered || [];
+  const cols = ["d","r","i","p","p25","p75","sz","y","n","yn","u"];
+  const head = ["Quận/Huyện","Tỉnh/Thành","Loại hình","Giá/m² (tr)","P25","P75",
+                "DT trung vị","Lợi suất %","Mẫu bán","Mẫu thuê","Cập nhật"].join(",");
+  const body = rows.map(r => cols.map(k => {
+    const v = r[k];
+    if(v == null) return "";
+    return typeof v === "string" && v.includes(",") ? `"${v}"` : v;
+  }).join(",")).join("\n");
+  const blob = new Blob(["﻿" + head + "\n" + body], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `leon-bds-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>

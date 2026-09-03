@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>LEON Hub — Đầu tư, Trading, Bất động sản</title>
+<meta name="description" content="Tổng hợp dữ liệu đầu tư: chứng khoán Việt Nam, crypto, bất động sản, dòng tiền vĩ mô. Số liệu từ nguồn công khai, ghi rõ nguồn và thời điểm.">
+
+<!-- Theme before first paint, so a dark-mode reader never sees a white flash. -->
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d1117'/%3E%3Cpath d='M7 22V10M7 22h7M18 22V10l7 12V10' stroke='%2338d39f' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f; --accent-dim:#1e7a5e;
+  --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
+  --tab-h:52px;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63; --accent-dim:#9fd9c4;
+  --up:#0c8a63; --down:#c2402f; --warn:#8a6412;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font:15px/1.55 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+
+/* ---- Tab bar ---- */
+header{
+  height:var(--tab-h); flex:0 0 auto; display:flex; align-items:center;
+  gap:2px; padding:0 8px; background:var(--panel); border-bottom:1px solid var(--line);
+}
+.brand{
+  display:flex; align-items:center; gap:7px; font-weight:700; font-size:15px;
+  padding:0 12px 0 4px; letter-spacing:-.2px; white-space:nowrap;
+}
+.brand svg{flex:0 0 auto}
+nav{display:flex; gap:2px; overflow-x:auto; flex:1; scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+.tab{
+  appearance:none; border:0; background:transparent; color:var(--muted);
+  font:inherit; font-size:13.5px; padding:7px 13px; border-radius:7px;
+  cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:6px;
+}
+.tab:hover{background:var(--panel-2); color:var(--text)}
+.tab[aria-selected="true"]{background:var(--accent-dim); color:#fff; font-weight:600}
+:root[data-theme="light"] .tab[aria-selected="true"]{color:#06301f}
+.tab:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+.icon-btn{
+  appearance:none; border:1px solid var(--line); background:var(--panel-2);
+  color:var(--muted); border-radius:7px; width:32px; height:32px; cursor:pointer;
+  font-size:14px; flex:0 0 auto; display:grid; place-items:center;
+}
+.icon-btn:hover{color:var(--text)}
+
+/* ---- Panel area ---- */
+main{flex:1; position:relative; min-height:0}
+.pane{position:absolute; inset:0; border:0; width:100%; height:100%; background:var(--bg)}
+.pane[hidden]{display:none!important}
+
+.placeholder{
+  position:absolute; inset:0; display:grid; place-content:center; text-align:center;
+  padding:32px; gap:10px; color:var(--muted);
+}
+.placeholder h2{margin:0; color:var(--text); font-size:19px; font-weight:600}
+.placeholder p{margin:0; max-width:44ch; font-size:14px}
+.placeholder .badge{
+  display:inline-block; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--accent); border:1px solid var(--accent-dim); border-radius:99px;
+  padding:3px 10px; margin-bottom:4px; justify-self:center;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">
+    <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="var(--accent)" opacity=".16"/>
+      <path d="M7 22V10M7 22h7M18 22V10l7 12V10" stroke="var(--accent)" stroke-width="2.6"
+            fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    LEON
+  </span>
+  <nav id="tabs" role="tablist" aria-label="Khu vực"></nav>
+  <button class="icon-btn" id="theme" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện">◐</button>
+</header>
+
+<main id="panes"></main>
+
+<script>
+"use strict";
+
+/* Each tab is an independent page. Keeping them as separate documents means a
+   broken app never takes the hub down with it, and each can be deployed alone. */
+const TABS = [
+  { key:"brief",   name:"Tổng quan", icon:"◈", src:"../apps/brief/" },
+  { key:"chart",   name:"Chart",     icon:"◱", src:"../apps/chart/" },
+  { key:"stocks",  name:"Cổ phiếu",  icon:"▦", src:"../apps/stocks/" },
+  { key:"bds",     name:"Bất động sản", icon:"⌂", src:"../apps/bds/" },
+  { key:"flows",   name:"Dòng tiền", icon:"⇄", src:"../apps/flows/" },
+  { key:"news",    name:"Tin tức",   icon:"❏", src:"https://leonquant.com/" },
+];
+const DEFAULT_TAB = "brief";
+
+const tabBar = document.getElementById("tabs");
+const paneHost = document.getElementById("panes");
+const loaded = new Set();
+
+function currentTab(){
+  const fromPath = location.pathname.replace(/\/+$/,"").split("/").pop();
+  const fromQuery = new URLSearchParams(location.search).get("tab");
+  const key = fromQuery || fromPath;
+  return TABS.some(t => t.key === key) ? key : DEFAULT_TAB;
+}
+
+/* Query string is forwarded to the child page so deep links survive the hub:
+   /hub/?tab=chart&sym=BTC&tf=1h reaches the chart app with sym and tf intact. */
+function childSrc(tab){
+  const params = new URLSearchParams(location.search);
+  params.delete("tab");
+  const qs = params.toString();
+  return tab.src + (qs ? (tab.src.includes("?") ? "&" : "?") + qs : "");
+}
+
+function build(){
+  TABS.forEach(tab => {
+    const btn = document.createElement("button");
+    btn.className = "tab";
+    btn.type = "button";
+    btn.role = "tab";
+    btn.id = "tab-" + tab.key;
+    btn.setAttribute("aria-controls", "pane-" + tab.key);
+    btn.innerHTML = `<span aria-hidden="true">${tab.icon}</span>${tab.name}`;
+    btn.addEventListener("click", () => select(tab.key, true));
+    tabBar.appendChild(btn);
+
+    const frame = document.createElement("iframe");
+    frame.className = "pane";
+    frame.id = "pane-" + tab.key;
+    frame.role = "tabpanel";
+    frame.title = tab.name;
+    frame.hidden = true;
+    frame.loading = "lazy";
+    paneHost.appendChild(frame);
+  });
+}
+
+function select(key, pushState){
+  const tab = TABS.find(t => t.key === key) || TABS[0];
+
+  TABS.forEach(t => {
+    const btn = document.getElementById("tab-" + t.key);
+    const pane = document.getElementById("pane-" + t.key);
+    const active = t.key === tab.key;
+    btn.setAttribute("aria-selected", String(active));
+    btn.tabIndex = active ? 0 : -1;
+    pane.hidden = !active;
+  });
+
+  // Load on first view, then leave it mounted so switching back is instant.
+  if(!loaded.has(tab.key)){
+    document.getElementById("pane-" + tab.key).src = childSrc(tab);
+    loaded.add(tab.key);
+  }
+
+  document.title = `${tab.name} — LEON Hub`;
+
+  if(pushState){
+    const params = new URLSearchParams(location.search);
+    params.set("tab", tab.key);
+    history.pushState({tab: tab.key}, "", "?" + params.toString());
+  }
+}
+
+document.getElementById("theme").addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try{ localStorage.setItem("leon_theme", next); }catch(e){}
+});
+
+tabBar.addEventListener("keydown", e => {
+  if(e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  const keys = TABS.map(t => t.key);
+  const at = keys.indexOf(currentTab());
+  const next = keys[(at + (e.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length];
+  select(next, true);
+  document.getElementById("tab-" + next).focus();
+  e.preventDefault();
+});
+
+addEventListener("popstate", () => select(currentTab(), false));
+
+build();
+select(currentTab(), false);
+</script>
+</body>
+</html>

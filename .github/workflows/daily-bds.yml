@@ -1,0 +1,90 @@
+name: Real estate crawl
+
+# This is the moat job. Listing history cannot be bought or backfilled, so it
+# runs every day from the start, whether or not any UI consumes it yet.
+#
+# The crawl is deliberately unhurried: one request at a time with a delay, which
+# is both polite and the reason a full pass takes tens of minutes.
+
+on:
+  schedule:
+    - cron: "0 22 * * *"   # 05:00 ICT — quiet hours for the source
+  workflow_dispatch:
+    inputs:
+      regions:
+        description: "Region codes (blank = auto-discover all provinces)"
+        default: ""
+      max_pages:
+        description: "Pages per district/category/type (blank = exhaust)"
+        default: ""
+
+concurrency:
+  group: bds-crawl
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore warehouse
+        uses: actions/cache/restore@v4
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+          restore-keys: warehouse-
+
+      - name: Discover province codes
+        id: regions
+        run: |
+          if [ -n "${{ inputs.regions }}" ]; then
+            echo "list=${{ inputs.regions }}" >> "$GITHUB_OUTPUT"
+          else
+            python -m pipeline.sources.chotot --discover-regions > regions.json
+            echo "list=$(python -c "import json;print(','.join(json.load(open('regions.json'))))" )" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Crawl listings
+        run: |
+          python -m pipeline.sources.chotot \
+            --regions "${{ steps.regions.outputs.list }}" \
+            ${{ inputs.max_pages && format('--max-pages {0}', inputs.max_pages) || '' }} \
+            --delay 0.5
+
+      - name: Aggregate into bds.json
+        run: python -m pipeline.transform.bds_aggregate
+
+      - name: Validate before publishing
+        run: python -m pipeline.core.validate bds.json
+
+      - name: Save warehouse
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+
+      - name: Commit published data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No data change."
+          else
+            git commit -m "data: real estate refresh $(date -u +%Y-%m-%d)"
+            git push
+          fi

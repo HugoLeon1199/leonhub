@@ -1,0 +1,82 @@
+name: VN daily data
+
+# Two jobs, sequenced rather than parallel: DuckDB allows a single writer, so a
+# collector and a build that overlap would simply fail to open the warehouse.
+#
+# Timing note: Actions cron drifts 5-30 minutes and is occasionally skipped
+# under load, so this runs well after the VN close (14:45 ICT = 07:45 UTC)
+# rather than at it, and every step is safe to re-run.
+
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"   # 16:30 ICT, ~1h45m after close, weekdays
+  workflow_dispatch:
+    inputs:
+      fundamentals:
+        description: "Also refresh the quarterly fundamentals panel"
+        type: boolean
+        default: false
+
+concurrency:
+  group: vn-daily
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # The warehouse is not committed (repo size cap), so CI restores the last
+      # snapshot, appends to it, and saves it back as a cache entry. Real
+      # history lives in the monthly committed .gz.
+      - name: Restore warehouse
+        uses: actions/cache/restore@v4
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+          restore-keys: warehouse-
+
+      - name: Collect price board and foreign flow
+        run: python -m pipeline.sources.vn_equity --what board
+
+      - name: Collect quarterly fundamentals
+        if: inputs.fundamentals || github.event_name == 'schedule'
+        run: python -m pipeline.sources.vci_direct --delay 0.3
+
+      - name: Build stocks.json
+        run: python -m pipeline.transform.stocks_build
+
+      - name: Validate before publishing
+        run: python -m pipeline.core.validate stocks.json
+
+      - name: Save warehouse
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+
+      - name: Commit published data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No data change."
+          else
+            git commit -m "data: VN daily refresh $(date -u +%Y-%m-%d)"
+            git push
+          fi

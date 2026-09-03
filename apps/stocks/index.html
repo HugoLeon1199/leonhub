@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Cổ phiếu Việt Nam — LEON Hub</title>
+<meta name="description" content="Bộ lọc cổ phiếu HOSE, HNX, UPCOM theo P/E, P/B, ROE, vốn hóa và dòng tiền khối ngoại. Định giá so với chính lịch sử của mã.">
+
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
+  --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
+  --up:#0c8a63; --down:#c2402f; --warn:#8a6412;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text); overflow:hidden;
+  font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex; flex-direction:column;
+}
+
+/* ---- Filters ---- */
+.bar{
+  flex:0 0 auto; background:var(--panel); border-bottom:1px solid var(--line);
+  padding:8px 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+}
+input,select{
+  background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  border-radius:7px; padding:6px 9px; font:inherit; font-size:13px;
+}
+input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px}
+#q{width:150px}
+.rng{display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted)}
+.rng input{width:62px; font-variant-numeric:tabular-nums}
+.presets{display:flex; gap:4px; overflow-x:auto; scrollbar-width:none; padding:0 12px 8px}
+.presets::-webkit-scrollbar{display:none}
+.preset{
+  appearance:none; border:1px solid var(--line); background:var(--panel-2); color:var(--muted);
+  font:inherit; font-size:12px; padding:5px 11px; border-radius:99px; cursor:pointer; white-space:nowrap;
+}
+.preset:hover{color:var(--text); border-color:var(--accent)}
+.preset[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:#04150f; font-weight:600}
+:root[data-theme="light"] .preset[aria-pressed="true"]{color:#fff}
+.spacer{flex:1}
+.count{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
+.btn{
+  appearance:none; border:1px solid var(--line); background:var(--panel-2); color:var(--muted);
+  border-radius:7px; padding:6px 11px; font:inherit; font-size:12.5px; cursor:pointer;
+}
+.btn:hover{color:var(--text)}
+
+/* ---- Table ---- */
+.wrap{flex:1; overflow:auto; min-height:0}
+table{border-collapse:separate; border-spacing:0; width:100%; font-size:13px}
+th,td{padding:6px 10px; white-space:nowrap; border-bottom:1px solid var(--line)}
+th{
+  position:sticky; top:0; z-index:2; background:var(--panel); text-align:right;
+  font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted);
+  font-weight:600; cursor:pointer; user-select:none;
+}
+th:first-child,td:first-child{text-align:left; position:sticky; left:0; z-index:1; background:var(--bg)}
+th:first-child{z-index:3; background:var(--panel)}
+th:nth-child(2),td:nth-child(2){text-align:left}
+th[aria-sort]{color:var(--accent)}
+th .dir::after{content:"";}
+th[aria-sort="descending"] .dir::after{content:" ↓"}
+th[aria-sort="ascending"] .dir::after{content:" ↑"}
+td{text-align:right; font-variant-numeric:tabular-nums}
+tbody tr:hover td{background:var(--panel-2)}
+tbody tr:hover td:first-child{background:var(--panel-2)}
+.sym{font-weight:700; letter-spacing:.3px}
+.name{color:var(--muted); font-size:12px; max-width:230px; overflow:hidden; text-overflow:ellipsis}
+.up{color:var(--up)} .down{color:var(--down)} .dim{color:var(--muted)}
+
+/* A percentile bar reads faster than the number alone: it says "cheap for this
+   company" at a glance, which the raw ratio never does. */
+.pct{display:inline-block; width:26px; height:4px; border-radius:2px; background:var(--line);
+     position:relative; margin-left:5px; vertical-align:middle}
+.pct i{position:absolute; top:0; bottom:0; left:0; border-radius:2px; background:var(--accent)}
+
+.msg{padding:36px 20px; text-align:center; color:var(--muted)}
+.msg strong{display:block; color:var(--text); margin-bottom:6px; font-size:15px}
+footer{
+  flex:0 0 auto; padding:5px 12px; background:var(--panel); border-top:1px solid var(--line);
+  font-size:11px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap;
+}
+footer b{color:var(--text); font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <input id="q" type="search" placeholder="Tìm mã / tên…" aria-label="Tìm mã hoặc tên công ty" autocomplete="off">
+  <select id="ex" aria-label="Sàn"><option value="">Tất cả sàn</option></select>
+  <select id="ind" aria-label="Ngành"><option value="">Tất cả ngành</option></select>
+  <span class="rng">P/E <input id="peMin" type="number" placeholder="từ" aria-label="P/E từ"><input id="peMax" type="number" placeholder="đến" aria-label="P/E đến"></span>
+  <span class="rng">ROE% <input id="roeMin" type="number" placeholder="từ" aria-label="ROE từ"></span>
+  <span class="rng">Vốn hóa ≥ <input id="mcMin" type="number" placeholder="tỷ" aria-label="Vốn hóa tối thiểu"></span>
+  <span class="spacer"></span>
+  <span class="count" id="count">—</span>
+  <button class="btn" id="csv" type="button">Tải CSV</button>
+  <button class="btn" id="reset" type="button">Xóa lọc</button>
+</div>
+
+<div class="presets" id="presets"></div>
+
+<div class="wrap">
+  <table>
+    <thead><tr id="head"></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+  <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
+</div>
+
+<footer>
+  <span>Nguồn: <b>Vietcap</b> qua pipeline LEON</span>
+  <span>Cập nhật: <b id="upd">—</b></span>
+  <span id="cover"></span>
+  <span>Số liệu tham khảo, không phải khuyến nghị đầu tư.</span>
+</footer>
+
+<script>
+"use strict";
+
+/* Columns: `k` is the JSON key, `p` names its percentile companion where one
+   exists. Percent-typed ratios arrive already converted by the pipeline. */
+const COLS = [
+  {k:"s",   t:"Mã",       kind:"sym"},
+  {k:"n",   t:"Tên",      kind:"name"},
+  {k:"e",   t:"Sàn",      kind:"text"},
+  {k:"p",   t:"Giá",      kind:"num", d:0},
+  {k:"ch",  t:"±%",       kind:"pct"},
+  {k:"mc",  t:"Vốn hóa",  kind:"num", d:0, hint:"Tỷ VND"},
+  {k:"pe",  t:"P/E",      kind:"num", d:1, p:"pe_p"},
+  {k:"pb",  t:"P/B",      kind:"num", d:2, p:"pb_p"},
+  {k:"roe", t:"ROE %",    kind:"num", d:1, p:"roe_p"},
+  {k:"roic",t:"ROIC %",   kind:"num", d:1},
+  {k:"npm", t:"Biên LN %",kind:"num", d:1},
+  {k:"de",  t:"Nợ/VCSH",  kind:"num", d:2},
+  {k:"dy",  t:"Cổ tức %", kind:"num", d:2},
+  {k:"f1",  t:"NN 1p",    kind:"flow", hint:"Khối ngoại mua ròng hôm nay (tỷ VND)"},
+  {k:"f5",  t:"NN 5p",    kind:"flow", hint:"Khối ngoại mua ròng 5 phiên (tỷ VND)"},
+  {k:"f20", t:"NN 20p",   kind:"flow", hint:"Khối ngoại mua ròng 20 phiên (tỷ VND)"},
+  {k:"i",   t:"Ngành",    kind:"text"},
+];
+
+/* One-click strategies. Each is a documented rule, not a black box — the title
+   attribute states it so a reader can disagree with the definition. */
+const PRESETS = [
+  { id:"cheap_quality", label:"Rẻ + sinh lời tốt",
+    hint:"P/E ≤ 12, P/B ≤ 2, ROE ≥ 15%",
+    fn:r => r.pe > 0 && r.pe <= 12 && r.pb > 0 && r.pb <= 2 && r.roe >= 15 },
+  { id:"deep_value", label:"Định giá thấp",
+    hint:"P/B ≤ 1, P/E > 0",
+    fn:r => r.pb > 0 && r.pb <= 1 && r.pe > 0 },
+  { id:"quality", label:"Chất lượng cao",
+    hint:"ROE ≥ 20%, ROIC ≥ 15%, Nợ/VCSH ≤ 1",
+    fn:r => r.roe >= 20 && r.roic >= 15 && (r.de == null || r.de <= 1) },
+  { id:"dividend", label:"Cổ tức cao",
+    hint:"Cổ tức ≥ 6%, P/E > 0",
+    fn:r => r.dy >= 6 && r.pe > 0 },
+  { id:"foreign_buy", label:"Khối ngoại gom",
+    hint:"Mua ròng cả 5 và 20 phiên",
+    fn:r => r.f5 > 0 && r.f20 > 0 },
+  { id:"cheap_vs_self", label:"Rẻ so với chính nó",
+    hint:"P/E ở nhóm 25% thấp nhất lịch sử của mã, ROE ≥ 10%",
+    fn:r => r.pe_p != null && r.pe_p <= 25 && r.roe >= 10 },
+  { id:"bank", label:"Ngân hàng tốt",
+    hint:"Có NIM, NPL ≤ 2%, ROE ≥ 15%",
+    fn:r => r.nim != null && r.npl != null && r.npl <= 2 && r.roe >= 15 },
+];
+
+const el = id => document.getElementById(id);
+let ROWS = [];
+let sortKey = "mc", sortDir = -1, activePreset = null;
+
+/* ---------- load ---------- */
+fetch("../../data/stocks.json", {cache:"no-cache"})
+  .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
+  .then(rows => {
+    ROWS = rows;
+    el("msg").hidden = true;
+    buildFacets();
+    buildHead();
+    buildPresets();
+    readUrl();
+    render();
+    el("upd").textContent = new Date().toLocaleDateString("vi-VN");
+    const withF = rows.filter(r => r.pe != null || r.pb != null).length;
+    el("cover").textContent = `${rows.length} mã · ${withF} có chỉ số cơ bản`;
+  })
+  .catch(err => {
+    el("msg").innerHTML =
+      "<strong>Chưa có dữ liệu</strong>" +
+      "Chạy <code>python -m pipeline.transform.stocks_build</code> để tạo " +
+      "<code>data/stocks.json</code>.";
+  });
+
+function buildFacets(){
+  const exchanges = [...new Set(ROWS.map(r => r.e).filter(Boolean))].sort();
+  exchanges.forEach(v => el("ex").add(new Option(v, v)));
+  const industries = [...new Set(ROWS.map(r => r.i).filter(Boolean))].sort((a,b) => a.localeCompare(b,"vi"));
+  industries.forEach(v => el("ind").add(new Option(v, v)));
+}
+
+function buildHead(){
+  const tr = el("head");
+  COLS.forEach(col => {
+    const th = document.createElement("th");
+    th.innerHTML = col.t + '<span class="dir"></span>';
+    if(col.hint) th.title = col.hint;
+    th.addEventListener("click", () => {
+      if(sortKey === col.k) sortDir = -sortDir;
+      else { sortKey = col.k; sortDir = col.kind === "sym" || col.kind === "text" ? 1 : -1; }
+      render();
+    });
+    tr.appendChild(th);
+  });
+}
+
+function buildPresets(){
+  PRESETS.forEach(p => {
+    const b = document.createElement("button");
+    b.className = "preset";
+    b.type = "button";
+    b.textContent = p.label;
+    b.title = p.hint;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => {
+      activePreset = activePreset === p.id ? null : p.id;
+      [...el("presets").children].forEach((c, i) =>
+        c.setAttribute("aria-pressed", String(PRESETS[i].id === activePreset)));
+      syncUrl();
+      render();
+    });
+    el("presets").appendChild(b);
+  });
+}
+
+/* ---------- filtering ---------- */
+function filters(){
+  const num = id => { const v = parseFloat(el(id).value); return isFinite(v) ? v : null; };
+  return {
+    q: el("q").value.trim().toLowerCase(),
+    ex: el("ex").value,
+    ind: el("ind").value,
+    peMin: num("peMin"), peMax: num("peMax"),
+    roeMin: num("roeMin"), mcMin: num("mcMin"),
+  };
+}
+
+function passes(r, f){
+  if(f.q && !(r.s || "").toLowerCase().includes(f.q) &&
+     !(r.n || "").toLowerCase().includes(f.q)) return false;
+  if(f.ex && r.e !== f.ex) return false;
+  if(f.ind && r.i !== f.ind) return false;
+  if(f.peMin != null && !(r.pe >= f.peMin)) return false;
+  if(f.peMax != null && !(r.pe <= f.peMax)) return false;
+  if(f.roeMin != null && !(r.roe >= f.roeMin)) return false;
+  if(f.mcMin != null && !(r.mc >= f.mcMin)) return false;
+  if(activePreset){
+    const preset = PRESETS.find(p => p.id === activePreset);
+    if(preset && !preset.fn(r)) return false;
+  }
+  return true;
+}
+
+/* ---------- render ---------- */
+const fmt = (v, d) => v == null || !isFinite(v)
+  ? '<span class="dim">—</span>'
+  : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+
+function cell(row, col){
+  const v = row[col.k];
+  switch(col.kind){
+    case "sym":  return `<span class="sym">${v ?? ""}</span>`;
+    case "name": return `<span class="name">${v ?? ""}</span>`;
+    case "text": return v ? `<span class="dim">${v}</span>` : '<span class="dim">—</span>';
+    case "pct":
+      if(v == null) return '<span class="dim">—</span>';
+      return `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(2)}</span>`;
+    case "flow":
+      if(v == null) return '<span class="dim">—</span>';
+      return `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(1)}</span>`;
+    default: {
+      let out = fmt(v, col.d ?? 2);
+      const pct = col.p ? row[col.p] : null;
+      if(pct != null){
+        // Low percentile = cheap relative to this ticker's own history.
+        out += `<span class="pct" title="Ở mức ${pct}% lịch sử của chính mã này">` +
+               `<i style="width:${Math.max(2, pct)}%"></i></span>`;
+      }
+      return out;
+    }
+  }
+}
+
+function render(){
+  const f = filters();
+  const rows = ROWS.filter(r => passes(r, f));
+
+  rows.sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if(x == null && y == null) return 0;
+    if(x == null) return 1;          // blanks always sink
+    if(y == null) return -1;
+    if(typeof x === "string") return x.localeCompare(y, "vi") * sortDir;
+    return (x - y) * sortDir;
+  });
+
+  el("count").textContent = `${rows.length} / ${ROWS.length} mã`;
+  [...el("head").children].forEach((th, i) => {
+    if(COLS[i].k === sortKey) th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+    else th.removeAttribute("aria-sort");
+  });
+
+  // Cap the DOM: 600 rows is more than anyone scans, and the count above
+  // still reports the true match total.
+  const shown = rows.slice(0, 600);
+  el("body").innerHTML = shown
+    .map(r => "<tr>" + COLS.map(c => `<td>${cell(r, c)}</td>`).join("") + "</tr>")
+    .join("");
+
+  window.__filtered = rows;
+}
+
+/* ---------- url state, so a filtered view is shareable ---------- */
+function syncUrl(){
+  const p = new URLSearchParams();
+  const f = filters();
+  Object.entries(f).forEach(([k, v]) => { if(v) p.set(k, v); });
+  if(activePreset) p.set("preset", activePreset);
+  history.replaceState(null, "", p.toString() ? "?" + p.toString() : location.pathname);
+}
+
+function readUrl(){
+  const p = new URLSearchParams(location.search);
+  ["q","ex","ind","peMin","peMax","roeMin","mcMin"].forEach(k => {
+    if(p.get(k)) el(k).value = p.get(k);
+  });
+  const preset = p.get("preset");
+  if(preset && PRESETS.some(x => x.id === preset)){
+    activePreset = preset;
+    [...el("presets").children].forEach((c, i) =>
+      c.setAttribute("aria-pressed", String(PRESETS[i].id === preset)));
+  }
+}
+
+["q","ex","ind","peMin","peMax","roeMin","mcMin"].forEach(id => {
+  el(id).addEventListener("input", () => { syncUrl(); render(); });
+});
+
+el("reset").addEventListener("click", () => {
+  ["q","ex","ind","peMin","peMax","roeMin","mcMin"].forEach(id => el(id).value = "");
+  activePreset = null;
+  [...el("presets").children].forEach(c => c.setAttribute("aria-pressed", "false"));
+  syncUrl();
+  render();
+});
+
+el("csv").addEventListener("click", () => {
+  const rows = window.__filtered || [];
+  const head = COLS.map(c => c.t).join(",");
+  const body = rows.map(r => COLS.map(c => {
+    const v = r[c.k];
+    if(v == null) return "";
+    return typeof v === "string" && v.includes(",") ? `"${v}"` : v;
+  }).join(",")).join("\n");
+  const blob = new Blob(["﻿" + head + "\n" + body], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `leon-stocks-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>

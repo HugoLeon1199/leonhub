@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Chart — LEON Hub</title>
+<meta name="description" content="Biểu đồ nến crypto theo thời gian thực từ Binance và Hyperliquid, kèm funding, open interest và Coinbase premium.">
+
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<!-- Lightweight Charts is not on cdnjs; jsDelivr is the other CSP-allowed host.
+     Pinned, because a silent major bump would break the series API. -->
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
+  --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
+  --up:#0c8a63; --down:#c2402f; --warn:#8a6412;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text); overflow:hidden;
+  font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex; flex-direction:column;
+}
+
+/* ---- Toolbar ---- */
+.bar{
+  flex:0 0 auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line);
+}
+.sym-input{
+  width:104px; background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  border-radius:7px; padding:6px 10px; font:inherit; font-weight:700; letter-spacing:.4px;
+  text-transform:uppercase;
+}
+.sym-input:focus{outline:2px solid var(--accent); outline-offset:-1px}
+.group{display:flex; gap:2px; background:var(--panel-2); padding:2px; border-radius:8px}
+.group button{
+  appearance:none; border:0; background:transparent; color:var(--muted);
+  font:inherit; font-size:12.5px; padding:5px 10px; border-radius:6px; cursor:pointer;
+}
+.group button:hover{color:var(--text)}
+.group button[aria-pressed="true"]{background:var(--accent); color:#04150f; font-weight:600}
+:root[data-theme="light"] .group button[aria-pressed="true"]{color:#fff}
+
+.quote{display:flex; align-items:baseline; gap:10px; margin-left:auto; padding-right:4px}
+.price{font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.4px}
+.chg{font-size:13px; font-weight:600; font-variant-numeric:tabular-nums}
+.up{color:var(--up)} .down{color:var(--down)}
+
+/* ---- Stat strip: the context a price alone cannot give ---- */
+.stats{
+  flex:0 0 auto; display:flex; gap:0; overflow-x:auto; background:var(--panel);
+  border-bottom:1px solid var(--line); scrollbar-width:none;
+}
+.stats::-webkit-scrollbar{display:none}
+.stat{
+  padding:7px 14px; border-right:1px solid var(--line); min-width:112px; flex:0 0 auto;
+}
+.stat .k{
+  font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted);
+  display:block; margin-bottom:2px;
+}
+.stat .v{font-size:13.5px; font-weight:600; font-variant-numeric:tabular-nums}
+
+/* ---- Chart ---- */
+main{flex:1; position:relative; min-height:0}
+#chart{position:absolute; inset:0}
+.msg{
+  position:absolute; inset:0; display:grid; place-content:center; text-align:center;
+  gap:8px; color:var(--muted); background:var(--bg); padding:24px; z-index:3;
+}
+.msg strong{color:var(--text); font-size:15px}
+.msg small{font-size:12.5px; max-width:46ch}
+.msg[hidden]{display:none!important}
+
+footer{
+  flex:0 0 auto; padding:5px 12px; background:var(--panel); border-top:1px solid var(--line);
+  font-size:11px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap;
+}
+footer b{color:var(--text); font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <input id="sym" class="sym-input" value="BTC" maxlength="12" aria-label="Mã coin"
+         autocomplete="off" spellcheck="false">
+  <div class="group" id="tfs" role="group" aria-label="Khung thời gian"></div>
+  <div class="quote">
+    <span class="price" id="price">—</span>
+    <span class="chg" id="chg"></span>
+  </div>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<main>
+  <div id="chart"></div>
+  <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
+</main>
+
+<footer>
+  <span>Nguồn: <b id="src">Binance</b></span>
+  <span>Cập nhật: <b id="upd">—</b></span>
+  <span>Dữ liệu tham khảo, không phải khuyến nghị đầu tư.</span>
+</footer>
+
+<script>
+"use strict";
+
+const TIMEFRAMES = ["5m","15m","1h","4h","1d"];
+const LIMIT = 500;
+
+const el = {
+  sym: document.getElementById("sym"),
+  tfs: document.getElementById("tfs"),
+  price: document.getElementById("price"),
+  chg: document.getElementById("chg"),
+  stats: document.getElementById("stats"),
+  msg: document.getElementById("msg"),
+  src: document.getElementById("src"),
+  upd: document.getElementById("upd"),
+};
+
+const params = new URLSearchParams(location.search);
+let symbol = (params.get("sym") || "BTC").toUpperCase();
+let timeframe = TIMEFRAMES.includes(params.get("tf")) ? params.get("tf") : "1h";
+el.sym.value = symbol;
+
+/* ---------- theme-aware chart colors ---------- */
+const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+function chartTheme(){
+  return {
+    layout:{ background:{color:css("--bg")}, textColor:css("--muted"), fontSize:11 },
+    grid:{ vertLines:{color:css("--line")}, horzLines:{color:css("--line")} },
+    rightPriceScale:{ borderColor:css("--line") },
+    timeScale:{ borderColor:css("--line"), timeVisible:true, secondsVisible:false },
+    crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
+  };
+}
+
+const chart = LightweightCharts.createChart(document.getElementById("chart"), {
+  ...chartTheme(), autoSize:true,
+});
+const candles = chart.addCandlestickSeries({
+  upColor:css("--up"), downColor:css("--down"),
+  borderUpColor:css("--up"), borderDownColor:css("--down"),
+  wickUpColor:css("--up"), wickDownColor:css("--down"),
+});
+const volume = chart.addHistogramSeries({
+  priceFormat:{type:"volume"}, priceScaleId:"vol",
+});
+chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.84, bottom:0} });
+
+/* ---------- data sources ----------
+   Binance is fetched from the browser on purpose: it geo-blocks US datacenter
+   IPs (451), so a server-side fetch from CI would fail while the reader's own
+   browser succeeds. Hyperliquid is the fallback and needs no key either. */
+const HL_INTERVAL = {"5m":"5m","15m":"15m","1h":"1h","4h":"4h","1d":"1d"};
+
+async function fromBinance(sym, tf){
+  const url = `https://api.binance.com/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=${LIMIT}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("binance " + res.status);
+  const rows = await res.json();
+  return rows.map(r => ({
+    time: r[0] / 1000,
+    open:+r[1], high:+r[2], low:+r[3], close:+r[4], volume:+r[5],
+  }));
+}
+
+async function fromHyperliquid(sym, tf){
+  const end = Date.now();
+  const spanMs = {"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440}[tf] * 60000 * LIMIT;
+  const res = await fetch("https://api.hyperliquid.xyz/info", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      type:"candleSnapshot",
+      req:{ coin:sym, interval:HL_INTERVAL[tf], startTime:end - spanMs, endTime:end },
+    }),
+  });
+  if(!res.ok) throw new Error("hyperliquid " + res.status);
+  const rows = await res.json();
+  if(!Array.isArray(rows) || !rows.length) throw new Error("hyperliquid empty");
+  return rows.map(r => ({
+    time: r.t / 1000,
+    open:+r.o, high:+r.h, low:+r.l, close:+r.c, volume:+r.v,
+  }));
+}
+
+/* Perp context: funding and open interest say whether a move is being pushed
+   by leverage or by spot demand. Both are free and keyless. */
+async function perpStats(sym){
+  const out = {};
+  try{
+    const [prem, oi] = await Promise.all([
+      fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`).then(r => r.json()),
+      fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${sym}USDT`).then(r => r.json()),
+    ]);
+    if(prem && prem.lastFundingRate != null) out.funding = +prem.lastFundingRate * 100;
+    if(prem && prem.markPrice != null) out.mark = +prem.markPrice;
+    if(oi && oi.openInterest != null) out.oi = +oi.openInterest;
+  }catch(e){ /* context is optional; the chart stands without it */ }
+
+  try{
+    const lsr = await fetch(
+      `https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${sym}USDT&period=1h&limit=1`
+    ).then(r => r.json());
+    if(Array.isArray(lsr) && lsr[0]) out.lsr = +lsr[0].longShortRatio;
+  }catch(e){}
+
+  return out;
+}
+
+/* Coinbase premium: US spot paying above global perp is the cleanest free read
+   on American institutional bid. */
+async function coinbasePremium(sym, mark){
+  if(!mark) return null;
+  try{
+    const t = await fetch(`https://api.exchange.coinbase.com/products/${sym}-USD/ticker`)
+      .then(r => r.ok ? r.json() : null);
+    if(!t || !t.price) return null;
+    return (+t.price - mark) / mark * 100;
+  }catch(e){ return null; }
+}
+
+/* ---------- rendering ---------- */
+const nf = (v, d = 2) => v == null || !isFinite(v)
+  ? "—"
+  : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+
+function compact(v){
+  if(v == null || !isFinite(v)) return "—";
+  const abs = Math.abs(v);
+  if(abs >= 1e9) return (v/1e9).toFixed(2) + "B";
+  if(abs >= 1e6) return (v/1e6).toFixed(2) + "M";
+  if(abs >= 1e3) return (v/1e3).toFixed(1) + "K";
+  return v.toFixed(2);
+}
+
+function renderStats(items){
+  el.stats.innerHTML = "";
+  items.forEach(it => {
+    if(it.value == null) return;
+    const box = document.createElement("div");
+    box.className = "stat";
+    box.title = it.hint || "";
+    box.innerHTML =
+      `<span class="k">${it.label}</span>` +
+      `<span class="v${it.tone ? " " + it.tone : ""}">${it.value}</span>`;
+    el.stats.appendChild(box);
+  });
+}
+
+function renderQuote(bars){
+  const last = bars[bars.length - 1];
+  const first = bars[0];
+  if(!last) return;
+  const decimals = last.close < 1 ? 6 : last.close < 100 ? 3 : 2;
+  el.price.textContent = nf(last.close, decimals);
+  const pct = (last.close - first.open) / first.open * 100;
+  el.chg.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+  el.chg.className = "chg " + (pct >= 0 ? "up" : "down");
+}
+
+let inflight = 0;
+
+async function load(){
+  const token = ++inflight;
+  el.msg.hidden = false;
+  el.msg.innerHTML = "<strong>Đang tải dữ liệu…</strong>";
+
+  let bars, source = "Binance";
+  try{
+    bars = await fromBinance(symbol, timeframe);
+  }catch(primary){
+    try{
+      bars = await fromHyperliquid(symbol, timeframe);
+      source = "Hyperliquid";
+    }catch(fallback){
+      if(token !== inflight) return;
+      el.msg.innerHTML =
+        `<strong>Không tải được ${symbol}</strong>` +
+        `<small>Cả Binance lẫn Hyperliquid đều không trả dữ liệu cho mã này. ` +
+        `Kiểm tra lại ký hiệu (ví dụ BTC, ETH, SOL).</small>`;
+      return;
+    }
+  }
+  if(token !== inflight) return;
+
+  candles.setData(bars);
+  volume.setData(bars.map(b => ({
+    time: b.time, value: b.volume,
+    color: b.close >= b.open ? css("--up") + "55" : css("--down") + "55",
+  })));
+  chart.timeScale().fitContent();
+
+  renderQuote(bars);
+  el.src.textContent = source;
+  el.upd.textContent = new Date().toLocaleTimeString("vi-VN");
+  el.msg.hidden = true;
+
+  const stats = await perpStats(symbol);
+  if(token !== inflight) return;
+  const premium = await coinbasePremium(symbol, stats.mark);
+  if(token !== inflight) return;
+
+  const last = bars[bars.length - 1];
+  renderStats([
+    { label:"Cao 24h", value: nf(Math.max(...bars.slice(-24).map(b => b.high)), 2) },
+    { label:"Thấp 24h", value: nf(Math.min(...bars.slice(-24).map(b => b.low)), 2) },
+    { label:"KL nến", value: compact(last.volume), hint:"Khối lượng của nến gần nhất" },
+    stats.funding == null ? {} : {
+      label:"Funding", value: stats.funding.toFixed(4) + "%",
+      tone: stats.funding >= 0 ? "up" : "down",
+      hint:"Phí funding hợp đồng vĩnh cửu. Dương = phe mua trả phí cho phe bán.",
+    },
+    stats.oi == null ? {} : {
+      label:"Open Interest", value: compact(stats.oi),
+      hint:"Tổng hợp đồng đang mở. Tăng cùng giá = tiền mới vào.",
+    },
+    stats.lsr == null ? {} : {
+      label:"Long/Short", value: stats.lsr.toFixed(2),
+      tone: stats.lsr >= 1 ? "up" : "down",
+      hint:"Tỉ lệ tài khoản long/short trên Binance futures.",
+    },
+    premium == null ? {} : {
+      label:"Coinbase prem.", value: premium.toFixed(3) + "%",
+      tone: premium >= 0 ? "up" : "down",
+      hint:"Giá Coinbase so với giá mark. Dương = lực mua từ Mỹ.",
+    },
+  ]);
+}
+
+/* ---------- controls ---------- */
+TIMEFRAMES.forEach(tf => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = tf;
+  b.setAttribute("aria-pressed", String(tf === timeframe));
+  b.addEventListener("click", () => {
+    timeframe = tf;
+    [...el.tfs.children].forEach(c => c.setAttribute("aria-pressed", String(c.textContent === tf)));
+    syncUrl();
+    load();
+  });
+  el.tfs.appendChild(b);
+});
+
+function syncUrl(){
+  const p = new URLSearchParams(location.search);
+  p.set("sym", symbol);
+  p.set("tf", timeframe);
+  history.replaceState(null, "", "?" + p.toString());
+}
+
+let symTimer;
+el.sym.addEventListener("input", () => {
+  clearTimeout(symTimer);
+  symTimer = setTimeout(() => {
+    const next = el.sym.value.trim().toUpperCase();
+    if(next && next !== symbol){ symbol = next; syncUrl(); load(); }
+  }, 500);
+});
+el.sym.addEventListener("keydown", e => { if(e.key === "Enter") el.sym.blur(); });
+
+// Follow the hub's theme switch without a reload.
+new MutationObserver(() => {
+  chart.applyOptions(chartTheme());
+  candles.applyOptions({
+    upColor:css("--up"), downColor:css("--down"),
+    borderUpColor:css("--up"), borderDownColor:css("--down"),
+    wickUpColor:css("--up"), wickDownColor:css("--down"),
+  });
+}).observe(document.documentElement, {attributes:true, attributeFilter:["data-theme"]});
+
+// Refresh while the tab is visible; pause when it is not.
+setInterval(() => { if(!document.hidden) load(); }, 60000);
+
+load();
+</script>
+</body>
+</html>

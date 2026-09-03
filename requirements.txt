@@ -1,0 +1,7 @@
+# Pipeline dependencies. Pinned to majors that were verified working; vnstock
+# in particular changes its public API between majors (the legacy Vnstock class
+# reaches EOL 2026-08-31).
+duckdb>=1.1,<2
+requests>=2.31,<3
+pandas>=2.0,<3
+vnstock>=3.2,<4

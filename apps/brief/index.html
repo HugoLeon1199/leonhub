@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Tổng quan — LEON Hub</title>
+<meta name="description" content="Một màn hình trả lời: hôm nay thị trường có gì thay đổi. Giá đa tài sản, dòng tiền khối ngoại, và các biến động bất thường.">
+
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
+  --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
+  --up:#0c8a63; --down:#c2402f; --warn:#8a6412;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--text); min-height:100%;
+  font:14px/1.55 -apple-system,"Segoe UI",Roboto,sans-serif;
+}
+.page{max-width:1080px; margin:0 auto; padding:18px 16px 48px}
+
+h1{font-size:19px; margin:0 0 2px; font-weight:700; letter-spacing:-.2px}
+.sub{color:var(--muted); font-size:12.5px; margin:0 0 18px}
+
+/* ---- Cross-asset tape ---- */
+.tape{
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(158px,1fr));
+  gap:8px; margin-bottom:22px;
+}
+.tile{
+  background:var(--panel); border:1px solid var(--line); border-radius:9px;
+  padding:10px 12px; display:flex; flex-direction:column; gap:2px;
+}
+.tile .k{font-size:11px; color:var(--muted); letter-spacing:.03em}
+.tile .v{font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.4px}
+.tile .c{font-size:12px; font-weight:600; font-variant-numeric:tabular-nums}
+.up{color:var(--up)} .down{color:var(--down)} .dim{color:var(--muted)}
+
+section{margin-bottom:26px}
+h2{
+  font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
+  margin:0 0 9px; font-weight:600; display:flex; align-items:baseline; gap:8px;
+}
+h2 .note{text-transform:none; letter-spacing:0; font-weight:400; font-size:11.5px}
+
+.card{background:var(--panel); border:1px solid var(--line); border-radius:9px; overflow:hidden}
+table{border-collapse:collapse; width:100%; font-size:13px}
+th,td{padding:7px 12px; border-bottom:1px solid var(--line); white-space:nowrap}
+th{
+  text-align:right; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted); font-weight:600; background:var(--panel-2);
+}
+th:first-child,td:first-child{text-align:left}
+th:nth-child(2),td:nth-child(2){text-align:left}
+tr:last-child td{border-bottom:0}
+td{text-align:right; font-variant-numeric:tabular-nums}
+.sym{font-weight:700}
+.name{color:var(--muted); font-size:12px; max-width:220px; overflow:hidden;
+      text-overflow:ellipsis; display:inline-block; vertical-align:bottom}
+
+.two{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+@media(max-width:720px){ .two{grid-template-columns:1fr} }
+
+.empty{padding:22px 14px; color:var(--muted); text-align:center; font-size:13px}
+.empty code{background:var(--panel-2); padding:2px 6px; border-radius:4px; font-size:12px}
+
+footer{
+  border-top:1px solid var(--line); padding-top:12px; margin-top:8px;
+  font-size:11px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap;
+}
+footer b{color:var(--text); font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Tổng quan thị trường</h1>
+<p class="sub" id="stamp">Đang tải…</p>
+
+<div class="tape" id="tape"></div>
+
+<section>
+  <h2>Khối ngoại mua ròng mạnh nhất
+    <span class="note">phiên gần nhất, tỷ VND</span></h2>
+  <div class="two">
+    <div class="card" id="fBuy"><div class="empty">Đang tải…</div></div>
+    <div class="card" id="fSell"><div class="empty">Đang tải…</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Định giá thấp so với chính lịch sử của mã
+    <span class="note">P/E ở nhóm 25% thấp nhất 8 năm, ROE ≥ 10%</span></h2>
+  <div class="card" id="cheap"><div class="empty">Đang tải…</div></div>
+</section>
+
+<section>
+  <h2>Bất động sản — quận có lợi suất cho thuê cao nhất
+    <span class="note">giá rao, chỉ tính khi có ≥ 20 tin mỗi phía</span></h2>
+  <div class="card" id="bds"><div class="empty">Đang tải…</div></div>
+</section>
+
+<footer>
+  <span>Nguồn: <b>Vietcap</b>, <b>Chợ Tốt</b>, <b>Binance</b></span>
+  <span id="cover"></span>
+  <span>Số liệu tham khảo, không phải khuyến nghị đầu tư.</span>
+</footer>
+
+</div>
+
+<script>
+"use strict";
+
+const el = id => document.getElementById(id);
+const num = (v, d = 2) => v == null || !isFinite(v)
+  ? "—"
+  : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+
+function signed(v, d = 2){
+  if(v == null || !isFinite(v)) return '<span class="dim">—</span>';
+  return `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(d)}</span>`;
+}
+
+function tile(label, value, change, hint){
+  const box = document.createElement("div");
+  box.className = "tile";
+  if(hint) box.title = hint;
+  box.innerHTML =
+    `<span class="k">${label}</span>` +
+    `<span class="v">${value}</span>` +
+    `<span class="c">${change}</span>`;
+  return box;
+}
+
+function table(rows, columns){
+  if(!rows.length) return '<div class="empty">Không có dữ liệu phù hợp.</div>';
+  const head = columns.map(c => `<th>${c.t}</th>`).join("");
+  const body = rows.map(r =>
+    "<tr>" + columns.map(c => `<td>${c.f(r)}</td>`).join("") + "</tr>"
+  ).join("");
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+/* ---------- crypto tape: fetched in the browser, so Binance's geo-block on
+     US datacenter IPs never applies ---------- */
+async function cryptoTiles(){
+  const coins = [["BTC","Bitcoin"],["ETH","Ethereum"],["SOL","Solana"]];
+  const results = await Promise.all(coins.map(async ([sym, name]) => {
+    try{
+      const r = await fetch(
+        `https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}USDT`
+      ).then(x => x.ok ? x.json() : null);
+      if(!r) return null;
+      return { sym, name, price:+r.lastPrice, change:+r.priceChangePercent };
+    }catch(e){ return null; }
+  }));
+
+  results.filter(Boolean).forEach(c => {
+    el("tape").appendChild(tile(
+      c.name,
+      num(c.price, c.price < 10 ? 3 : 0),
+      signed(c.change) + ' <span class="dim">24h</span>',
+      `${c.sym}/USDT trên Binance`
+    ));
+  });
+}
+
+/* ---------- VN equities ---------- */
+async function equities(){
+  const rows = await fetch("../../data/stocks.json", {cache:"no-cache"})
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
+
+  if(!rows){
+    ["fBuy","fSell","cheap"].forEach(id => {
+      el(id).innerHTML =
+        '<div class="empty">Chưa có <code>data/stocks.json</code>. ' +
+        'Chạy <code>python -m pipeline.transform.stocks_build</code>.</div>';
+    });
+    return;
+  }
+
+  // Market breadth: a single number that says what the whole session did.
+  const priced = rows.filter(r => typeof r.ch === "number");
+  if(priced.length){
+    const up = priced.filter(r => r.ch > 0).length;
+    const down = priced.filter(r => r.ch < 0).length;
+    el("tape").appendChild(tile(
+      "Độ rộng thị trường",
+      `${up} / ${down}`,
+      `<span class="dim">mã tăng / giảm</span>`,
+      "Trong số các mã có khớp lệnh phiên gần nhất"
+    ));
+  }
+
+  const flows = rows.filter(r => typeof r.f1 === "number" && r.f1 !== 0);
+  if(flows.length){
+    const net = flows.reduce((s, r) => s + r.f1, 0);
+    el("tape").appendChild(tile(
+      "Khối ngoại ròng",
+      (net >= 0 ? "+" : "") + num(net, 0),
+      `<span class="dim">tỷ VND, toàn thị trường</span>`,
+      "Tổng giá trị mua trừ bán của nhà đầu tư nước ngoài"
+    ));
+  }
+
+  const flowCols = [
+    {t:"Mã",   f:r => `<span class="sym">${r.s}</span>`},
+    {t:"Tên",  f:r => `<span class="name">${r.n ?? ""}</span>`},
+    {t:"Ròng", f:r => signed(r.f1, 1)},
+    {t:"±%",   f:r => signed(r.ch)},
+  ];
+
+  const buys = [...flows].sort((a,b) => b.f1 - a.f1).slice(0, 8);
+  const sells = [...flows].sort((a,b) => a.f1 - b.f1).slice(0, 8);
+  el("fBuy").innerHTML = table(buys, flowCols);
+  el("fSell").innerHTML = table(sells, flowCols);
+
+  // "Cheap versus its own history" is the read a raw P/E cannot give: it needs
+  // the ticker's own eight-year distribution behind it.
+  const cheap = rows
+    .filter(r => r.pe_p != null && r.pe_p <= 25 && r.roe >= 10 && r.mc >= 500)
+    .sort((a,b) => a.pe_p - b.pe_p)
+    .slice(0, 10);
+
+  el("cheap").innerHTML = table(cheap, [
+    {t:"Mã",       f:r => `<span class="sym">${r.s}</span>`},
+    {t:"Tên",      f:r => `<span class="name">${r.n ?? ""}</span>`},
+    {t:"P/E",      f:r => num(r.pe, 1)},
+    {t:"Percentile", f:r => `<span class="dim">${r.pe_p}%</span>`},
+    {t:"ROE %",    f:r => num(r.roe, 1)},
+    {t:"Vốn hóa",  f:r => num(r.mc, 0)},
+  ]);
+
+  const withF = rows.filter(r => r.pe != null).length;
+  el("cover").textContent = `${rows.length} mã · ${withF} có chỉ số cơ bản`;
+}
+
+/* ---------- real estate ---------- */
+async function realEstate(){
+  const rows = await fetch("../../data/bds.json", {cache:"no-cache"})
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
+
+  if(!rows){
+    el("bds").innerHTML =
+      '<div class="empty">Chưa có <code>data/bds.json</code>. ' +
+      'Chạy <code>python -m pipeline.sources.chotot</code> rồi ' +
+      '<code>python -m pipeline.transform.bds_aggregate</code>.</div>';
+    return;
+  }
+
+  const top = rows.filter(r => typeof r.y === "number")
+                  .sort((a,b) => b.y - a.y)
+                  .slice(0, 10);
+
+  el("bds").innerHTML = table(top, [
+    {t:"Quận / Huyện", f:r => `<span class="sym">${r.d}</span>`},
+    {t:"Tỉnh / Thành", f:r => `<span class="name">${r.r}</span>`},
+    {t:"Loại",         f:r => `<span class="dim">${r.i}</span>`},
+    {t:"Giá/m² (tr)",  f:r => num(r.p, 1)},
+    {t:"Lợi suất %",   f:r => `<span class="up">${num(r.y, 2)}</span>`},
+    {t:"Mẫu",          f:r => `<span class="dim">${r.n}</span>`},
+  ]);
+}
+
+el("stamp").textContent =
+  new Date().toLocaleString("vi-VN", {dateStyle:"full", timeStyle:"short"});
+
+cryptoTiles();
+equities();
+realEstate();
+</script>
+</body>
+</html>
