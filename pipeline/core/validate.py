@@ -178,9 +178,16 @@ def run(names: list[str] | None = None) -> int:
             print(f"skip {name}: no validator registered")
             continue
 
-        rows = read_json(name)
-        if rows is None:
+        payload = read_json(name)
+        if payload is None:
             print(f"skip {name}: not built yet")
+            continue
+
+        # Artifacts carry provenance around their rows; older builds were a
+        # bare array.
+        rows = payload if isinstance(payload, list) else payload.get("rows")
+        if rows is None:
+            print(f"skip {name}: no rows key")
             continue
 
         rep = validator(rows, None)

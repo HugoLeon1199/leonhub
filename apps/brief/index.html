@@ -181,9 +181,11 @@ async function cryptoTiles(){
 
 /* ---------- VN equities ---------- */
 async function equities(){
-  const rows = await fetch("../../data/stocks.json", {cache:"no-cache"})
+  const payload = await fetch("../../data/stocks.json", {cache:"no-cache"})
     .then(r => r.ok ? r.json() : null)
     .catch(() => null);
+  // Wrapped now, a bare array in older builds.
+  const rows = Array.isArray(payload) ? payload : payload && payload.rows;
 
   if(!rows){
     ["fBuy","fSell","cheap","unusual"].forEach(id => {
@@ -281,9 +283,10 @@ async function equities(){
 
 /* ---------- real estate ---------- */
 async function realEstate(){
-  const rows = await fetch("../../data/bds.json", {cache:"no-cache"})
+  const payload = await fetch("../../data/bds.json", {cache:"no-cache"})
     .then(r => r.ok ? r.json() : null)
     .catch(() => null);
+  const rows = Array.isArray(payload) ? payload : payload && payload.rows;
 
   if(!rows){
     el("bds").innerHTML =

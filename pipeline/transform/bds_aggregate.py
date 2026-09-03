@@ -172,11 +172,19 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         "districts": len({(o["r"], o["d"]) for o in out}),
         "with_yield": sum(1 for o in out if "y" in o),
         "min_samples": MIN_SAMPLES,
+        # Sample count behind the whole file, so the page can say what the
+        # medians rest on rather than only the per-cell n.
+        "listings": sum(o.get("n", 0) for o in out),
     }
 
     if not dry_run:
         from pipeline.publish.emit import write_json
-        stats["path"] = str(write_json("bds.json", out))
+        # Wrapped so the page can state how old the crawl is; a bare array
+        # leaves a stale file looking identical to a fresh one.
+        stats["path"] = str(write_json("bds.json", {
+            "rows": out,
+            "listings": stats.get("listings"),
+        }))
 
     stats["sample"] = out[:3]
     return stats

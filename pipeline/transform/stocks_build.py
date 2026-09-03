@@ -264,6 +264,24 @@ ORDER BY series, fetched_at DESC
 """
 
 
+# The two price sources spell exchanges differently — SSI writes "hose"/"upcom",
+# Vietcap "HSX"/"UPCOM" — and a row's value depends on which collector last
+# touched it. Left alone the screener's exchange filter offers seven options for
+# three exchanges and splits HOSE across two of them.
+EXCHANGE_CANON = {
+    "hose": "HOSE", "hsx": "HOSE",
+    "hnx": "HNX",
+    "upcom": "UPCOM",
+    "delisted": "Đã hủy niêm yết",
+}
+
+
+def canon_exchange(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return EXCHANGE_CANON.get(value.strip().lower(), value.strip().upper())
+
+
 def _rows(con, sql: str) -> list[dict[str, Any]]:
     cur = con.execute(sql)
     cols = [d[0] for d in cur.description]
@@ -279,9 +297,9 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         rooms = {r["symbol"]: r["value"] for r in _rows(con, FOREIGN_ROOM_SQL)}
         shares = {r["symbol"]: r["listed_share"] for r in _rows(con, SHARE_COUNT_SQL)}
         history = {r["symbol"]: r for r in _rows(con, PRICE_HISTORY_SQL)}
-        trading_days = con.execute(
-            "SELECT count(DISTINCT as_of) FROM eq_quote"
-        ).fetchone()[0]
+        trading_days, session_date = con.execute(
+            "SELECT count(DISTINCT as_of), max(as_of) FROM eq_quote"
+        ).fetchone()
         fundamentals: dict[str, dict[str, Any]] = {}
         for r in _rows(con, FUNDAMENTAL_SQL):
             key = METRIC_MAP.get(r["metric"])
@@ -304,7 +322,7 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         row: dict[str, Any] = {
             "s": symbol,
             "n": listing.get("organ_name"),
-            "e": quote.get("exchange") or listing.get("exchange"),
+            "e": canon_exchange(quote.get("exchange") or listing.get("exchange")),
             "i": listing.get("industry"),
         }
         if price:
@@ -395,7 +413,14 @@ def build(dry_run: bool = False) -> dict[str, Any]:
     }
 
     if not dry_run:
-        path = write_json("stocks.json", out)
+        # Wrapped rather than a bare array: without a top-level `updated_at` the
+        # page cannot tell a reader how old the numbers are, and a stale file
+        # looks identical to a fresh one.
+        path = write_json("stocks.json", {
+            "rows": out,
+            "as_of": str(session_date) if session_date else None,
+            "trading_days": trading_days,
+        })
         stats["path"] = str(path)
         stats["size_kb"] = round(path.stat().st_size / 1024, 1)
 

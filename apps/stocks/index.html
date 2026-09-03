@@ -203,13 +203,17 @@ const PRESETS = [
 ];
 
 const el = id => document.getElementById(id);
-let ROWS = [];
+let ROWS = [], META = {};
 let sortKey = "mc", sortDir = -1, activePreset = null;
 
 /* ---------- load ---------- */
 fetch("../../data/stocks.json", {cache:"no-cache"})
   .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
-  .then(rows => {
+  .then(payload => {
+    // The file carries provenance alongside the rows; older builds were a bare
+    // array, so accept both rather than break on a stale artifact.
+    const rows = Array.isArray(payload) ? payload : payload.rows;
+    META = Array.isArray(payload) ? {} : payload;
     ROWS = rows;
     el("msg").hidden = true;
     // Drop columns nothing populates yet: an all-blank column reads as broken,
@@ -226,9 +230,16 @@ fetch("../../data/stocks.json", {cache:"no-cache"})
     buildPresets();
     readUrl();
     render();
-    el("upd").textContent = new Date().toLocaleDateString("vi-VN");
+    // The trading session the data describes, not today's date: a file three
+    // days stale would otherwise stamp itself with the moment it was opened.
+    el("upd").textContent = META.as_of
+      ? new Date(META.as_of).toLocaleDateString("vi-VN")
+      : "—";
     const withF = rows.filter(r => r.pe != null || r.pb != null).length;
-    el("cover").textContent = `${rows.length} mã · ${withF} có chỉ số cơ bản`;
+    const priced = rows.filter(r => r.p != null).length;
+    el("cover").textContent =
+      `${rows.length} mã · ${priced} có khớp lệnh · ${withF} có chỉ số cơ bản` +
+      (META.trading_days ? ` · ${META.trading_days} phiên lịch sử` : "");
   })
   .catch(err => {
     el("msg").innerHTML =

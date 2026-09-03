@@ -146,11 +146,14 @@ const COLS = [
 ];
 
 const el = id => document.getElementById(id);
-let ROWS = [], sortKey = "p", sortDir = -1, maxSpread = 1;
+let ROWS = [], META = {}, sortKey = "p", sortDir = -1, maxSpread = 1;
 
 fetch("../../data/bds.json", {cache:"no-cache"})
   .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
-  .then(rows => {
+  .then(payload => {
+    // Accept both the wrapped form and the older bare array.
+    const rows = Array.isArray(payload) ? payload : payload.rows;
+    META = Array.isArray(payload) ? {} : payload;
     ROWS = rows;
     maxSpread = Math.max(...rows.map(r => (r.p75 ?? 0) - (r.p25 ?? 0)), 1);
     computeYieldMedians();
@@ -162,7 +165,9 @@ fetch("../../data/bds.json", {cache:"no-cache"})
     const updated = rows.map(r => r.u).filter(Boolean).sort().pop();
     el("upd").textContent = updated ? new Date(updated).toLocaleDateString("vi-VN") : "—";
     const districts = new Set(rows.map(r => r.r + "/" + r.d)).size;
-    el("cover").textContent = `${districts} quận/huyện · ${rows.length} dòng`;
+    el("cover").textContent =
+      `${districts} quận/huyện · ${rows.length} dòng` +
+      (META.listings ? ` · ${META.listings.toLocaleString("vi-VN")} tin rao` : "");
   })
   .catch(() => {
     el("msg").innerHTML =
