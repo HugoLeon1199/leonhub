@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Gamma Exposure — LEON Hub</title>
+<meta name="description" content="Gamma exposure của quyền chọn Bitcoin và Ethereum: vùng gamma dương/âm, gamma flip, max pain và các mức strike tập trung dòng phòng hộ.">
+
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
+  --pos:#38d39f; --neg:#f0655a; --warn:#e0a83c; --grid:#232c37; --spot:#9fb3c8;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
+  --pos:#0a7d5c; --neg:#c2402f; --warn:#8a6412; --grid:#e3e9ef; --spot:#4a5b6d;
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--text); min-height:100%;
+     font:14px/1.55 -apple-system,"Segoe UI",Roboto,sans-serif}
+.page{max-width:1020px; margin:0 auto; padding:16px 16px 44px}
+
+.head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:4px}
+h1{font-size:19px; margin:0; font-weight:700; letter-spacing:-.2px}
+.group{display:flex; gap:2px; background:var(--panel-2); padding:2px; border-radius:8px}
+.group button{appearance:none; border:0; background:transparent; color:var(--muted);
+  font:inherit; font-size:12.5px; padding:4px 12px; border-radius:6px; cursor:pointer}
+.group button[aria-pressed="true"]{background:var(--accent); color:#04150f; font-weight:600}
+:root[data-theme="light"] .group button[aria-pressed="true"]{color:#fff}
+.sub{color:var(--muted); font-size:12.5px; margin:0 0 16px; max-width:76ch}
+
+.verdict{background:var(--panel); border:1px solid var(--line); border-left-width:3px;
+  border-radius:0 9px 9px 0; padding:11px 15px; margin-bottom:18px}
+.verdict.pos{border-left-color:var(--pos)}
+.verdict.neg{border-left-color:var(--neg)}
+.verdict > b{display:block; font-size:14.5px; margin-bottom:3px}
+.verdict p b{color:var(--text); font-weight:600}
+.verdict p{margin:0; font-size:13px; color:var(--muted); max-width:80ch}
+
+.tiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(152px,1fr)); gap:8px; margin-bottom:22px}
+.tile{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:10px 13px}
+.tile .k{font-size:11px; color:var(--muted); display:block; margin-bottom:3px}
+.tile .v{font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.3px}
+.tile .n{font-size:11px; color:var(--muted); display:block; margin-top:2px}
+.pos{color:var(--pos)} .neg{color:var(--neg)} .dim{color:var(--muted)} .warn{color:var(--warn)}
+
+section{margin-bottom:26px}
+h2{font-size:14px; margin:0 0 3px; font-weight:600}
+.cap{font-size:12px; color:var(--muted); margin:0 0 10px; max-width:78ch}
+.card{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:12px 14px 8px}
+.legend{display:flex; gap:14px; font-size:11.5px; color:var(--muted); margin:0 0 6px; flex-wrap:wrap}
+.legend span{display:inline-flex; align-items:center; gap:5px}
+.swatch{width:9px; height:9px; border-radius:2px; display:inline-block}
+
+svg{display:block; width:100%; height:auto; overflow:visible}
+.axis{font-size:10px; fill:var(--muted)}
+.gridline{stroke:var(--grid); stroke-width:1}
+.zero{stroke:var(--muted); stroke-width:1; opacity:.5}
+.marker{stroke-width:1.5; stroke-dasharray:4 3}
+
+table{border-collapse:collapse; width:100%; font-size:13px}
+th,td{padding:6px 11px; border-bottom:1px solid var(--line); white-space:nowrap}
+th{text-align:right; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+   color:var(--muted); font-weight:600; background:var(--panel-2)}
+th:first-child,td:first-child{text-align:left}
+td{text-align:right; font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+
+.tip{position:fixed; pointer-events:none; z-index:9; background:var(--panel-2);
+  border:1px solid var(--line); border-radius:7px; padding:6px 9px; font-size:12px;
+  box-shadow:0 4px 14px rgba(0,0,0,.28); white-space:nowrap; opacity:0; transition:opacity .1s}
+.tip .d{color:var(--muted); font-size:11px; display:block; margin-bottom:2px}
+
+.msg{padding:30px 16px; text-align:center; color:var(--muted); font-size:13px}
+.msg code{background:var(--panel-2); padding:2px 6px; border-radius:4px}
+footer{border-top:1px solid var(--line); padding-top:12px; font-size:11px; color:var(--muted);
+       display:flex; gap:14px; flex-wrap:wrap}
+footer b{color:var(--text); font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="head">
+  <h1>Gamma Exposure</h1>
+  <div class="group" id="syms" role="group" aria-label="Tài sản"></div>
+</div>
+<p class="sub">Nhà tạo lập bán quyền chọn phải phòng hộ lượng gamma họ nhận, và dòng phòng hộ đó là cơ học:
+khi gamma dương họ mua khi giá giảm và bán khi giá tăng, làm dịu biến động; khi gamma âm họ làm ngược lại,
+khuếch đại biến động. Vị trí và dấu của gamma vì thế nói lên điều mà lịch sử giá không nói được.</p>
+
+<div id="verdict"></div>
+<div class="tiles" id="tiles"></div>
+<div id="body"></div>
+
+<footer>
+  <span>Nguồn: <b>Deribit</b> — toàn bộ chuỗi quyền chọn đang mở</span>
+  <span id="stamp"></span>
+  <span>Số liệu tham khảo, không phải khuyến nghị đầu tư.</span>
+</footer>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+"use strict";
+
+const SYMBOLS = {btc:"Bitcoin", eth:"Ethereum"};
+const el = id => document.getElementById(id);
+let current = (new URLSearchParams(location.search).get("sym") || "btc").toLowerCase();
+if(!SYMBOLS[current]) current = "btc";
+
+const fmt = (v, d = 0) => v == null || !isFinite(v)
+  ? "—" : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+
+function usd(v){
+  if(v == null || !isFinite(v)) return "—";
+  const sign = v < 0 ? "−" : "";
+  const a = Math.abs(v);
+  if(a >= 1e9) return `${sign}${(a/1e9).toFixed(2)}B`;
+  if(a >= 1e6) return `${sign}${(a/1e6).toFixed(1)}M`;
+  if(a >= 1e3) return `${sign}${(a/1e3).toFixed(1)}K`;
+  return `${sign}${a.toFixed(0)}`;
+}
+
+Object.entries(SYMBOLS).forEach(([key, name]) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = name;
+  b.setAttribute("aria-pressed", String(key === current));
+  b.addEventListener("click", () => {
+    current = key;
+    [...el("syms").children].forEach((c, i) =>
+      c.setAttribute("aria-pressed", String(Object.keys(SYMBOLS)[i] === key)));
+    history.replaceState(null, "", "?sym=" + key);
+    load();
+  });
+  el("syms").appendChild(b);
+});
+
+function load(){
+  el("body").innerHTML = '<div class="msg">Đang tải…</div>';
+  el("tiles").innerHTML = "";
+  el("verdict").innerHTML = "";
+  fetch(`../../data/gex_${current}.json`, {cache:"no-cache"})
+    .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(render)
+    .catch(() => {
+      el("body").innerHTML =
+        `<div class="msg">Chưa có <code>data/gex_${current}.json</code>. Chạy ` +
+        `<code>python -m pipeline.sources.deribit_gex --symbol ${current.toUpperCase()}</code>.</div>`;
+    });
+}
+
+function render(d){
+  const spot = d.spot, flip = d.gamma_flip, positive = d.net_gex >= 0;
+
+  /* The verdict states the rule, not just the label — a reader who disagrees
+     with the reasoning can see exactly what produced it. */
+  const aboveFlip = flip != null && spot > flip;
+  el("verdict").innerHTML =
+    `<div class="verdict ${positive ? "pos" : "neg"}">` +
+    `<b class="${positive ? "pos" : "neg"}">` +
+    `${positive ? "Gamma dương — biến động có xu hướng bị nén" :
+                  "Gamma âm — biến động có xu hướng bị khuếch đại"}</b>` +
+    `<p>Tổng gamma của nhà tạo lập đang ${positive ? "dương" : "âm"} ` +
+    `(${usd(d.net_gex)} cho mỗi 1% biến động giá). ` +
+    (flip != null
+      ? `Giá hiện tại ${fmt(spot)} đang <b>${aboveFlip ? "nằm trên" : "nằm dưới"}</b> mức gamma flip ` +
+        `${fmt(flip)} — ${aboveFlip
+          ? "vùng phòng hộ ngược chiều, thường đi kèm biên độ hẹp hơn."
+          : "vùng phòng hộ thuận chiều, thường đi kèm biên độ rộng hơn."}`
+      : "Không tìm thấy mức gamma flip trong dải giá hợp lý.") +
+    `</p></div>`;
+
+  const tiles = [
+    {k:"Giá hiện tại", v:fmt(spot), n:"Deribit index"},
+    {k:"Net GEX", v:usd(d.net_gex), cls:positive ? "pos" : "neg", n:"mỗi 1% biến động"},
+    {k:"Gamma flip", v:flip != null ? fmt(flip) : "—",
+     n:flip != null ? `${((flip/spot - 1) * 100).toFixed(1)}% so với giá` : ""},
+    {k:"Max pain", v:fmt(d.max_pain), n:"kỳ hạn gần nhất"},
+    {k:"GEX 0DTE", v:usd(d.net_gex_0dte), cls:d.net_gex_0dte >= 0 ? "pos" : "neg",
+     n:"đáo hạn trong 24h"},
+    {k:"Put/Call OI", v:d.pc_ratio != null ? d.pc_ratio.toFixed(2) : "—",
+     n:"tỉ lệ open interest"},
+    {k:"IV at-the-money", v:d.atm_iv != null ? (d.atm_iv * 100).toFixed(1) + "%" : "—",
+     n:"biến động ngụ ý"},
+    {k:"Hợp đồng", v:fmt(d.contracts), n:"đang mở"},
+  ];
+  el("tiles").innerHTML = tiles.map(t =>
+    `<div class="tile"><span class="k">${t.k}</span>` +
+    `<span class="v ${t.cls || ""}">${t.v}</span>` +
+    `<span class="n">${t.n || ""}</span></div>`).join("");
+
+  el("stamp").innerHTML = d.updated_at
+    ? `Cập nhật: <b>${new Date(d.updated_at).toLocaleString("vi-VN")}</b>`
+    : "";
+
+  el("body").innerHTML =
+    `<section><h2>Phân bố gamma theo mức giá</h2>` +
+    `<p class="cap">Mỗi cột là tổng gamma tại một strike. Cột xanh là nơi nhà tạo lập ` +
+    `phòng hộ ngược chiều thị trường (nén biến động), cột đỏ là nơi họ phòng hộ thuận chiều ` +
+    `(khuếch đại). Đường đứt là giá hiện tại và mức gamma flip.</p>` +
+    `<div class="card"><div class="legend">` +
+    `<span><i class="swatch" style="background:var(--pos)"></i>Gamma dương</span>` +
+    `<span><i class="swatch" style="background:var(--neg)"></i>Gamma âm</span>` +
+    `<span><i class="swatch" style="background:var(--spot);width:2px;height:11px;border-radius:0"></i>Giá / flip</span>` +
+    `</div><div id="profile"></div></div></section>` +
+    `<section><h2>Các mức tập trung gamma nhiều nhất</h2>` +
+    `<p class="cap">Những strike này hút dòng phòng hộ mạnh nhất, nên thường hoạt động ` +
+    `như mức cản hoặc mức hút giá cho tới khi hết hạn.</p>` +
+    `<div class="card" id="levels"></div></section>`;
+
+  drawProfile(el("profile"), d);
+  drawLevels(el("levels"), d);
+}
+
+function drawProfile(host, d){
+  const rows = (d.profile || []).filter(p => p.gex !== 0);
+  if(!rows.length){ host.innerHTML = '<div class="msg">Không có dữ liệu.</div>'; return; }
+
+  const W = 940, H = 250, ML = 52, MR = 16, MT = 10, MB = 26;
+  const iw = W - ML - MR, ih = H - MT - MB;
+
+  const strikes = rows.map(r => r.strike);
+  const lo = Math.min(...strikes, d.spot), hi = Math.max(...strikes, d.spot);
+  const maxAbs = Math.max(...rows.map(r => Math.abs(r.gex)), 1);
+
+  const x = k => ML + (k - lo) / (hi - lo || 1) * iw;
+  const y = v => MT + ih / 2 - (v / maxAbs) * (ih / 2);
+  const barW = Math.max(2, iw / rows.length - 1.5);
+
+  const svg = [`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Phân bố gamma theo strike">`];
+
+  [maxAbs, maxAbs/2, 0, -maxAbs/2, -maxAbs].forEach(t => {
+    const yy = y(t);
+    svg.push(`<line class="${t === 0 ? "zero" : "gridline"}" x1="${ML}" x2="${W-MR}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}"/>`);
+    svg.push(`<text class="axis" x="${ML-6}" y="${(yy+3).toFixed(1)}" text-anchor="end">${
+      t === 0 ? "0" : usd(t)}</text>`);
+  });
+
+  rows.forEach(r => {
+    const yy = y(r.gex), zero = y(0);
+    svg.push(
+      `<rect x="${(x(r.strike) - barW/2).toFixed(2)}" y="${Math.min(yy, zero).toFixed(2)}" ` +
+      `width="${barW.toFixed(2)}" height="${Math.max(1, Math.abs(zero - yy)).toFixed(2)}" ` +
+      `rx="${Math.min(2, barW/2).toFixed(1)}" fill="${r.gex >= 0 ? "var(--pos)" : "var(--neg)"}"/>`
+    );
+  });
+
+  [[d.spot, "Giá"], [d.gamma_flip, "Flip"]].forEach(([value, label], i) => {
+    if(value == null) return;
+    const xx = x(value);
+    svg.push(`<line class="marker" x1="${xx.toFixed(1)}" x2="${xx.toFixed(1)}" y1="${MT}" y2="${MT+ih}" stroke="var(--spot)"/>`);
+    svg.push(`<text class="axis" x="${xx.toFixed(1)}" y="${MT + (i ? 24 : 10)}" ` +
+             `text-anchor="middle" fill="var(--text)">${label} ${fmt(value)}</text>`);
+  });
+
+  [lo, (lo+hi)/2, hi].forEach((k, i) => {
+    svg.push(`<text class="axis" x="${x(k).toFixed(1)}" y="${H-8}" ` +
+             `text-anchor="${i === 0 ? "start" : i === 2 ? "end" : "middle"}">${fmt(k)}</text>`);
+  });
+
+  svg.push("</svg>");
+  host.innerHTML = svg.join("");
+
+  const svgEl = host.querySelector("svg"), tip = el("tip");
+  svgEl.addEventListener("mousemove", e => {
+    const box = svgEl.getBoundingClientRect();
+    const px = (e.clientX - box.left) / box.width * W;
+    const strike = lo + (px - ML) / iw * (hi - lo);
+    let best = null, bestD = Infinity;
+    rows.forEach(r => { const dd = Math.abs(r.strike - strike); if(dd < bestD){ bestD = dd; best = r; } });
+    if(!best || bestD > (hi - lo) / rows.length * 2){ tip.style.opacity = 0; return; }
+    tip.innerHTML = `<span class="d">Strike ${fmt(best.strike)}</span>` +
+      `<b class="${best.gex >= 0 ? "pos" : "neg"}">${usd(best.gex)}</b>`;
+    tip.style.opacity = 1;
+    tip.style.left = Math.min(e.clientX + 12, innerWidth - 180) + "px";
+    tip.style.top = (e.clientY - 42) + "px";
+  });
+  svgEl.addEventListener("mouseleave", () => { tip.style.opacity = 0; });
+}
+
+function drawLevels(host, d){
+  const rows = d.levels || [];
+  if(!rows.length){ host.innerHTML = '<div class="msg">Không có dữ liệu.</div>'; return; }
+  host.innerHTML =
+    "<table><thead><tr>" +
+    ["Strike","Vị trí","Cách giá","Gamma","OI call","OI put"].map(t => `<th>${t}</th>`).join("") +
+    "</tr></thead><tbody>" +
+    rows.map(r =>
+      "<tr>" +
+      `<td style="text-align:left"><b>${fmt(r.strike)}</b></td>` +
+      `<td style="text-align:left" class="dim">${r.rel === "above" ? "trên giá" : "dưới giá"}</td>` +
+      `<td class="${r.dist >= 0 ? "dim" : "dim"}">${r.dist >= 0 ? "+" : ""}${r.dist.toFixed(2)}%</td>` +
+      `<td class="${r.gex >= 0 ? "pos" : "neg"}">${usd(r.gex)}</td>` +
+      `<td class="dim">${fmt(r.call_oi)}</td>` +
+      `<td class="dim">${fmt(r.put_oi)}</td>` +
+      "</tr>").join("") +
+    "</tbody></table>";
+}
+
+load();
+</script>
+</body>
+</html>

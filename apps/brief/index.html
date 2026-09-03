@@ -299,6 +299,26 @@ async function etfFlows(){
   });
 }
 
+/* ---------- options positioning ---------- */
+async function gamma(){
+  const d = await fetch("../../data/gex_btc.json", {cache:"no-cache"})
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
+  if(!d || d.net_gex == null) return;
+
+  const positive = d.net_gex >= 0;
+  const aboveFlip = d.gamma_flip != null && d.spot > d.gamma_flip;
+  el("tape").appendChild(tile(
+    "Gamma BTC",
+    `<span class="${positive ? "up" : "down"}">${positive ? "Dương" : "Âm"}</span>`,
+    `<span class="dim">${d.gamma_flip != null
+      ? `flip ${Math.round(d.gamma_flip).toLocaleString("en-US")}` : "—"}</span>`,
+    positive
+      ? `Phòng hộ của nhà tạo lập nén biến động. Giá đang ${aboveFlip ? "trên" : "dưới"} mức flip.`
+      : `Phòng hộ của nhà tạo lập khuếch đại biến động. Giá đang ${aboveFlip ? "trên" : "dưới"} mức flip.`
+  ));
+}
+
 el("stamp").textContent =
   new Date().toLocaleString("vi-VN", {dateStyle:"full", timeStyle:"short"});
 
@@ -307,6 +327,7 @@ el("stamp").textContent =
 (async () => {
   await equities();      // VN breadth and foreign flow lead — this is a VN site
   await cryptoTiles();
+  await gamma();
   await etfFlows();
   await realEstate();
 })();
