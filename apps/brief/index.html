@@ -277,12 +277,39 @@ async function realEstate(){
   ]);
 }
 
+/* ---------- institutional flows ---------- */
+async function etfFlows(){
+  const data = await fetch("../../data/flows.json", {cache:"no-cache"})
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
+  if(!data || !data.stats) return;
+
+  // The 20-session sum, not the latest day: one day of ETF flow is noise, and
+  // a tile that flips sign daily teaches the reader to ignore it.
+  Object.entries({btc:"Bitcoin ETF", eth:"Ethereum ETF"}).forEach(([key, label]) => {
+    const s = data.stats[key];
+    if(!s || s.sum_20d == null) return;
+    const b = s.sum_20d / 1000;
+    el("tape").appendChild(tile(
+      label,
+      `${b >= 0 ? "+" : "−"}${Math.abs(b).toFixed(2)}B`,
+      `<span class="dim">20 phiên, USD</span>`,
+      "Tiền ròng vào các quỹ ETF giao ngay tại Mỹ trong 20 phiên gần nhất"
+    ));
+  });
+}
+
 el("stamp").textContent =
   new Date().toLocaleString("vi-VN", {dateStyle:"full", timeStyle:"short"});
 
-cryptoTiles();
-equities();
-realEstate();
+// Sequential on purpose: each of these appends to the same tape, so running
+// them concurrently would order the tiles by whichever fetch returned first.
+(async () => {
+  await equities();      // VN breadth and foreign flow lead — this is a VN site
+  await cryptoTiles();
+  await etfFlows();
+  await realEstate();
+})();
 </script>
 </body>
 </html>

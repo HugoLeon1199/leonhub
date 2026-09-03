@@ -1,0 +1,63 @@
+name: Cross-market flows
+
+# ETF creations and redemptions settle once a day, so a daily pull is enough.
+# Runs after the US close, which is early morning VN time.
+
+on:
+  schedule:
+    - cron: "0 2 * * 2-6"   # 09:00 ICT Tue-Sat, after the previous US session
+  workflow_dispatch:
+
+concurrency:
+  group: flows
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore warehouse
+        uses: actions/cache/restore@v4
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+          restore-keys: warehouse-
+
+      - name: Collect ETF flows
+        run: python -m pipeline.sources.etf_flows
+
+      - name: Build flows.json
+        run: python -m pipeline.transform.flows_build
+
+      - name: Save warehouse
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+
+      - name: Commit published data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No data change."
+          else
+            git commit -m "data: ETF flows refresh $(date -u +%Y-%m-%d)"
+            git push
+          fi

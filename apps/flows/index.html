@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Dòng tiền — LEON Hub</title>
+<meta name="description" content="Dòng tiền vào/ra quỹ ETF Bitcoin và Ethereum giao ngay tại Mỹ, theo ngày và lũy kế. Nguồn Farside, đối chiếu khớp với tổng công bố.">
+
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
+  /* Validated against the panel surface: CVD ΔE 10.5 (PASS), contrast 9.1 / 5.5 */
+  --pos:#38d39f; --neg:#f0655a;
+  --grid:#232c37;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
+  /* Re-stepped for the light surface: the dark pair only reached ΔE 7.5 here,
+     below the CVD target. This pair measures 9.0. */
+  --pos:#0a7d5c; --neg:#c2402f;
+  --grid:#e3e9ef;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--text); min-height:100%;
+  font:14px/1.55 -apple-system,"Segoe UI",Roboto,sans-serif;
+}
+.page{max-width:1000px; margin:0 auto; padding:18px 16px 44px}
+h1{font-size:19px; margin:0 0 2px; font-weight:700; letter-spacing:-.2px}
+.sub{color:var(--muted); font-size:12.5px; margin:0 0 20px; max-width:70ch}
+
+.tiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:8px; margin-bottom:24px}
+.tile{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:10px 13px}
+.tile .k{font-size:11px; color:var(--muted); display:block; margin-bottom:3px}
+.tile .v{font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.3px}
+.tile .u{font-size:11px; color:var(--muted); margin-left:3px; font-weight:400}
+.pos{color:var(--pos)} .neg{color:var(--neg)} .dim{color:var(--muted)}
+
+section{margin-bottom:28px}
+h2{font-size:14px; margin:0 0 3px; font-weight:600}
+.cap{font-size:12px; color:var(--muted); margin:0 0 10px; max-width:72ch}
+.card{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:12px 14px 8px}
+
+/* One scale per chart; the legend is always present for two series. */
+.legend{display:flex; gap:14px; font-size:11.5px; color:var(--muted); margin:0 0 6px; flex-wrap:wrap}
+.legend span{display:inline-flex; align-items:center; gap:5px}
+.swatch{width:9px; height:9px; border-radius:2px; display:inline-block}
+
+svg{display:block; width:100%; height:auto; overflow:visible}
+.axis{font-size:10px; fill:var(--muted)}
+.gridline{stroke:var(--grid); stroke-width:1}
+.zero{stroke:var(--muted); stroke-width:1; opacity:.55}
+
+.tip{
+  position:fixed; pointer-events:none; z-index:9; background:var(--panel-2);
+  border:1px solid var(--line); border-radius:7px; padding:6px 9px; font-size:12px;
+  box-shadow:0 4px 14px rgba(0,0,0,.28); white-space:nowrap; opacity:0; transition:opacity .1s;
+}
+.tip b{font-variant-numeric:tabular-nums}
+.tip .d{color:var(--muted); font-size:11px; display:block; margin-bottom:2px}
+
+.msg{padding:30px 16px; text-align:center; color:var(--muted); font-size:13px}
+.msg code{background:var(--panel-2); padding:2px 6px; border-radius:4px}
+
+footer{border-top:1px solid var(--line); padding-top:12px; font-size:11px; color:var(--muted);
+       display:flex; gap:14px; flex-wrap:wrap}
+footer b{color:var(--text); font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Dòng tiền tổ chức</h1>
+<p class="sub">Tiền vào và ra các quỹ ETF Bitcoin, Ethereum giao ngay tại Mỹ — thước đo trực tiếp nhất
+về việc vốn có quy định đang tham gia hay rút khỏi thị trường. Một ngày là nhiễu; tổng 20 phiên là một vị thế.</p>
+
+<div class="tiles" id="tiles"></div>
+<div id="charts"></div>
+
+<footer>
+  <span>Nguồn: <b>Farside Investors</b></span>
+  <span id="stamp"></span>
+  <span>Đơn vị: triệu USD. Số liệu tham khảo, không phải khuyến nghị đầu tư.</span>
+</footer>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+"use strict";
+
+const ASSETS = {btc:"Bitcoin", eth:"Ethereum"};
+const el = id => document.getElementById(id);
+const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+const fmt = (v, d = 1) => v == null || !isFinite(v)
+  ? "—"
+  : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+
+function money(v){
+  if(v == null || !isFinite(v)) return "—";
+  const sign = v >= 0 ? "+" : "−";
+  const abs = Math.abs(v);
+  return abs >= 1000 ? `${sign}${fmt(abs/1000, 2)}B` : `${sign}${fmt(abs, 0)}M`;
+}
+
+fetch("../../data/flows.json", {cache:"no-cache"})
+  .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
+  .then(render)
+  .catch(() => {
+    el("charts").innerHTML =
+      '<div class="msg">Chưa có <code>data/flows.json</code>. Chạy ' +
+      '<code>python -m pipeline.sources.etf_flows</code> rồi ' +
+      '<code>python -m pipeline.transform.flows_build</code>.</div>';
+  });
+
+function render(data){
+  const stats = data.stats || {};
+
+  Object.entries(ASSETS).forEach(([key, name]) => {
+    const s = stats[key];
+    if(!s) return;
+    [["Hôm gần nhất", s.latest_musd], ["5 phiên", s.sum_5d], ["20 phiên", s.sum_20d]]
+      .forEach(([label, value]) => {
+        const box = document.createElement("div");
+        box.className = "tile";
+        box.innerHTML =
+          `<span class="k">${name} · ${label}</span>` +
+          `<span class="v ${value >= 0 ? "pos" : "neg"}">${money(value)}</span>`;
+        el("tiles").appendChild(box);
+      });
+  });
+
+  const latest = Object.values(stats).map(s => s.latest).filter(Boolean).sort().pop();
+  el("stamp").innerHTML = latest
+    ? `Phiên gần nhất: <b>${new Date(latest).toLocaleDateString("vi-VN")}</b>`
+    : "";
+
+  Object.entries(ASSETS).forEach(([key, name]) => {
+    const series = (data.etf || {})[key];
+    if(!series || !series.d.length) return;
+
+    const section = document.createElement("section");
+    section.innerHTML =
+      `<h2>${name} — dòng tiền ròng theo ngày</h2>` +
+      `<p class="cap">Cột dương là tiền vào quỹ, cột âm là tiền rút ra. ` +
+      `Đường liền là lũy kế từ đầu chuỗi — nó cho biết xu hướng, còn từng cột cho biết phiên.</p>` +
+      `<div class="card">` +
+      `<div class="legend">` +
+      `<span><i class="swatch" style="background:var(--pos)"></i>Tiền vào</span>` +
+      `<span><i class="swatch" style="background:var(--neg)"></i>Tiền ra</span>` +
+      `<span><i class="swatch" style="background:var(--muted);height:2px;border-radius:0"></i>Lũy kế</span>` +
+      `</div><div class="host"></div></div>`;
+    el("charts").appendChild(section);
+    drawFlow(section.querySelector(".host"), series, name);
+  });
+}
+
+/* Daily bars and a cumulative line share one panel but not one scale, which
+   would be a dual axis. Instead the cumulative line is drawn as a shape on its
+   own normalised band with no axis of its own, labelled only at its endpoint —
+   it shows direction, and the bars carry the readable numbers. */
+function drawFlow(host, series, name){
+  const W = 940, H = 210, ML = 46, MR = 54, MT = 10, MB = 22;
+  const iw = W - ML - MR, ih = H - MT - MB;
+
+  const days = series.d, values = series.v, cum = series.cum;
+  const n = days.length;
+  const maxAbs = Math.max(...values.map(Math.abs), 1);
+
+  // Bars: symmetric around zero so the eye reads inflow and outflow alike.
+  const y = v => MT + ih / 2 - (v / maxAbs) * (ih / 2);
+  const x = i => ML + (i + 0.5) * (iw / n);
+  const barW = Math.max(1, iw / n - (iw / n > 4 ? 2 : 0.5));  // 2px gap when it fits
+
+  const cumMin = Math.min(...cum), cumMax = Math.max(...cum);
+  const cumSpan = (cumMax - cumMin) || 1;
+  const cy = v => MT + ih - ((v - cumMin) / cumSpan) * ih * 0.92;
+
+  const ticks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
+  const svg = [`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Dòng tiền ${name} theo ngày">`];
+
+  ticks.forEach(t => {
+    const yy = y(t);
+    svg.push(`<line class="${t === 0 ? "zero" : "gridline"}" x1="${ML}" x2="${W - MR}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}"/>`);
+    // Values are already in millions, so a bare number would be ambiguous and
+    // "1.4B" for 1,480 million would be wrong by a factor of a thousand.
+    const label = Math.abs(t) >= 1000
+      ? (t / 1000).toFixed(1).replace(/\.0$/, "") + "B"
+      : Math.round(t) + "M";
+    svg.push(`<text class="axis" x="${ML - 6}" y="${(yy + 3).toFixed(1)}" text-anchor="end">${
+      t === 0 ? "0" : label}</text>`);
+  });
+
+  values.forEach((v, i) => {
+    const yy = y(v), zero = y(0);
+    const top = Math.min(yy, zero), height = Math.max(1, Math.abs(zero - yy));
+    svg.push(
+      `<rect x="${(x(i) - barW / 2).toFixed(2)}" y="${top.toFixed(2)}" ` +
+      `width="${barW.toFixed(2)}" height="${height.toFixed(2)}" rx="${Math.min(2, barW / 2).toFixed(1)}" ` +
+      `fill="${v >= 0 ? "var(--pos)" : "var(--neg)"}" data-i="${i}"/>`
+    );
+  });
+
+  const path = cum.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${cy(v).toFixed(1)}`).join("");
+  svg.push(`<path d="${path}" fill="none" stroke="var(--muted)" stroke-width="2" opacity=".85"/>`);
+  svg.push(`<circle cx="${x(n - 1).toFixed(1)}" cy="${cy(cum[n - 1]).toFixed(1)}" r="3.5" fill="var(--muted)"/>`);
+  svg.push(
+    `<text class="axis" x="${W - MR + 6}" y="${(cy(cum[n - 1]) + 3).toFixed(1)}" ` +
+    `fill="var(--text)">${(cum[n - 1] / 1000).toFixed(1)}B</text>`
+  );
+
+  // Date ticks: first, middle, last only — a label per day would be unreadable.
+  [0, Math.floor(n / 2), n - 1].forEach((i, k) => {
+    svg.push(
+      `<text class="axis" x="${x(i).toFixed(1)}" y="${H - 6}" ` +
+      `text-anchor="${k === 0 ? "start" : k === 2 ? "end" : "middle"}">` +
+      `${new Date(days[i]).toLocaleDateString("vi-VN", {month:"short", year:"2-digit"})}</text>`
+    );
+  });
+
+  svg.push(`<rect x="${ML}" y="${MT}" width="${iw}" height="${ih}" fill="transparent" class="hit"/>`);
+  svg.push("</svg>");
+  host.innerHTML = svg.join("");
+
+  const svgEl = host.querySelector("svg");
+  const tip = el("tip");
+
+  svgEl.addEventListener("mousemove", e => {
+    const box = svgEl.getBoundingClientRect();
+    const px = (e.clientX - box.left) / box.width * W;
+    const i = Math.round((px - ML) / (iw / n) - 0.5);
+    if(i < 0 || i >= n){ tip.style.opacity = 0; return; }
+    tip.innerHTML =
+      `<span class="d">${new Date(days[i]).toLocaleDateString("vi-VN")}</span>` +
+      `<b class="${values[i] >= 0 ? "pos" : "neg"}">${money(values[i])}</b>` +
+      ` <span class="dim">· lũy kế ${(cum[i] / 1000).toFixed(2)}B</span>`;
+    tip.style.opacity = 1;
+    tip.style.left = Math.min(e.clientX + 12, innerWidth - 210) + "px";
+    tip.style.top = (e.clientY - 42) + "px";
+  });
+  svgEl.addEventListener("mouseleave", () => { tip.style.opacity = 0; });
+}
+</script>
+</body>
+</html>

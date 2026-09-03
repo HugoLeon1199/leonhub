@@ -14,6 +14,7 @@ from __future__ import annotations
 import gzip
 import logging
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,9 @@ except Exception:
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WAREHOUSE_DIR = REPO_ROOT / "warehouse"
 DB_PATH = WAREHOUSE_DIR / "leonhub.duckdb"
+# How long a collector waits for the writer slot before giving up. Long enough
+# to outlast another collector's final flush, short enough to fail a stuck job.
+WRITE_LOCK_WAIT = 300.0
 
 SCHEMA = """
 -- Real-estate listings, one row per observation of a listing.
@@ -135,7 +139,22 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     build behind a collector.
     """
     WAREHOUSE_DIR.mkdir(parents=True, exist_ok=True)
-    con = duckdb.connect(str(DB_PATH), read_only=read_only)
+
+    # A collector that has spent an hour fetching must not lose that work
+    # because another job holds the single writer slot for a few seconds. Wait
+    # for it rather than failing: build steps use connect_reader(), which fails
+    # fast instead, because a stale build is worse than a late one.
+    deadline = time.monotonic() + (0 if read_only else WRITE_LOCK_WAIT)
+    while True:
+        try:
+            con = duckdb.connect(str(DB_PATH), read_only=read_only)
+            break
+        except duckdb.IOException:
+            if time.monotonic() >= deadline:
+                raise
+            log.info("warehouse is locked by another writer; waiting")
+            time.sleep(5)
+
     if not read_only:
         con.execute(SCHEMA)
     return con
