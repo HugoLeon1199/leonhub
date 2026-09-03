@@ -34,6 +34,8 @@ apps/           One self-contained page per tab
   chart/        Crypto candles + perp context
   stocks/       VN equity screener
   bds/          Real-estate price table
+  signals/      Rules-based signals with a published track record
+  gex/          Options gamma exposure
   flows/        ETF and institutional flows
 pipeline/
   core/         http.py, warehouse.py, validate.py
@@ -85,19 +87,24 @@ will refuse rather than publish from a partial read.
 | Perp context | Binance futures, Coinbase | free, no key | Funding, open interest, long/short, Coinbase premium |
 | VN prices + foreign flow | Vietcap via `vnstock` | free | Full market board in ~12s |
 | VN fundamentals | Vietcap `iq-insight-service` | free | ~30 ratios per quarter, 2018→present, ~130 req/min |
+| VN book depth + foreign room | SSI iBoard | free | Three levels of depth and remaining foreign ownership room; cross-checks Vietcap to 0.0007% on market-wide foreign net |
+| VN price history | VPS (`histdatafeed`) | free | Daily OHLC, TradingView UDF shape. Quotes in thousands of VND |
 | Real estate | Chotot public gateway | free | Asking prices with GPS, ward, and a dedupe key |
 | ETF flows | Farside | free | Daily spot BTC/ETH creations and redemptions by issuer |
+| Options | Deribit | free | Full chain in one request; gamma surface validated against a live third-party GEX feed |
 
 ## Current coverage
 
 | Artifact | Contents |
 |---|---|
-| `stocks.json` | 1,751 tickers; 1,719 with fundamentals, 1,735 with an ICB industry |
+| `stocks.json` | 1,751 tickers; 1,719 with fundamentals, 1,735 with an ICB industry, 870 with momentum, 1,311 with foreign room |
 | `bds.json` | 102 districts across 48 provinces, from 47,343 listings |
 | `flows.json` | 679 days of BTC and 541 of ETH ETF flow, daily and cumulative |
+| `gex_btc.json`, `gex_eth.json` | Gamma surface, flip and max pain from the live option chain |
+| `signals.json` | 214 closed trades with their full result history |
 
-The warehouse holds 1.44M quarterly fundamental observations spanning
-2018-Q1 to 2026-Q2.
+The warehouse holds 1.44M quarterly fundamental observations (2018-Q1 to
+2026-Q2) and 264 trading days of daily prices across 879 tickers.
 
 ## Scheduling
 
