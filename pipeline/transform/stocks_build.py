@@ -158,6 +158,63 @@ FROM ranked
 GROUP BY symbol
 """
 
+# Price-derived measures that only exist once the warehouse holds history.
+# Momentum and the 52-week position are what let the screener rank on trend
+# rather than on a single day's close, and the z-score is how "unusual move"
+# gets defined without picking an arbitrary percentage: 3% is a shrug for a
+# small cap and an event for a blue chip.
+PRICE_HISTORY_SQL = """
+WITH daily AS (
+    SELECT DISTINCT ON (symbol, as_of)
+        symbol, as_of, price, volume
+    FROM eq_quote
+    WHERE price IS NOT NULL AND price > 0
+    ORDER BY symbol, as_of, fetched_at DESC
+),
+ranked AS (
+    SELECT symbol, as_of, price, volume,
+           row_number() OVER (PARTITION BY symbol ORDER BY as_of DESC) AS back
+    FROM daily
+),
+returns AS (
+    SELECT symbol,
+           price / lag(price) OVER (PARTITION BY symbol ORDER BY as_of) - 1 AS ret,
+           as_of - lag(as_of) OVER (PARTITION BY symbol ORDER BY as_of) AS gap_days,
+           row_number() OVER (PARTITION BY symbol ORDER BY as_of DESC) AS back
+    FROM daily
+),
+vol AS (
+    -- Returns spanning a trading halt are not one-day moves. IDP resumed after
+    -- nearly two months at -38.9%, which a naive z-score reported as an
+    -- 8.8-sigma day. The threshold has to clear VN's public holidays, though:
+    -- the 2 September National Day put a six-calendar-day gap between the last
+    -- two sessions for 765 tickers, so anything tighter than ten days would
+    -- discard the entire market's most recent move.
+    SELECT symbol,
+           stddev_samp(ret) AS ret_sd,
+           max(ret) FILTER (WHERE back = 1) AS last_ret
+    FROM returns
+    WHERE ret IS NOT NULL AND gap_days <= 10
+    GROUP BY symbol
+)
+SELECT
+    r.symbol,
+    count(*)                                    AS days,
+    max(r.price) FILTER (WHERE r.back = 1)      AS last_price,
+    max(r.price) FILTER (WHERE r.back = 22)     AS price_1m,
+    max(r.price) FILTER (WHERE r.back = 64)     AS price_3m,
+    max(r.price) FILTER (WHERE r.back = 127)    AS price_6m,
+    max(r.price)                                AS high_52w,
+    min(r.price)                                AS low_52w,
+    median(r.volume)                            AS median_volume,
+    any_value(v.ret_sd)                         AS ret_sd,
+    any_value(v.last_ret)                       AS last_ret
+FROM ranked r
+LEFT JOIN vol v USING (symbol)
+GROUP BY r.symbol
+HAVING count(*) >= 30
+"""
+
 # Latest value per metric, plus the percentile of that value within the
 # ticker's own history of the same metric.
 FUNDAMENTAL_SQL = """
@@ -221,6 +278,7 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         flows = {r["symbol"]: r for r in _rows(con, FOREIGN_FLOW_SQL)}
         rooms = {r["symbol"]: r["value"] for r in _rows(con, FOREIGN_ROOM_SQL)}
         shares = {r["symbol"]: r["listed_share"] for r in _rows(con, SHARE_COUNT_SQL)}
+        history = {r["symbol"]: r for r in _rows(con, PRICE_HISTORY_SQL)}
         trading_days = con.execute(
             "SELECT count(DISTINCT as_of) FROM eq_quote"
         ).fetchone()[0]
@@ -270,6 +328,28 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         if room is not None and share_count:
             row["fr"] = round(max(room, 0) / share_count * 100, 1)
 
+        hist = history.get(symbol)
+        if hist and hist.get("last_price"):
+            last = hist["last_price"]
+            for src, dst in (("price_1m", "m1"), ("price_3m", "m3"), ("price_6m", "m6")):
+                past = hist.get(src)
+                if past:
+                    row[dst] = round((last / past - 1) * 100, 1)
+
+            high, low = hist.get("high_52w"), hist.get("low_52w")
+            if high and low and high > low:
+                # Position in the 52-week range: 100 means at the high, 0 at the
+                # low. More useful than the two prices, which need mental
+                # arithmetic before they say anything.
+                row["pos52"] = round((last - low) / (high - low) * 100)
+
+            # Today's move in standard deviations of this ticker's own daily
+            # returns. A 3% day is noise for a small cap and an event for VCB;
+            # the z-score is what makes those comparable.
+            sd, ret = hist.get("ret_sd"), hist.get("last_ret")
+            if sd and ret is not None and sd > 0:
+                row["z"] = round(ret / sd, 1)
+
         flow = flows.get(symbol)
         if flow:
             # A 5- or 20-day window is only meaningful once the warehouse holds
@@ -310,6 +390,7 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         "with_fundamentals": sum(1 for r in out if "pe" in r or "pb" in r),
         "with_foreign_flow": sum(1 for r in out if "f1" in r),
         "with_industry": sum(1 for r in out if r.get("i")),
+        "with_momentum": sum(1 for r in out if "m3" in r),
         "trading_days_held": trading_days,
     }
 

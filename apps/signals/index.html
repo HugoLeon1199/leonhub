@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Tín hiệu — LEON Hub</title>
+<meta name="description" content="Tín hiệu giao dịch theo quy tắc công khai, kèm toàn bộ lịch sử lệnh đã đóng: tỉ lệ thắng, R trung bình và đường vốn tính từ dữ liệu point-in-time.">
+
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
+  --pos:#38d39f; --neg:#f0655a; --warn:#e0a83c; --grid:#232c37;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
+  --pos:#0a7d5c; --neg:#c2402f; --warn:#8a6412; --grid:#e3e9ef;
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--text); min-height:100%;
+     font:14px/1.55 -apple-system,"Segoe UI",Roboto,sans-serif}
+.page{max-width:1020px; margin:0 auto; padding:18px 16px 44px}
+h1{font-size:19px; margin:0 0 2px; font-weight:700; letter-spacing:-.2px}
+.sub{color:var(--muted); font-size:12.5px; margin:0 0 18px; max-width:78ch}
+
+.rules{background:var(--panel); border:1px solid var(--line); border-radius:9px;
+       padding:12px 15px; margin-bottom:20px}
+.rules h2{font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+          color:var(--muted); margin:0 0 8px; font-weight:600}
+.rules dl{display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin:0; font-size:13px}
+.rules dt{color:var(--muted)}
+.rules dd{margin:0}
+
+.tiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:22px}
+.tile{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:10px 13px}
+.tile .k{font-size:11px; color:var(--muted); display:block; margin-bottom:3px}
+.tile .v{font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.3px}
+.tile .n{font-size:11px; color:var(--muted); display:block; margin-top:2px}
+.pos{color:var(--pos)} .neg{color:var(--neg)} .dim{color:var(--muted)} .warn{color:var(--warn)}
+
+section{margin-bottom:26px}
+h2.sec{font-size:14px; margin:0 0 3px; font-weight:600}
+.cap{font-size:12px; color:var(--muted); margin:0 0 10px; max-width:78ch}
+.card{background:var(--panel); border:1px solid var(--line); border-radius:9px; overflow:hidden}
+.card.pad{padding:12px 14px 8px}
+
+svg{display:block; width:100%; height:auto; overflow:visible}
+.axis{font-size:10px; fill:var(--muted)}
+.gridline{stroke:var(--grid); stroke-width:1}
+.zero{stroke:var(--muted); stroke-width:1; opacity:.5}
+
+table{border-collapse:collapse; width:100%; font-size:13px}
+th,td{padding:6px 11px; border-bottom:1px solid var(--line); white-space:nowrap}
+th{text-align:right; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+   color:var(--muted); font-weight:600; background:var(--panel-2); position:sticky; top:0}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+td{text-align:right; font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+.scroll{max-height:420px; overflow:auto}
+.sym{font-weight:700}
+.name{color:var(--muted); font-size:12px; max-width:210px; overflow:hidden;
+      text-overflow:ellipsis; display:inline-block; vertical-align:bottom}
+
+.warnbox{border:1px solid var(--line); border-left:3px solid var(--warn);
+  background:var(--panel); border-radius:0 9px 9px 0; padding:11px 15px; margin-bottom:20px}
+.warnbox p{margin:0; font-size:12.5px; color:var(--muted); max-width:80ch}
+.warnbox b{color:var(--text)}
+
+.msg{padding:30px 16px; text-align:center; color:var(--muted); font-size:13px}
+.msg code{background:var(--panel-2); padding:2px 6px; border-radius:4px}
+footer{border-top:1px solid var(--line); padding-top:12px; font-size:11px; color:var(--muted);
+       display:flex; gap:14px; flex-wrap:wrap}
+footer b{color:var(--text); font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Tín hiệu theo quy tắc</h1>
+<p class="sub">Mỗi tín hiệu có điểm vào, điểm dừng lỗ, mục tiêu và kết quả tính bằng R —
+tức là lãi/lỗ chia cho rủi ro ban đầu. Toàn bộ lệnh đã đóng đều được công bố, không chỉ lệnh đang mở,
+nên tỉ lệ thắng trên trang này đến từ chính bộ quy tắc sinh ra chúng.</p>
+
+<div class="warnbox">
+  <p><b>Đây không phải khuyến nghị đầu tư.</b> Bộ quy tắc dưới đây là ví dụ minh hoạ cho cách
+  công bố một hệ thống có kiểm chứng: tham số được chọn theo thông lệ, không tối ưu hoá.
+  Kết quả quá khứ tính trên dữ liệu point-in-time — mỗi lệnh chỉ dùng giá đã biết tại thời điểm đó —
+  nhưng vẫn không đảm bảo điều gì về tương lai, và chưa trừ phí giao dịch hay trượt giá.</p>
+</div>
+
+<div class="rules" id="rules"></div>
+<div class="tiles" id="tiles"></div>
+<div id="body"><div class="msg">Đang tải…</div></div>
+
+<footer>
+  <span>Tính từ kho dữ liệu point-in-time của LEON</span>
+  <span id="stamp"></span>
+  <span>Chưa tính phí và trượt giá.</span>
+</footer>
+</div>
+
+<script>
+"use strict";
+
+const el = id => document.getElementById(id);
+const fmt = (v, d = 0) => v == null || !isFinite(v)
+  ? "—" : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+
+const EXIT_LABEL = {stop:"Dừng lỗ", target:"Chốt lời", time:"Hết hạn"};
+
+fetch("../../data/signals.json", {cache:"no-cache"})
+  .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
+  .then(render)
+  .catch(() => {
+    el("body").innerHTML =
+      '<div class="msg">Chưa có <code>data/signals.json</code>. Chạy ' +
+      '<code>python -m pipeline.transform.signals_build</code> ' +
+      '(cần lịch sử giá từ <code>vci_history</code>).</div>';
+  });
+
+function render(d){
+  const s = d.stats || {};
+
+  el("rules").innerHTML =
+    "<h2>Quy tắc</h2><dl>" +
+    Object.entries({
+      "Điều kiện vào": d.rules.entry,
+      "Dừng lỗ": d.rules.stop,
+      "Mục tiêu": d.rules.target,
+      "Thời gian giữ tối đa": d.rules.max_hold,
+      "Phạm vi": d.rules.universe,
+    }).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") +
+    "</dl>";
+
+  if(!s.trades){
+    el("body").innerHTML = '<div class="msg">Chưa đủ lịch sử giá để sinh tín hiệu.</div>';
+    return;
+  }
+
+  const tiles = [
+    {k:"Số lệnh đã đóng", v:fmt(s.trades), n:`trên ${fmt(d.universe)} mã`},
+    {k:"Tỉ lệ thắng", v:s.hit_rate + "%",
+     cls:s.hit_rate >= 50 ? "pos" : "", n:"lệnh có R dương"},
+    {k:"R trung bình", v:(s.avg_r >= 0 ? "+" : "") + s.avg_r.toFixed(2),
+     cls:s.avg_r >= 0 ? "pos" : "neg", n:"mỗi lệnh"},
+    {k:"Tổng R", v:(s.total_r >= 0 ? "+" : "") + fmt(s.total_r, 1),
+     cls:s.total_r >= 0 ? "pos" : "neg", n:"cộng dồn"},
+    {k:"Sụt giảm tối đa", v:fmt(s.max_drawdown_r, 1) + "R",
+     cls:"neg", n:"từ đỉnh đường vốn"},
+    {k:"Lãi TB / Lỗ TB", v:`${s.avg_win_r ?? "—"} / ${s.avg_loss_r ?? "—"}`,
+     n:"tính bằng R"},
+    {k:"Đang mở", v:fmt((d.open || []).length), n:"chưa có kết quả"},
+  ];
+  if(d.benchmark && d.benchmark.median_return_pct != null){
+    const b = d.benchmark.median_return_pct;
+    tiles.push({
+      k:"Thị trường cùng kỳ",
+      v:(b >= 0 ? "+" : "") + b.toFixed(1) + "%",
+      cls:b >= 0 ? "pos" : "neg",
+      n:`trung vị ${fmt(d.benchmark.tickers)} mã`,
+    });
+  }
+  el("tiles").innerHTML = tiles.map(t =>
+    `<div class="tile"><span class="k">${t.k}</span>` +
+    `<span class="v ${t.cls || ""}">${t.v}</span>` +
+    `<span class="n">${t.n}</span></div>`).join("");
+
+  /* State the result plainly, including when it is bad. A losing rule shown
+     without comment invites the reader to assume it was cherry-picked into
+     looking good; saying why it lost is what makes the rest credible. */
+  const b = d.benchmark && d.benchmark.median_return_pct;
+  const reading = s.total_r < 0
+    ? `<b class="neg">Bộ quy tắc này đang lỗ ${Math.abs(s.total_r).toFixed(0)}R trong kỳ.</b> ` +
+      (b != null && b < 0
+        ? `Đó là kết quả dự đoán được: đây là hệ thống chỉ mua lên theo đà tăng, ` +
+          `trong khi trung vị thị trường cùng kỳ giảm ${Math.abs(b).toFixed(1)}%. ` +
+          `Một quy tắc thuận xu hướng sẽ liên tục bị dừng lỗ khi xu hướng chung là giảm.`
+        : `Tỉ lệ thắng ${s.hit_rate}% với lãi trung bình ${s.avg_win_r}R chưa bù được ` +
+          `lỗ trung bình ${Math.abs(s.avg_loss_r)}R.`) +
+      ` Con số được giữ nguyên, không chỉnh tham số cho đẹp — đó là điểm của việc công bố track record.`
+    : `<b class="pos">Bộ quy tắc này đang lãi ${s.total_r.toFixed(0)}R trong kỳ</b>` +
+      (b != null ? `, so với trung vị thị trường ${b >= 0 ? "+" : ""}${b.toFixed(1)}%.` : ".") +
+      ` Kết quả tính trên dữ liệu point-in-time, chưa trừ phí và trượt giá.`;
+
+  el("body").innerHTML =
+    `<div class="warnbox" style="border-left-color:var(--${s.total_r < 0 ? "neg" : "pos"})">` +
+    `<p>${reading}</p></div>` +
+    `<section><h2 class="sec">Đường vốn theo R</h2>` +
+    `<p class="cap">Cộng dồn kết quả từng lệnh theo thứ tự đóng lệnh. Trục dọc là bội số rủi ro, ` +
+    `không phải tiền — nên nó không phụ thuộc vào việc bạn đặt bao nhiêu vốn mỗi lệnh.</p>` +
+    `<div class="card pad" id="equity"></div></section>` +
+    (d.open && d.open.length
+      ? `<section><h2 class="sec">Lệnh đang mở</h2>` +
+        `<p class="cap">Chưa có kết quả, nên không được tính vào thống kê phía trên.</p>` +
+        `<div class="card" id="open"></div></section>`
+      : "") +
+    `<section><h2 class="sec">Lệnh đã đóng gần nhất</h2>` +
+    `<p class="cap">Toàn bộ lệnh, không lọc bỏ lệnh thua.</p>` +
+    `<div class="card"><div class="scroll" id="closed"></div></div></section>`;
+
+  drawEquity(el("equity"), d.closed || []);
+  if(d.open && d.open.length) drawOpen(el("open"), d.open);
+  drawClosed(el("closed"), d.closed || []);
+
+  const last = (d.closed || [])[0];
+  el("stamp").innerHTML = last ? `Lệnh gần nhất: <b>${last.x}</b>` : "";
+}
+
+function drawEquity(host, closed){
+  // Published newest-first; the curve reads chronologically.
+  const trades = [...closed].reverse();
+  if(trades.length < 2){ host.innerHTML = '<div class="msg">Chưa đủ lệnh.</div>'; return; }
+
+  const W = 940, H = 200, ML = 44, MR = 16, MT = 12, MB = 22;
+  const iw = W - ML - MR, ih = H - MT - MB;
+
+  let running = 0;
+  const curve = trades.map(t => (running += t.r));
+  const lo = Math.min(0, ...curve), hi = Math.max(0, ...curve);
+  const span = (hi - lo) || 1;
+
+  const x = i => ML + (i / (curve.length - 1)) * iw;
+  const y = v => MT + ih - ((v - lo) / span) * ih;
+
+  const svg = [`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Đường vốn theo R">`];
+  [hi, (hi + lo) / 2, lo].forEach(t => {
+    const yy = y(t);
+    svg.push(`<line class="gridline" x1="${ML}" x2="${W-MR}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}"/>`);
+    svg.push(`<text class="axis" x="${ML-6}" y="${(yy+3).toFixed(1)}" text-anchor="end">${t.toFixed(0)}R</text>`);
+  });
+  if(lo < 0 && hi > 0){
+    const zy = y(0);
+    svg.push(`<line class="zero" x1="${ML}" x2="${W-MR}" y1="${zy.toFixed(1)}" y2="${zy.toFixed(1)}"/>`);
+  }
+
+  const path = curve.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const end = curve[curve.length - 1];
+  svg.push(`<path d="${path}" fill="none" stroke="${end >= 0 ? "var(--pos)" : "var(--neg)"}" stroke-width="2"/>`);
+  svg.push(`<circle cx="${x(curve.length-1).toFixed(1)}" cy="${y(end).toFixed(1)}" r="3.5" ` +
+           `fill="${end >= 0 ? "var(--pos)" : "var(--neg)"}"/>`);
+
+  svg.push(`<text class="axis" x="${ML}" y="${H-6}" text-anchor="start">${trades[0].x}</text>`);
+  svg.push(`<text class="axis" x="${W-MR}" y="${H-6}" text-anchor="end">${trades[trades.length-1].x}</text>`);
+  svg.push("</svg>");
+  host.innerHTML = svg.join("");
+}
+
+function drawOpen(host, rows){
+  host.innerHTML =
+    "<table><thead><tr>" +
+    ["Mã","Tên","Vào lúc","Giá vào","Dừng lỗ","Mục tiêu"].map(t => `<th>${t}</th>`).join("") +
+    "</tr></thead><tbody>" +
+    rows.map(r =>
+      `<tr><td><span class="sym">${r.s}</span></td>` +
+      `<td><span class="name">${r.n ?? ""}</span></td>` +
+      `<td class="dim">${r.d}</td>` +
+      `<td>${fmt(r.entry)}</td>` +
+      `<td class="neg">${fmt(r.stop)}</td>` +
+      `<td class="pos">${fmt(r.target)}</td></tr>`).join("") +
+    "</tbody></table>";
+}
+
+function drawClosed(host, rows){
+  host.innerHTML =
+    "<table><thead><tr>" +
+    ["Mã","Tên","Vào","Ra","Giá vào","Giá ra","Kết quả","Lý do đóng"]
+      .map(t => `<th>${t}</th>`).join("") +
+    "</tr></thead><tbody>" +
+    rows.map(r =>
+      `<tr><td><span class="sym">${r.s}</span></td>` +
+      `<td><span class="name">${r.n ?? ""}</span></td>` +
+      `<td class="dim">${r.d}</td><td class="dim">${r.x}</td>` +
+      `<td>${fmt(r.entry)}</td><td>${fmt(r.exit)}</td>` +
+      `<td class="${r.r >= 0 ? "pos" : "neg"}"><b>${r.r >= 0 ? "+" : ""}${r.r.toFixed(2)}R</b></td>` +
+      `<td class="dim">${EXIT_LABEL[r.why] ?? r.why}</td></tr>`).join("") +
+    "</tbody></table>";
+}
+</script>
+</body>
+</html>

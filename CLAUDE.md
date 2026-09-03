@@ -51,11 +51,15 @@ python -m pipeline.sources.chotot --regions 12000 --dry-run --max-pages 1
 
 # VN equities: prices + foreign flow daily, fundamentals weekly
 python -m pipeline.sources.vn_equity --what board         # ~14s for 1,751 tickers
+python -m pipeline.sources.ssi_board --with-depth         # depth + foreign room
+python -m pipeline.sources.vn_history                    # daily OHLC backfill
 python -m pipeline.sources.vci_direct                     # ~7 min for the full market
 python -m pipeline.sources.vci_direct --skip-existing     # resume an interrupted pass
 
-# Cross-market flows
+# Cross-market flows and options positioning
 python -m pipeline.sources.etf_flows
+python -m pipeline.sources.deribit_gex --symbol BTC
+python -m pipeline.sources.deribit_gex --symbol ETH
 
 # Build published artifacts, then gate them
 python -m pipeline.transform.stocks_build
@@ -137,6 +141,37 @@ change against the source's own Total column; all 650 days currently match.
 **`append` must not measure its own delta with `count(*)`.** That plus
 `executemany` scales with total table size, and turned a fundamentals pass into
 a CPU-bound crawl. One registered relation per batch runs at ~676k rows/sec.
+
+**Vietcap's chart endpoint stops answering after a sustained backfill.** Not a
+429 or a 403 — silence, while their fundamentals endpoint on a different host
+keeps serving normally. Price history therefore comes from VPS
+(`histdatafeed.vps.com.vn`, TradingView UDF shape), which also proved the better
+source: it carries the current session's close where DNSE lagged a day and
+disagreed on the prior close. Any collector against a feed like this needs a
+short timeout and an early stop on consecutive failures, or it becomes a queue
+of 90-second stalls that writes nothing.
+
+**VPS quotes in thousands of VND** (72.2 for a 72,200 close) while the board
+collectors write plain VND. Mixing them puts a thousand-fold step in every
+ticker's history exactly where the backfill meets the live rows — momentum,
+z-scores and the 52-week range all break at once. `PRICE_SCALE` handles it.
+
+**Flush collectors often, not efficiently.** The history backfill first flushed
+every 20k rows and was throttled to death before its first write, losing a
+half-hour run entirely. Batches are now small enough that a killed job leaves
+usable progress for `--skip-existing` to resume from.
+
+**Gamma flip is not a cumulative sum over strikes.** Gamma depends on where spot
+is, so the flip has to be found by revaluing the whole book at candidate prices
+and bisecting. The cumulative walk answers a different question and put the flip
+19% above spot on a book that is long gamma at spot. Cross-checked against the
+reference product: 66,710 against their 66,379.
+
+**Backfilled history is stamped with the bar's own date**, never with now.
+Stamping it with the collection time would tell a point-in-time query that a
+year of prices was known at that instant — the exact look-ahead the warehouse
+exists to prevent. Backfilled rows also carry no foreign flow: there is no free
+historical source for it, so those columns accumulate forward only.
 
 **`price_board` returns placeholder rows with no symbol** for delisted or
 suspended tickers, and pandas fills gaps with `NaN`, which DuckDB will not cast

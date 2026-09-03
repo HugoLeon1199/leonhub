@@ -97,6 +97,12 @@ footer b{color:var(--text); font-weight:600}
 </section>
 
 <section>
+  <h2>Biến động bất thường hôm nay
+    <span class="note">tính theo độ lệch chuẩn của chính mã đó, không phải theo %</span></h2>
+  <div class="card" id="unusual"><div class="empty">Đang tải…</div></div>
+</section>
+
+<section>
   <h2>Định giá thấp so với chính lịch sử của mã
     <span class="note">P/E ở nhóm 25% thấp nhất 8 năm, ROE ≥ 10%</span></h2>
   <div class="card" id="cheap"><div class="empty">Đang tải…</div></div>
@@ -180,7 +186,7 @@ async function equities(){
     .catch(() => null);
 
   if(!rows){
-    ["fBuy","fSell","cheap"].forEach(id => {
+    ["fBuy","fSell","cheap","unusual"].forEach(id => {
       el(id).innerHTML =
         '<div class="empty">Chưa có <code>data/stocks.json</code>. ' +
         'Chạy <code>python -m pipeline.transform.stocks_build</code>.</div>';
@@ -223,6 +229,30 @@ async function equities(){
   const sells = [...flows].sort((a,b) => a.f1 - b.f1).slice(0, 8);
   el("fBuy").innerHTML = table(buys, flowCols);
   el("fSell").innerHTML = table(sells, flowCols);
+
+  /* "Unusual" measured against each ticker's own volatility rather than a flat
+     percentage: a 3% day is a shrug for a small cap and an event for VCB.
+     Restricted to liquid names so the list is not a parade of illiquid shells
+     whose every trade is a multi-sigma move. */
+  const unusual = rows
+    .filter(r => r.z != null && Math.abs(r.z) >= 2 && (r.mc || 0) >= 1000)
+    .sort((a, b) => Math.abs(b.z) - Math.abs(a.z))
+    .slice(0, 8);
+
+  const hasHistory = rows.some(r => r.z != null);
+  el("unusual").innerHTML = !hasHistory
+    ? '<div class="empty">Cần lịch sử giá để tính. Chạy ' +
+      '<code>python -m pipeline.sources.vci_history</code>.</div>'
+    : unusual.length
+    ? table(unusual, [
+        {t:"Mã",       f:r => `<span class="sym">${r.s}</span>`},
+        {t:"Tên",      f:r => `<span class="name">${r.n ?? ""}</span>`},
+        {t:"±%",       f:r => signed(r.ch)},
+        {t:"Z-score",  f:r => `<b class="${r.z > 0 ? "up" : "down"}">${r.z > 0 ? "+" : ""}${r.z.toFixed(1)}σ</b>`},
+        {t:"Vị trí 52T", f:r => r.pos52 != null ? `<span class="dim">${r.pos52}</span>` : '<span class="dim">—</span>'},
+        {t:"Vốn hóa",  f:r => num(r.mc, 0)},
+      ])
+    : '<div class="empty">Không có mã nào biến động vượt 2 độ lệch chuẩn hôm nay.</div>';
 
   // "Cheap versus its own history" is the read a raw P/E cannot give: it needs
   // the ticker's own eight-year distribution behind it.

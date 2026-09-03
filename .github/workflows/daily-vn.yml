@@ -52,12 +52,32 @@ jobs:
       - name: Collect price board and foreign flow
         run: python -m pipeline.sources.vn_equity --what board
 
+      # Second source: adds book depth and foreign ownership room, and
+      # cross-checks the first — the two agreed to 0.0007% on market-wide
+      # foreign net when this was set up.
+      - name: Collect SSI board
+        run: python -m pipeline.sources.ssi_board --with-depth
+        continue-on-error: true
+
+      # Fills any ticker whose price history is still thin. Skips those already
+      # covered, so after the first full pass this is a no-op most days. Not
+      # continue-on-error: if this starts failing the rolling windows quietly
+      # stop extending, which is exactly the silent gap the run log exists to
+      # surface.
+      - name: Backfill missing price history
+        run: python -m pipeline.sources.vn_history --delay 0.3
+
       - name: Collect quarterly fundamentals
         if: inputs.fundamentals || github.event_name == 'schedule'
         run: python -m pipeline.sources.vci_direct --delay 0.3
 
       - name: Build stocks.json
         run: python -m pipeline.transform.stocks_build
+
+      # Runs after the history backfill: signals are evaluated bar by bar over
+      # the point-in-time warehouse, so they need the prices to be in first.
+      - name: Rebuild signals and their track record
+        run: python -m pipeline.transform.signals_build
 
       - name: Validate before publishing
         run: python -m pipeline.core.validate stocks.json

@@ -147,6 +147,14 @@ const COLS = [
   {k:"npm", t:"Biên LN %",kind:"num", d:1},
   {k:"de",  t:"Nợ/VCSH",  kind:"num", d:2},
   {k:"dy",  t:"Cổ tức %", kind:"num", d:2},
+  {k:"m1",  t:"1 tháng %", kind:"pct", hint:"Thay đổi giá 1 tháng (≈22 phiên)"},
+  {k:"m3",  t:"3 tháng %", kind:"pct", hint:"Thay đổi giá 3 tháng (≈64 phiên)"},
+  {k:"m6",  t:"6 tháng %", kind:"pct", hint:"Thay đổi giá 6 tháng (≈127 phiên)"},
+  {k:"pos52", t:"Vị trí 52T", kind:"pos52",
+   hint:"Vị trí trong biên độ 52 tuần: 100 là đang ở đỉnh, 0 là đang ở đáy của chính mã đó."},
+  {k:"z",   t:"Z-score", kind:"z",
+   hint:"Biến động hôm nay tính theo độ lệch chuẩn của chính mã đó. " +
+        "±2 trở lên là bất thường — 3% với mã nhỏ là bình thường nhưng với VCB là sự kiện."},
   {k:"fr",  t:"Room NN %", kind:"room",
    hint:"Tỉ lệ cổ phiếu còn được phép bán cho nhà đầu tư nước ngoài. " +
         "Gần 0% nghĩa là mã đã kín room — dòng tiền ngoại không thể vào thêm dù muốn."},
@@ -177,6 +185,15 @@ const PRESETS = [
   { id:"cheap_vs_self", label:"Rẻ so với chính nó",
     hint:"P/E ở nhóm 25% thấp nhất lịch sử của mã, ROE ≥ 10%",
     fn:r => r.pe_p != null && r.pe_p <= 25 && r.roe >= 10 },
+  { id:"quality_dip", label:"Tốt nhưng đang ở đáy",
+    hint:"ROE ≥ 15%, P/E > 0, giá nằm ở nhóm 25% thấp nhất biên độ 52 tuần",
+    fn:r => r.roe >= 15 && r.pe > 0 && r.pos52 != null && r.pos52 <= 25 },
+  { id:"momentum", label:"Đà tăng mạnh",
+    hint:"Tăng 3 tháng ≥ 15% và 1 tháng ≥ 0 — xu hướng còn nguyên, không phải nảy kỹ thuật",
+    fn:r => r.m3 >= 15 && r.m1 >= 0 },
+  { id:"unusual", label:"Biến động bất thường",
+    hint:"Z-score hôm nay vượt ±2 độ lệch chuẩn của chính mã đó",
+    fn:r => r.z != null && Math.abs(r.z) >= 2 },
   { id:"full_room", label:"Kín room ngoại",
     hint:"Room còn dưới 1% — cầu ngoại bị chặn bởi trần sở hữu, không phải bởi định giá",
     fn:r => r.fr != null && r.fr < 1 },
@@ -306,6 +323,20 @@ function cell(row, col){
     case "flow":
       if(v == null) return '<span class="dim">—</span>';
       return `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(1)}</span>`;
+    case "pos52": {
+      if(v == null) return '<span class="dim">—</span>';
+      // The bar reads as "how far up its own year the price sits", which is the
+      // question; the number alone needs the high and low to mean anything.
+      const tone = v >= 90 ? "up" : v <= 10 ? "down" : "";
+      return `<span class="${tone}">${v}</span>` +
+             `<span class="pct"><i style="width:${Math.max(2, v)}%"></i></span>`;
+    }
+    case "z": {
+      if(v == null) return '<span class="dim">—</span>';
+      // Only flag what is actually unusual; everything inside ±2 is a normal day.
+      const tone = Math.abs(v) >= 2 ? (v > 0 ? "up" : "down") : "dim";
+      return `<span class="${tone}">${v > 0 ? "+" : ""}${v.toFixed(1)}</span>`;
+    }
     case "room":
       if(v == null) return '<span class="dim">—</span>';
       // Under ~1% is effectively full: the constraint, not the number, is what
