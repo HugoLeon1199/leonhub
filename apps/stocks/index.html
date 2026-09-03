@@ -189,6 +189,15 @@ fetch("../../data/stocks.json", {cache:"no-cache"})
   .then(rows => {
     ROWS = rows;
     el("msg").hidden = true;
+    // Drop columns nothing populates yet: an all-blank column reads as broken,
+    // and the rolling foreign-flow windows stay empty until the warehouse has
+    // accumulated enough trading days to fill them.
+    for(let i = COLS.length - 1; i >= 0; i--){
+      const col = COLS[i];
+      if(col.kind === "sym" || col.kind === "name") continue;
+      if(!rows.some(r => r[col.k] != null)) COLS.splice(i, 1);
+    }
+    if(!COLS.some(c => c.k === sortKey)) sortKey = "s";
     buildFacets();
     buildHead();
     buildPresets();
@@ -295,9 +304,15 @@ function cell(row, col){
       let out = fmt(v, col.d ?? 2);
       const pct = col.p ? row[col.p] : null;
       if(pct != null){
-        // Low percentile = cheap relative to this ticker's own history.
-        out += `<span class="pct" title="Ở mức ${pct}% lịch sử của chính mã này">` +
-               `<i style="width:${Math.max(2, pct)}%"></i></span>`;
+        // The bar shows how cheap the value is versus this ticker's own eight
+        // years, so a long bar means cheap. Drawing the raw percentile instead
+        // would fill the bar for expensive tickers, which reads backwards.
+        const cheapness = 100 - pct;
+        const label = col.k === "pe" || col.k === "pb" || col.k === "ps" || col.k === "ev"
+          ? `Rẻ hơn ${cheapness}% số quý trong 8 năm qua của chính mã này`
+          : `Cao hơn ${pct}% số quý trong 8 năm qua của chính mã này`;
+        const fill = col.k === "roe" || col.k === "dy" ? pct : cheapness;
+        out += `<span class="pct" title="${label}"><i style="width:${Math.max(2, fill)}%"></i></span>`;
       }
       return out;
     }

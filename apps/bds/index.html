@@ -134,7 +134,13 @@ const COLS = [
    hint:"Nửa số tin nằm trong khoảng này. Dải rộng nghĩa là trong quận có nhiều mặt bằng giá rất khác nhau."},
   {k:"sz", t:"DT trung vị",  kind:"num", d:0, hint:"m²"},
   {k:"y",  t:"Lợi suất %",   kind:"num", d:2,
-   hint:"Ước tính: trung vị giá thuê/m²/tháng × 12 ÷ trung vị giá bán/m². Chỉ tính khi có đủ 20 tin thuê."},
+   hint:"Trung vị giá thuê/m²/tháng × 12 ÷ trung vị giá bán/m², cùng quận và cùng loại hình. " +
+        "Con số thấp (1–2%) với nhà mặt đất nội đô là đúng thực tế: giá bán được định theo kỳ vọng " +
+        "tăng giá chứ không theo dòng tiền cho thuê. Chưa trừ thuế, phí quản lý và thời gian trống."},
+  {k:"_v", t:"Giá dựa vào",  kind:"verdict",
+   hint:"So sánh lợi suất cho thuê của ô này với trung vị của tất cả các ô cùng loại hình. " +
+        "Lợi suất cao nghĩa là giá bán đang được dòng tiền thuê nâng đỡ; lợi suất thấp nghĩa là " +
+        "giá đang phản ánh kỳ vọng tăng giá, nên nhạy cảm hơn khi tâm lý thị trường đảo chiều."},
   {k:"n",  t:"Mẫu bán",      kind:"n", hint:"Số tin rao bán sau khi loại trùng"},
   {k:"yn", t:"Mẫu thuê",     kind:"n"},
 ];
@@ -147,6 +153,7 @@ fetch("../../data/bds.json", {cache:"no-cache"})
   .then(rows => {
     ROWS = rows;
     maxSpread = Math.max(...rows.map(r => (r.p75 ?? 0) - (r.p25 ?? 0)), 1);
+    computeYieldMedians();
     el("msg").hidden = true;
     buildFacets();
     buildHead();
@@ -179,7 +186,8 @@ function buildHead(){
     th.innerHTML = col.t + '<span class="dir"></span>';
     if(col.hint) th.title = col.hint;
     th.addEventListener("click", () => {
-      const key = col.k === "_sp" ? "p75" : col.k;
+      // Both synthetic columns sort by the number they are derived from.
+      const key = col.k === "_sp" ? "p75" : col.k === "_v" ? "y" : col.k;
       if(sortKey === key) sortDir = -sortDir;
       else { sortKey = key; sortDir = col.kind === "text" || col.kind === "dist" ? 1 : -1; }
       render();
@@ -217,7 +225,42 @@ const fmt = (v, d) => v == null || !isFinite(v)
   ? '<span class="dim">—</span>'
   : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
 
+/* Median yield per property type. Apartments and street houses sit in
+   different yield regimes entirely, so judging a district against the whole
+   table would just re-label every house as "expensive". */
+let yieldMedian = {};
+
+function computeYieldMedians(){
+  const byType = {};
+  ROWS.forEach(r => {
+    if(typeof r.y !== "number") return;
+    (byType[r.i] ||= []).push(r.y);
+  });
+  yieldMedian = {};
+  Object.entries(byType).forEach(([type, values]) => {
+    if(values.length < 5) return;   // too few peers to call a middle
+    values.sort((a, b) => a - b);
+    yieldMedian[type] = values[Math.floor(values.length / 2)];
+  });
+}
+
+function verdict(row){
+  const mid = yieldMedian[row.i];
+  if(typeof row.y !== "number" || mid == null) return null;
+  const ratio = row.y / mid;
+  if(ratio >= 1.15) return {label:"Dòng tiền thuê", cls:"up"};
+  if(ratio <= 0.85) return {label:"Kỳ vọng tăng giá", cls:"down"};
+  return {label:"Cân bằng", cls:"dim"};
+}
+
 function cell(row, col){
+  if(col.kind === "verdict"){
+    const v = verdict(row);
+    if(!v) return '<span class="dim">—</span>';
+    const mid = yieldMedian[row.i];
+    return `<span class="${v.cls}" title="Lợi suất ${row.y.toFixed(2)}% so với trung vị ` +
+           `${mid.toFixed(2)}% của cùng loại hình">${v.label}</span>`;
+  }
   if(col.kind === "spread"){
     const lo = row.p25, hi = row.p75;
     if(lo == null || hi == null) return '<span class="dim">—</span>';
@@ -254,7 +297,7 @@ function render(){
 
   el("count").textContent = `${rows.length} / ${ROWS.length} dòng`;
   [...el("head").children].forEach((th, i) => {
-    const key = COLS[i].k === "_sp" ? "p75" : COLS[i].k;
+    const key = COLS[i].k === "_sp" ? "p75" : COLS[i].k === "_v" ? "y" : COLS[i].k;
     if(key === sortKey) th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
     else th.removeAttribute("aria-sort");
   });

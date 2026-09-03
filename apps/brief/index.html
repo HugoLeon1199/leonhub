@@ -226,16 +226,21 @@ async function equities(){
 
   // "Cheap versus its own history" is the read a raw P/E cannot give: it needs
   // the ticker's own eight-year distribution behind it.
+  // Sorted by market cap, not by percentile: dozens of tickers tie at the
+  // bottom of their own range, so ranking by percentile just lists them
+  // alphabetically. Size is what decides which of them is worth a look.
   const cheap = rows
     .filter(r => r.pe_p != null && r.pe_p <= 25 && r.roe >= 10 && r.mc >= 500)
-    .sort((a,b) => a.pe_p - b.pe_p)
+    .sort((a,b) => b.mc - a.mc)
     .slice(0, 10);
 
   el("cheap").innerHTML = table(cheap, [
     {t:"Mã",       f:r => `<span class="sym">${r.s}</span>`},
     {t:"Tên",      f:r => `<span class="name">${r.n ?? ""}</span>`},
     {t:"P/E",      f:r => num(r.pe, 1)},
-    {t:"Percentile", f:r => `<span class="dim">${r.pe_p}%</span>`},
+    {t:"Rẻ hơn lịch sử", f:r =>
+      `<span class="up" title="P/E hiện tại thấp hơn ${100 - r.pe_p}% số quý trong 8 năm qua của chính mã này">` +
+      `${100 - r.pe_p}% số quý</span>`},
     {t:"ROE %",    f:r => num(r.roe, 1)},
     {t:"Vốn hóa",  f:r => num(r.mc, 0)},
   ]);

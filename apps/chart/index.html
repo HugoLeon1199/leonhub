@@ -56,6 +56,7 @@ body{
 .price{font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.4px}
 .chg{font-size:13px; font-weight:600; font-variant-numeric:tabular-nums}
 .up{color:var(--up)} .down{color:var(--down)}
+.dim{color:var(--muted); font-weight:400; font-size:11px}
 
 /* ---- Stat strip: the context a price alone cannot give ---- */
 .stats{
@@ -264,14 +265,26 @@ function renderStats(items){
   });
 }
 
+// Bars per 24 hours, so the headline change means the same thing on every
+// timeframe. Measuring from the first loaded bar instead would quietly report
+// a 20-day move on the 1h chart and a 40-hour move on the 5m one.
+const BARS_PER_DAY = {"5m":288, "15m":96, "1h":24, "4h":6, "1d":1};
+
 function renderQuote(bars){
   const last = bars[bars.length - 1];
-  const first = bars[0];
   if(!last) return;
+
   const decimals = last.close < 1 ? 6 : last.close < 100 ? 3 : 2;
   el.price.textContent = nf(last.close, decimals);
-  const pct = (last.close - first.open) / first.open * 100;
-  el.chg.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+
+  const span = BARS_PER_DAY[timeframe] || 24;
+  const ref = bars[Math.max(0, bars.length - 1 - span)];
+  const base = timeframe === "1d" ? ref.close : ref.open;
+  const pct = (last.close - base) / base * 100;
+  const label = timeframe === "1d" ? "1d" : "24h";
+
+  el.chg.innerHTML =
+    `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}% <span class="dim">${label}</span>`;
   el.chg.className = "chg " + (pct >= 0 ? "up" : "down");
 }
 
@@ -318,9 +331,15 @@ async function load(){
   if(token !== inflight) return;
 
   const last = bars[bars.length - 1];
+  // On the daily chart a "24h range" would be a single candle, so widen the
+  // window to a week and say so rather than showing one bar's own high and low.
+  const isDaily = timeframe === "1d";
+  const window = isDaily ? 7 : (BARS_PER_DAY[timeframe] || 24);
+  const day = bars.slice(-window);
+  const rangeLabel = isDaily ? "7 ngày" : "24h";
   renderStats([
-    { label:"Cao 24h", value: nf(Math.max(...bars.slice(-24).map(b => b.high)), 2) },
-    { label:"Thấp 24h", value: nf(Math.min(...bars.slice(-24).map(b => b.low)), 2) },
+    { label:`Cao ${rangeLabel}`, value: nf(Math.max(...day.map(b => b.high)), 2) },
+    { label:`Thấp ${rangeLabel}`, value: nf(Math.min(...day.map(b => b.low)), 2) },
     { label:"KL nến", value: compact(last.volume), hint:"Khối lượng của nến gần nhất" },
     stats.funding == null ? {} : {
       label:"Funding", value: stats.funding.toFixed(4) + "%",

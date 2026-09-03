@@ -90,11 +90,17 @@ def validate_stocks(rows: list[dict[str, Any]], previous: list[dict[str, Any]] |
             continue
         plo, phi = PERCENT_RANGE
         bad = _fraction_outside(values, plo, phi)
-        if bad > 0.02:
+        # A unit flip moves the whole column, not a tail of it. The transform
+        # already suppresses individually absurd margins, so what remains here
+        # is a check on convention: 10% out of range means the column changed
+        # meaning, while a few percent is just companies with odd financials.
+        if bad > 0.10:
             rep.error(
                 f"{bad:.1%} of `{key}` values fall outside {plo}–{phi} — "
                 "a fraction is probably being published as a percent, or vice versa"
             )
+        elif bad > 0.01:
+            rep.warn(f"{bad:.1%} of `{key}` values sit outside {plo}–{phi}")
 
     if rep.stats["priced"] == 0:
         rep.error("no ticker carries a price")

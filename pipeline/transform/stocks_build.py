@@ -63,6 +63,38 @@ AS_PERCENT = {
     "nim", "npl", "car", "casa", "ldr", "cir",
 }
 
+# Own-history percentiles are the point of keeping an eight-year panel, but one
+# per metric would nearly double the payload for columns nobody screens on.
+# These are the ones where "cheap or expensive for this company" is the actual
+# question a reader is asking.
+PERCENTILE_KEYS = {"pe", "pb", "ps", "ev", "roe", "dy"}
+
+# Reported as 0.0 rather than null for companies they do not apply to.
+BANK_ONLY = {"nim", "npl", "car", "casa", "ldr", "cir"}
+
+# The mirror image: metrics the source zero-fills where they are undefined.
+# ROIC comes back as 0.0 for every bank because the concept does not apply to
+# them, and publishing that states "this bank earns no return on capital".
+# (Dividend yield has the same problem but a different cause and is handled in
+# FUNDAMENTAL_SQL, which falls back to the last quarter that reported one.)
+ZERO_MEANS_MISSING = {"roic", "de", "gpm"}
+
+# Margins are a ratio to revenue, so a company with almost none produces
+# arithmetically valid nonsense: PTC reports a 75,592% net margin, QBS -52,447%.
+# The figures are real but carry no information, and left in they wreck every
+# sort and axis they touch. Suppressed rather than clamped, because a clamped
+# value would read as a genuine -500%.
+SANE_RANGE = {
+    "npm": (-500, 500),
+    "ebitm": (-500, 500),
+    "gpm": (-500, 500),
+    "roe": (-500, 500),
+    "roa": (-500, 500),
+    "roic": (-500, 500),
+    "ldr": (0, 500),
+    "de": (0, 100),
+}
+
 LATEST_QUOTE_SQL = """
 SELECT DISTINCT ON (symbol)
     symbol, as_of, price, ref_price, volume, value, listed_share,
@@ -109,10 +141,16 @@ WITH observed AS (
     ORDER BY symbol, period, metric, fetched_at DESC
 ),
 latest AS (
+    -- For most metrics the newest quarter wins outright. Dividend yield is the
+    -- exception: it is 0.0 until a payment is declared, so the newest quarter
+    -- reads as "pays nothing" for companies that paid in every prior quarter.
+    -- There alone, fall back to the most recent quarter that carried a value.
     SELECT DISTINCT ON (symbol, metric)
         symbol, metric, value AS latest_value, period AS latest_period
     FROM observed
-    ORDER BY symbol, metric, period DESC
+    ORDER BY symbol, metric,
+             (metric = 'dividend_yield' AND (value IS NULL OR value = 0)),
+             period DESC
 ),
 pct AS (
     SELECT o.symbol, o.metric,
@@ -140,6 +178,9 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         quotes = {r["symbol"]: r for r in _rows(con, LATEST_QUOTE_SQL)}
         listings = {r["symbol"]: r for r in _rows(con, LATEST_LISTING_SQL)}
         flows = {r["symbol"]: r for r in _rows(con, FOREIGN_FLOW_SQL)}
+        trading_days = con.execute(
+            "SELECT count(DISTINCT as_of) FROM eq_quote"
+        ).fetchone()[0]
         fundamentals: dict[str, dict[str, Any]] = {}
         for r in _rows(con, FUNDAMENTAL_SQL):
             key = METRIC_MAP.get(r["metric"])
@@ -177,20 +218,34 @@ def build(dry_run: bool = False) -> dict[str, Any]:
 
         flow = flows.get(symbol)
         if flow:
-            for src, dst in (("net_1d", "f1"), ("net_5d", "f5"), ("net_20d", "f20")):
-                if flow.get(src):
+            # A 5- or 20-day window is only meaningful once the warehouse holds
+            # that many trading days. Until then the rolling sums equal the
+            # daily figure, and publishing three identical columns would imply
+            # a history that does not exist.
+            for src, dst, needed in (
+                ("net_1d", "f1", 1), ("net_5d", "f5", 5), ("net_20d", "f20", 20)
+            ):
+                if flow.get(src) and trading_days >= needed:
                     row[dst] = round(flow[src] / 1e9, 2)  # billion VND
 
         for key, item in (fundamentals.get(symbol) or {}).items():
             if item["v"] is None:
                 continue
+            # Bank-only metrics come back as a literal 0.0 for every
+            # non-financial rather than as null. Publishing "NIM 0.00%" against
+            # a shoe manufacturer states something false, so drop them.
+            if not item["v"] and (key in BANK_ONLY or key in ZERO_MEANS_MISSING):
+                continue
             # The source reports rates as fractions (VCB ROE arrives as 0.179,
             # NIM as 0.0275); publish them as percent so the UI never has to
             # know which convention a given column follows.
             value = item["v"] * 100 if key in AS_PERCENT else item["v"]
+            bounds = SANE_RANGE.get(key)
+            if bounds and not (bounds[0] <= value <= bounds[1]):
+                continue
             row[key] = round(value, 2)
             # A percentile against two quarters of history is noise, not signal.
-            if item["n"] >= 8:
+            if key in PERCENTILE_KEYS and item["n"] >= 8:
                 row[f"{key}_p"] = round(item["pct"] * 100)
 
         out.append(row)
@@ -200,6 +255,8 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         "priced": sum(1 for r in out if "p" in r),
         "with_fundamentals": sum(1 for r in out if "pe" in r or "pb" in r),
         "with_foreign_flow": sum(1 for r in out if "f1" in r),
+        "with_industry": sum(1 for r in out if r.get("i")),
+        "trading_days_held": trading_days,
     }
 
     if not dry_run:
