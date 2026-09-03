@@ -45,18 +45,31 @@ docs/           ARCHITECTURE, SOURCES, SCHEMAS, teardown notes
 
 ```powershell
 # Real estate — the moat. Run daily; history cannot be backfilled.
-python -m pipeline.sources.chotot --regions 12000,13000
-python -m pipeline.sources.chotot --discover-regions      # refresh province codes
+python -m pipeline.sources.chotot --discover-regions      # 48 province codes
+python -m pipeline.sources.chotot --regions 12000,13000 --max-pages 2
 python -m pipeline.sources.chotot --regions 12000 --dry-run --max-pages 1
 
-# VN equities
-python -m pipeline.sources.vn_equity --what board         # daily, ~12s for 1,751 tickers
-python -m pipeline.sources.vn_equity --what fundamentals  # slow (~1.5h full market)
+# VN equities: prices + foreign flow daily, fundamentals weekly
+python -m pipeline.sources.vn_equity --what board         # ~14s for 1,751 tickers
+python -m pipeline.sources.vci_direct                     # ~7 min for the full market
+python -m pipeline.sources.vci_direct --skip-existing     # resume an interrupted pass
 
-# Build published artifacts
+# Cross-market flows
+python -m pipeline.sources.etf_flows
+
+# Build published artifacts, then gate them
 python -m pipeline.transform.stocks_build
 python -m pipeline.transform.bds_aggregate
+python -m pipeline.transform.flows_build
+python -m pipeline.core.validate
+
+# Serve locally
+python -m http.server 8000   # then http://localhost:8000/hub/
 ```
+
+Collectors hold the warehouse's single writer slot and wait up to five minutes
+for it; build steps use `connect_reader()` and fail fast instead, because a
+stale build is worse than a late one. Run collection and building in sequence.
 
 ## Non-obvious constraints
 
@@ -105,6 +118,25 @@ follow it.
 **Vietcap rejects any User-Agent containing `python-requests`** with a bare
 HTTP 400, which reads like a broken endpoint rather than a refused client.
 `core/http.py` sets a UA without that token.
+
+**Several sources zero-fill rather than null-fill.** ROIC is 0.0 for every bank
+(the metric does not apply), dividend yield is 0.0 until the quarter's payment
+is declared, and bank-only ratios are 0.0 for every non-financial. Published
+raw, these state "this bank earns no return on capital" and "Vinamilk pays no
+dividend". `stocks_build.py` drops them; dividend yield falls back to the last
+quarter that reported one.
+
+**Margins are ratios to revenue**, so a company with almost none produces
+arithmetically valid nonsense (PTC: 75,592% net margin). `SANE_RANGE` suppresses
+them rather than clamping — a clamped value would read as a real -500%.
+
+**Farside writes negatives in accounting parentheses** — `(95.1)` means -95.1 —
+and the BTC and ETH tables use different header shapes. Reconcile any parser
+change against the source's own Total column; all 650 days currently match.
+
+**`append` must not measure its own delta with `count(*)`.** That plus
+`executemany` scales with total table size, and turned a fundamentals pass into
+a CPU-bound crawl. One registered relation per batch runs at ~676k rows/sec.
 
 **`price_board` returns placeholder rows with no symbol** for delisted or
 suspended tickers, and pandas fills gaps with `NaN`, which DuckDB will not cast

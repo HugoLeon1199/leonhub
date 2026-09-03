@@ -30,9 +30,11 @@ choice:
 ```
 hub/            Tab shell — routing, theme, PWA
 apps/           One self-contained page per tab
+  brief/        Daily cross-asset summary
   chart/        Crypto candles + perp context
   stocks/       VN equity screener
   bds/          Real-estate price table
+  flows/        ETF and institutional flows
 pipeline/
   core/         http.py, warehouse.py, validate.py
   sources/      One module per external source
@@ -50,16 +52,20 @@ pip install -r requirements.txt
 # 1. Ticker reference + daily prices + foreign flow (~12s for 1,751 tickers)
 python -m pipeline.sources.vn_equity --what board
 
-# 2. Quarterly fundamentals back to 2018 (~15 min for the whole market)
+# 2. Quarterly fundamentals back to 2018 (~7 min for 1,722 tickers)
 python -m pipeline.sources.vci_direct
 
 # 3. Real-estate listings — start this early, history cannot be backfilled
 python -m pipeline.sources.chotot --discover-regions
-python -m pipeline.sources.chotot --regions 12000,13000
+python -m pipeline.sources.chotot --regions 12000,13000 --max-pages 2
 
-# 4. Build and check the published artifacts
+# 4. Cross-market flows
+python -m pipeline.sources.etf_flows
+
+# 5. Build and check the published artifacts
 python -m pipeline.transform.stocks_build
 python -m pipeline.transform.bds_aggregate
+python -m pipeline.transform.flows_build
 python -m pipeline.core.validate
 
 # 5. Serve locally
@@ -80,6 +86,18 @@ will refuse rather than publish from a partial read.
 | VN prices + foreign flow | Vietcap via `vnstock` | free | Full market board in ~12s |
 | VN fundamentals | Vietcap `iq-insight-service` | free | ~30 ratios per quarter, 2018→present, ~130 req/min |
 | Real estate | Chotot public gateway | free | Asking prices with GPS, ward, and a dedupe key |
+| ETF flows | Farside | free | Daily spot BTC/ETH creations and redemptions by issuer |
+
+## Current coverage
+
+| Artifact | Contents |
+|---|---|
+| `stocks.json` | 1,751 tickers; 1,719 with fundamentals, 1,735 with an ICB industry |
+| `bds.json` | 102 districts across 48 provinces, from 47,343 listings |
+| `flows.json` | 679 days of BTC and 541 of ETH ETF flow, daily and cumulative |
+
+The warehouse holds 1.44M quarterly fundamental observations spanning
+2018-Q1 to 2026-Q2.
 
 ## Scheduling
 
