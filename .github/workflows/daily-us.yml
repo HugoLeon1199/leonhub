@@ -1,7 +1,8 @@
-name: US market snapshot
+name: US market and FX snapshot
 
-# Delayed daily OHLCV for a curated liquid universe. Bars land in eq_quote, so
-# this shares the warehouse writer lock with every other collector.
+# Delayed daily OHLCV for a curated liquid universe, plus the FX and macro
+# reference rates. Both read the same Yahoo endpoint after the same close, so
+# they share one job rather than competing for the warehouse writer lock.
 
 on:
   schedule:
@@ -41,8 +42,15 @@ jobs:
       - name: Collect delayed US OHLCV
         run: python -m pipeline.sources.us_equity --delay 0.35
 
+      # FX carries USD/VND and the dollar index, which is why it runs even
+      # though the tab it feeds is about US equities: both are context for the
+      # VN market, and neither justifies its own workflow.
+      - name: Collect FX and macro rates
+        run: python -m pipeline.sources.fx_rates --delay 0.35
+        continue-on-error: true
+
       - name: Validate before publishing
-        run: python -m pipeline.core.validate us.json
+        run: python -m pipeline.core.validate us.json fx.json
 
       - name: Save warehouse
         uses: actions/cache/save@v4
@@ -55,10 +63,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/us.json
+          git add data/us.json data/fx.json
           if git diff --staged --quiet; then
             echo "No data change."
           else
-            git commit -m "data: US market refresh $(date -u +%Y-%m-%d)"
+            git commit -m "data: US market and FX refresh $(date -u +%Y-%m-%d)"
             git push
           fi

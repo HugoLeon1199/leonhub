@@ -214,6 +214,54 @@ def validate_us(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | Non
     return rep
 
 
+
+def validate_fx(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | None) -> Report:
+    """Guard the delayed FX/macro snapshot.
+
+    An exchange rate that silently changes scale is the failure this catches:
+    a quote feed switching between 26,054 and 26.054 for USD/VND produces a
+    plausible-looking number and a nonsense chart.
+    """
+    rep = Report()
+    if not isinstance(rows, list) or not rows:
+        rep.error("FX snapshot is empty")
+        return rep
+
+    keys = [row.get("s") for row in rows]
+    if len(set(keys)) != len(keys) or any(not key for key in keys):
+        rep.error("FX snapshot contains a missing or duplicate series key")
+
+    malformed, jumped = [], []
+    for row in rows:
+        history = row.get("hist")
+        price = row.get("p")
+        if not isinstance(price, (int, float)) or price <= 0:
+            malformed.append(row.get("s"))
+            continue
+        if not isinstance(history, list) or len(history) < 20:
+            malformed.append(row.get("s"))
+            continue
+        dates = [point[0] for point in history]
+        if dates != sorted(dates) or len(set(dates)) != len(dates):
+            malformed.append(row.get("s"))
+            continue
+        last = history[-1][1]
+        # A daily FX close moving more than a fifth against the live quote is a
+        # unit change or a bad parse, not a market move.
+        if last and abs(price / last - 1) > 0.20:
+            jumped.append(row.get("s"))
+
+    if malformed:
+        rep.error(f"{len(malformed)} FX rows malformed (first: {malformed[0]})")
+    if jumped:
+        rep.error(f"{len(jumped)} FX quotes differ >20% from their last close (first: {jumped[0]})")
+    if previous and len(rows) < len(previous):
+        rep.warn(f"FX coverage fell ({len(previous)} → {len(rows)})")
+
+    rep.stats.update(rows=len(rows), histories=sum(bool(r.get("hist")) for r in rows))
+    return rep
+
+
 # ETF net flow in millions of USD. A day this large is a data error, not a
 # real creation/redemption -- the biggest single-day BTC ETF flow on record is
 # well under this.
@@ -447,6 +495,7 @@ VALIDATORS = {
     "stocks.json": validate_stocks,
     "bds.json": validate_bds,
     "us.json": validate_us,
+    "fx.json": validate_fx,
     "flows.json": validate_flows,
     "signals.json": validate_signals,
     "news_ticker.json": validate_news,
