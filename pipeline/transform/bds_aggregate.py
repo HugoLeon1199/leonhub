@@ -291,6 +291,16 @@ def build(dry_run: bool = False) -> dict[str, Any]:
                    min(fetched_at), max(fetched_at)
             FROM re_listing
         """).fetchone()
+        # Coverage only. Chotot publishes no dictionary for this code and the
+        # correlation against the ads' own wording was not clean enough to
+        # translate -- in VN property the gap between a titled and an untitled
+        # plot is most of the price, so a guessed label would mislead about the
+        # one field that matters most. Publishing the coverage says what we
+        # hold without claiming to know what it means.
+        legal_stats = con.execute("""
+            SELECT count(*) FILTER (WHERE legal_doc IS NOT NULL), count(*)
+            FROM re_listing WHERE source = 'chotot:s'
+        """).fetchone()
     finally:
         con.close()
 
@@ -399,6 +409,8 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         "raw_observations": int(raw_stats[0] or 0),
         "unique_listings": int(raw_stats[1] or 0),
         "snapshot_days": int(raw_stats[2] or 0),
+        "legal_doc_rows": int(legal_stats[0] or 0),
+        "legal_doc_pct": round(100 * (legal_stats[0] or 0) / max(legal_stats[1] or 1, 1), 1),
     }
 
     if not dry_run:
@@ -413,6 +425,8 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             "raw_observations": stats["raw_observations"],
             "unique_listings": stats["unique_listings"],
             "snapshot_days": stats["snapshot_days"],
+            "legal_doc_rows": stats["legal_doc_rows"],
+            "legal_doc_pct": stats["legal_doc_pct"],
             "history_from": raw_stats[3].isoformat() if raw_stats[3] else None,
             "history_to": raw_stats[4].isoformat() if raw_stats[4] else None,
             "cagr_min_days": CAGR_MIN_DAYS,

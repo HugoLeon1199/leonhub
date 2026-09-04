@@ -262,6 +262,52 @@ def validate_fx(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | Non
     return rep
 
 
+
+def validate_crypto(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | None) -> Report:
+    """Guard the crypto board.
+
+    The failure that matters is a feed returning stale or partial data while
+    still looking well-formed: a board where nothing moved, or where the
+    universe silently halved, reads as a quiet market rather than as a broken
+    collector.
+    """
+    rep = Report()
+    if not isinstance(rows, list) or len(rows) < 20:
+        rep.error(f"Crypto board has only {len(rows) if isinstance(rows, list) else 0} rows")
+        return rep
+
+    symbols = [row.get("s") for row in rows]
+    if len(set(symbols)) != len(symbols) or any(not s for s in symbols):
+        rep.error("Crypto board contains a missing or duplicate symbol")
+
+    bad = [r.get("s") for r in rows
+           if not isinstance(r.get("p"), (int, float)) or (r.get("p") or 0) <= 0]
+    if bad:
+        rep.error(f"{len(bad)} crypto rows have a non-positive price (first: {bad[0]})")
+
+    # Every major venue prints at least some movement across a whole day. A
+    # board where nothing moved is a cached response, not a calm market.
+    moved = sum(1 for r in rows if abs(r.get("chp") or 0) > 0.01)
+    if moved < len(rows) * 0.5:
+        rep.error(f"only {moved}/{len(rows)} crypto pairs moved; feed is likely stale")
+
+    outside = [r.get("s") for r in rows
+               if r.get("pos") is not None and not 0 <= r["pos"] <= 100]
+    if outside:
+        rep.error(f"{len(outside)} crypto rows have range position outside 0-100")
+
+    if previous:
+        drop = 1 - len(rows) / len(previous)
+        if drop > MAX_ROW_DROP:
+            rep.error(f"Crypto coverage fell {drop:.1%} ({len(previous)} → {len(rows)})")
+
+    rep.stats.update(
+        rows=len(rows),
+        turnover_musd=round(sum(r.get("v") or 0 for r in rows)),
+    )
+    return rep
+
+
 # ETF net flow in millions of USD. A day this large is a data error, not a
 # real creation/redemption -- the biggest single-day BTC ETF flow on record is
 # well under this.
@@ -496,6 +542,7 @@ VALIDATORS = {
     "bds.json": validate_bds,
     "us.json": validate_us,
     "fx.json": validate_fx,
+    "crypto.json": validate_crypto,
     "flows.json": validate_flows,
     "signals.json": validate_signals,
     "news_ticker.json": validate_news,

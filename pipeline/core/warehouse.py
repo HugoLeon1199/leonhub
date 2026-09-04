@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS re_listing (
     longitude      DOUBLE,
     street_name    VARCHAR,
     subject        VARCHAR,
+    -- Chotot's own numeric code for the ad's legal paperwork. Stored raw and
+    -- unlabelled on purpose: the source publishes no dictionary for it, and
+    -- correlating the codes against the wording of the ads themselves was
+    -- suggestive but not clean (code 1 carries both "sổ đỏ" and "sổ hồng").
+    -- In VN real estate the difference between a titled and an untitled plot
+    -- is most of the price, so a guessed label would be worse than no label.
+    -- Coverage is publishable; a translation is not, until the mapping is
+    -- confirmed against the source.
+    legal_doc      INTEGER,
     PRIMARY KEY (list_id, fetched_at)
 );
 
@@ -263,7 +272,27 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
 
     if not read_only:
         con.execute(SCHEMA)
+        _add_missing_columns(con)
     return con
+
+
+# Columns added to SCHEMA after a warehouse already existed. CREATE TABLE IF NOT
+# EXISTS is a no-op on a table that is already there, so a new column in SCHEMA
+# never reaches an existing database and every insert then fails on a column the
+# code believes it has. Adding them explicitly keeps a running warehouse
+# upgradable in place -- which matters here because the real-estate history it
+# holds cannot be re-collected.
+ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("re_listing", "legal_doc", "INTEGER"),
+)
+
+
+def _add_missing_columns(con: duckdb.DuckDBPyConnection) -> None:
+    for table, column, sql_type in ADDED_COLUMNS:
+        existing = {row[0] for row in con.execute(f"DESCRIBE {table}").fetchall()}
+        if column not in existing:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+            log.info("warehouse: added %s.%s", table, column)
 
 
 def connect_reader() -> duckdb.DuckDBPyConnection:

@@ -138,6 +138,10 @@ def to_row(ad: dict[str, Any], listing_type: str, fetched_at: datetime) -> dict[
         "longitude": ad.get("longitude"),
         "street_name": ad.get("street_name"),
         "subject": ad.get("subject"),
+        # Raw code, deliberately untranslated -- see the note on the column in
+        # warehouse.py. Collect it now because listing history cannot be
+        # backfilled: a field not captured today is gone for today forever.
+        "legal_doc": ad.get("property_legal_document"),
     }
 
 

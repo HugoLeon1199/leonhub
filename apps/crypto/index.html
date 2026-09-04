@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Bảng giá Crypto — LEON Hub</title>
+<meta name="description" content="Bộ lọc thị trường crypto theo thanh khoản, biên độ và quy mô lệnh trung bình. Dữ liệu Binance, cập nhật theo lần chạy collector.">
+
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
+  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
+  --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
+  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
+  --up:#0c8a63; --down:#c2402f; --warn:#8a6412;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text); overflow:hidden;
+  font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex; flex-direction:column;
+}
+.bar{
+  flex:0 0 auto; background:var(--panel); border-bottom:1px solid var(--line);
+  padding:8px 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+}
+input,select{
+  background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  border-radius:7px; padding:6px 9px; font:inherit; font-size:13px;
+}
+input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px}
+#q{width:150px}
+.rng{display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted)}
+.rng input{width:66px; font-variant-numeric:tabular-nums}
+.space{flex:1}
+.count{font-size:12px; color:var(--muted); white-space:nowrap}
+.presets{display:flex; gap:4px; overflow-x:auto; scrollbar-width:none; padding:0 12px 8px; background:var(--panel); border-bottom:1px solid var(--line)}
+.presets::-webkit-scrollbar{display:none}
+.preset{
+  appearance:none; border:1px solid var(--line); background:var(--panel-2); color:var(--muted);
+  font:inherit; font-size:12px; padding:5px 11px; border-radius:99px; cursor:pointer; white-space:nowrap;
+}
+.preset:hover{color:var(--text); border-color:var(--accent)}
+.preset[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:#04150f; font-weight:600}
+:root[data-theme="light"] .preset[aria-pressed="true"]{color:#fff}
+
+.wrap{flex:1; overflow:auto; min-height:0}
+table{border-collapse:separate; border-spacing:0; width:100%; font-size:13px}
+th,td{padding:7px 11px; text-align:right; white-space:nowrap}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+thead th{
+  position:sticky; top:0; z-index:2; background:var(--panel-2); color:var(--muted);
+  font-weight:500; font-size:11.5px; letter-spacing:.02em; cursor:pointer;
+  border-bottom:1px solid var(--line); user-select:none;
+}
+thead th:hover{color:var(--text)}
+tbody tr{border-bottom:1px solid var(--line)}
+tbody tr:hover{background:var(--panel-2)}
+td{font-variant-numeric:tabular-nums; border-bottom:1px solid var(--line)}
+.sym{font-weight:600}
+.up{color:var(--up)} .dn{color:var(--down)} .dim{color:var(--muted)}
+/* Range position as a bar rather than a bare number: where price sits between
+   the day's low and high is a proportion, and a proportion reads faster as a
+   length than as two digits. */
+.posbar{display:inline-block; width:46px; height:7px; border-radius:4px; background:var(--panel-2); overflow:hidden; vertical-align:middle}
+.posbar i{display:block; height:100%; background:var(--accent)}
+.msg{padding:26px; color:var(--muted); text-align:center}
+.note{
+  flex:0 0 auto; padding:9px 12px; background:var(--panel); border-top:1px solid var(--line);
+  font-size:11.5px; color:var(--muted); line-height:1.5;
+}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <input id="q" type="search" placeholder="Tìm BTC, ETH…" aria-label="Tìm mã">
+  <label class="rng">Thanh khoản ≥
+    <input id="vMin" type="number" step="1" placeholder="triệu $" aria-label="Thanh khoản tối thiểu">
+  </label>
+  <label class="rng">Biến động
+    <input id="cMin" type="number" step="1" placeholder="từ %" aria-label="Biến động từ">
+    <input id="cMax" type="number" step="1" placeholder="đến %" aria-label="Biến động đến">
+  </label>
+  <button class="preset" id="reset" type="button" aria-pressed="false">Đặt lại</button>
+  <span class="space"></span>
+  <span class="count" id="count">Đang tải…</span>
+</div>
+
+<div class="presets" id="presets"></div>
+
+<div class="wrap"><table>
+  <thead><tr id="head"></tr></thead>
+  <tbody id="rows"></tbody>
+</table></div>
+
+<div class="note" id="note"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 2) => v == null ? "—"
+  : Number(v).toLocaleString("en-US", {maximumFractionDigits: d, minimumFractionDigits: d});
+const int = v => v == null ? "—" : Number(v).toLocaleString("en-US");
+
+/* Price needs a variable precision: a coin at 79,000 and one at 0.000012 cannot
+   share a format, and rounding the second to two decimals prints 0.00. */
+function price(v){
+  if(v == null) return "—";
+  const abs = Math.abs(v);
+  return fmt(v, abs >= 1000 ? 0 : abs >= 1 ? 2 : abs >= 0.01 ? 4 : 8);
+}
+
+const COLS = [
+  {k:"s",   t:"Mã",            f:r => `<span class="sym">${r.s}</span>`},
+  {k:"p",   t:"Giá (USDT)",    f:r => price(r.p)},
+  {k:"chp", t:"24h %",         f:r => r.chp == null ? "—"
+      : `<span class="${r.chp >= 0 ? "up" : "dn"}">${r.chp >= 0 ? "+" : ""}${fmt(r.chp)}%</span>`},
+  {k:"v",   t:"Thanh khoản 24h", f:r => r.v == null ? "—" : fmt(r.v, 1) + "M$",
+      hint:"Giá trị giao dịch quy USD trong 24 giờ"},
+  {k:"pos", t:"Vị trí trong biên", f:r => r.pos == null ? "—"
+      : `<span class="posbar"><i style="width:${r.pos}%"></i></span> <span class="dim">${r.pos}</span>`,
+      hint:"0 = đóng ở đáy phiên, 100 = đóng ở đỉnh phiên"},
+  {k:"avg", t:"Lệnh TB",       f:r => r.avg == null ? "—" : "$" + int(r.avg),
+      hint:"Giá trị trung bình mỗi lệnh khớp — vài lệnh lớn hay nhiều lệnh nhỏ"},
+  {k:"t",   t:"Số lệnh",       f:r => `<span class="dim">${int(r.t)}</span>`},
+];
+
+/* Presets are questions, not filters. Each one is a thing a reader actually
+   wants to ask of a market-wide board. */
+const PRESETS = [
+  {id:"all",    t:"Tất cả",             f:() => true},
+  {id:"top",    t:"Thanh khoản lớn",     f:r => r.v >= 50},
+  {id:"up",     t:"Tăng mạnh",           f:r => r.chp >= 5},
+  {id:"down",   t:"Giảm mạnh",           f:r => r.chp <= -5},
+  {id:"high",   t:"Đóng gần đỉnh phiên", f:r => r.pos != null && r.pos >= 85},
+  {id:"low",    t:"Đóng gần đáy phiên",  f:r => r.pos != null && r.pos <= 15},
+  // A large average ticket on a liquid pair is the closest a public feed gets
+  // to showing size trading, which is why it is a question worth one click.
+  {id:"whale",  t:"Lệnh lớn bất thường", f:r => r.avg != null && r.avg >= 500 && r.v >= 10},
+];
+
+let ROWS = [], DATA = {}, sortKey = "v", sortDir = -1, preset = "all";
+
+fetch("../../data/crypto.json", {cache:"no-cache"})
+  .then(r => { if(!r.ok) throw Error(r.status); return r.json(); })
+  .then(d => { DATA = d; ROWS = d.rows || []; buildPresets(); buildHead(); render(); stamp(); })
+  .catch(() => {
+    $("rows").innerHTML = '<tr><td colspan="7" class="msg">Chưa có dữ liệu. '
+      + 'Chạy <code>python -m pipeline.sources.crypto_board</code>.</td></tr>';
+    $("count").textContent = "";
+  });
+
+function stamp(){
+  const when = DATA.updated_at ? new Date(DATA.updated_at).toLocaleString("vi-VN") : "—";
+  $("note").innerHTML =
+    `Nguồn ${DATA.source?.name ?? "Binance"} · ${DATA.source?.kind ?? ""} · cập nhật ${when}. `
+    + `Chỉ hiện cặp USDT có thanh khoản 24h ≥ ${int((DATA.min_turnover_usd ?? 0) / 1e6)} triệu USD — `
+    + `dưới ngưỡng đó phần trăm biến động là vài lệnh lẻ chứ không phải thị trường. `
+    + `Stablecoin bị loại vì chúng neo giá, không phải tài sản. Không phải khuyến nghị đầu tư.`;
+}
+
+function buildPresets(){
+  $("presets").innerHTML = PRESETS.map(p =>
+    `<button class="preset" type="button" data-p="${p.id}" aria-pressed="${p.id === preset}">${p.t}</button>`
+  ).join("");
+  $("presets").onclick = e => {
+    const btn = e.target.closest("[data-p]");
+    if(!btn) return;
+    preset = btn.dataset.p;
+    [...$("presets").children].forEach(b => b.setAttribute("aria-pressed", String(b.dataset.p === preset)));
+    render();
+  };
+}
+
+function buildHead(){
+  $("head").innerHTML = COLS.map(c =>
+    `<th data-k="${c.k}"${c.hint ? ` title="${c.hint}"` : ""}>${c.t}</th>`).join("");
+  $("head").onclick = e => {
+    const th = e.target.closest("th");
+    if(!th) return;
+    const k = th.dataset.k;
+    // Same column toggles direction; a new column starts descending, which is
+    // the useful default for every numeric column here.
+    if(k === sortKey) sortDir = -sortDir; else { sortKey = k; sortDir = -1; }
+    render();
+  };
+}
+
+function filtered(){
+  const q = $("q").value.trim().toUpperCase();
+  const vMin = parseFloat($("vMin").value);
+  const cMin = parseFloat($("cMin").value);
+  const cMax = parseFloat($("cMax").value);
+  const pre = PRESETS.find(p => p.id === preset);
+  return ROWS.filter(r =>
+    (!q || r.s.includes(q)) &&
+    (isNaN(vMin) || (r.v ?? 0) >= vMin) &&
+    (isNaN(cMin) || (r.chp ?? 0) >= cMin) &&
+    (isNaN(cMax) || (r.chp ?? 0) <= cMax) &&
+    pre.f(r)
+  ).sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if(x == null) return 1;
+    if(y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir;
+  });
+}
+
+function render(){
+  const rows = filtered();
+  $("count").textContent = `${rows.length} / ${ROWS.length} cặp`;
+  $("head").querySelectorAll("th").forEach(th =>
+    th.textContent = COLS.find(c => c.k === th.dataset.k).t
+      + (th.dataset.k === sortKey ? (sortDir < 0 ? " ↓" : " ↑") : ""));
+  $("rows").innerHTML = rows.length
+    ? rows.map(r => `<tr>${COLS.map(c => `<td>${c.f(r)}</td>`).join("")}</tr>`).join("")
+    : '<tr><td colspan="7" class="msg">Không có cặp nào khớp bộ lọc.</td></tr>';
+}
+
+["q","vMin","cMin","cMax"].forEach(id =>
+  $(id).addEventListener(id === "q" ? "input" : "change", render));
+$("reset").onclick = () => {
+  ["q","vMin","cMin","cMax"].forEach(id => $(id).value = "");
+  preset = "all";
+  [...$("presets").children].forEach(b => b.setAttribute("aria-pressed", String(b.dataset.p === "all")));
+  render();
+};
+</script>
+</body>
+</html>

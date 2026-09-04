@@ -49,6 +49,7 @@ python -m pipeline.sources.vci_company --scope profile,statements --skip-existin
 python -m pipeline.sources.news_link --qa-sample 20       # deterministic, no AI
 
 # Crypto
+python -m pipeline.sources.crypto_board                   # local only: Binance geo-blocks CI
 python -m pipeline.sources.etf_flows
 python -m pipeline.sources.deribit_gex --symbol BTC
 python -m pipeline.sources.deribit_gex --symbol ETH
@@ -62,6 +63,7 @@ python -m pipeline.transform.flows_build
 python -m pipeline.transform.signals_build
 python -m pipeline.transform.news_build
 python -m pipeline.transform.gex_build
+python -m pipeline.sources.fx_rates
 python -m pipeline.core.validate
 
 python -m http.server 8811    # http://localhost:8811/hub/
