@@ -19,7 +19,7 @@
   --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
   --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f; --accent-dim:#1e7a5e;
   --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
-  --top-h:44px; --tab-h:47px;
+  --top-h:48px;
 }
 :root[data-theme="light"]{
   --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
@@ -37,19 +37,26 @@ body{
 /* ---- Hub chrome ---- */
 header{
   height:var(--top-h); flex:0 0 auto; display:flex; align-items:center;
-  gap:2px; padding:0 8px; background:var(--panel); border-bottom:1px solid var(--line);
+  gap:6px; padding:0 8px; background:var(--panel); border-bottom:1px solid var(--line);
 }
 .brand{
-  display:flex; align-items:center; gap:7px; font-weight:700; font-size:15px;
-  padding:0 12px 0 4px; letter-spacing:-.2px; white-space:nowrap;
+  appearance:none; border:1px solid transparent; background:transparent; color:var(--text);
+  display:flex; align-items:center; gap:7px; font:inherit; font-weight:700; font-size:15px;
+  padding:0 10px 0 6px; height:32px; border-radius:7px; letter-spacing:-.2px;
+  white-space:nowrap; cursor:pointer; flex:0 0 auto;
 }
+.brand:hover{background:var(--panel-2); border-color:var(--line)}
+.brand:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
 .brand svg{flex:0 0 auto}
-nav{height:var(--tab-h);display:flex;gap:2px;overflow-x:auto;flex:1;scrollbar-width:none;justify-content:space-around;align-items:center}
+/* Fifteen tabs will not fit narrow viewports. Scroll rather than shrink: an
+   evenly-squeezed row turns every label into an ambiguous truncation. */
+nav{display:flex;gap:2px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none;align-items:center}
 nav::-webkit-scrollbar{display:none}
 .tab{
   appearance:none; border:0; background:transparent; color:var(--muted);
-  font:inherit; font-size:12px; padding:6px 12px; border-radius:7px;
-  cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:5px;justify-content:center;min-width:90px;
+  font:inherit; font-size:12.5px; padding:6px 11px; border-radius:7px;
+  cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:5px;
+  flex:0 0 auto;
 }
 .tab:hover{background:var(--panel-2); color:var(--text)}
 .tab[aria-selected="true"]{background:var(--accent-dim); color:#fff; font-weight:600}
@@ -61,9 +68,7 @@ nav::-webkit-scrollbar{display:none}
   font-size:14px; flex:0 0 auto; display:grid; place-items:center;
 }
 .icon-btn:hover{color:var(--text)}
-.current{font-size:12px;color:var(--muted);padding-left:8px;border-left:1px solid var(--line)}
-.bottom{height:var(--tab-h);flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line);display:flex;padding:0 6px;position:relative;z-index:20}
-.more-menu{position:fixed;right:8px;bottom:calc(var(--tab-h) + 7px);z-index:30;width:260px;padding:7px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 45px #0008;display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.more-menu{position:fixed;right:8px;top:calc(var(--top-h) + 6px);z-index:30;width:260px;padding:7px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 45px #0008;display:grid;grid-template-columns:1fr 1fr;gap:5px}
 .more-menu[hidden]{display:none}.more-menu button{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:7px;padding:9px;text-align:left;cursor:pointer}.more-menu button:hover,.more-menu button.on{background:var(--panel-2);color:var(--text);border-color:var(--line)}
 
 /* ---- Panel area ---- */
@@ -87,21 +92,21 @@ main{flex:1; position:relative; min-height:0}
 <body>
 
 <header>
-  <span class="brand">
+  <!-- The brand is the way back to the default tab: a hub with no home button
+       strands anyone who has drilled into a child route. -->
+  <button class="brand" id="home" type="button" title="Về trang chủ" aria-label="Về trang chủ">
     <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true">
       <rect width="32" height="32" rx="7" fill="var(--accent)" opacity=".16"/>
       <path d="M7 22V10M7 22h7M18 22V10l7 12V10" stroke="var(--accent)" stroke-width="2.6"
             fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     LEON
-  </span>
-  <span class="current" id="current">Chart</span>
-  <span style="flex:1"></span>
+  </button>
+  <nav id="tabs" role="tablist" aria-label="Khu vực"></nav>
   <button class="icon-btn" id="theme" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện">◐</button>
 </header>
 
 <main id="panes"></main>
-<footer class="bottom"><nav id="tabs" role="tablist" aria-label="Khu vực"></nav></footer>
 <div class="more-menu" id="moreMenu" hidden></div>
 
 <script>
@@ -216,7 +221,11 @@ function select(key, pushState){
   }
 
   document.title = `${tab.name} — LEON Hub`;
-  document.getElementById("current").textContent = tab.name;
+
+  // Keep the active tab in view when it is reached by deep link or keyboard
+  // rather than by clicking a visible button.
+  const activeBtn = document.getElementById("tab-" + tab.key);
+  if(activeBtn) activeBtn.scrollIntoView({block:"nearest", inline:"nearest"});
 
   if(pushState){
     const params = new URLSearchParams(location.search);
@@ -246,6 +255,16 @@ document.addEventListener("click", e => { if(!moreMenu.contains(e.target) && e.t
 
 build();
 select(currentTab(), false);
+
+document.getElementById("home").addEventListener("click", () => {
+  const frame = document.getElementById("pane-" + DEFAULT_TAB);
+  const home = TABS.find(t => t.key === DEFAULT_TAB);
+  // A second press while already home reloads the tab rather than doing
+  // nothing, which is what makes it usable as a "get me back to a clean
+  // state" control.
+  if(currentTab() === DEFAULT_TAB && frame && home) frame.src = childSrc(home);
+  select(DEFAULT_TAB, true);
+});
 /* The worker file sits at the site root, but registering it from /hub/ would
    default its scope to /hub/ -- leaving the tab iframes under /apps/ and the
    manifest's declared "./" scope uncontrolled. Ask for the root scope
