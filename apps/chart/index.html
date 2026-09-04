@@ -3036,6 +3036,15 @@ function hitDrawing(p){
 function hitSelectedHandle(p){
   if(selectedDrawing < 0 || !drawings[selectedDrawing]) return null;
   const d = drawings[selectedDrawing];
+  // Polyline shapes address their vertices by index; a/b/c shapes by name.
+  // Returning the index as a number keeps both callable through one path.
+  if(Array.isArray(d.pts)){
+    for(let i = 0; i < d.pts.length; i++){
+      const pt = pixelPoint(d.pts[i]);
+      if(pt && Math.hypot(p.x - pt.x, p.y - pt.y) <= 9) return i;
+    }
+    return null;
+  }
   for(const key of ["a", "b", "c"]){
     if(!d[key]) continue;
     const pt = pixelPoint(d[key]);
@@ -3112,7 +3121,9 @@ el.drawing.addEventListener("pointerdown", e => {
 
   if(drawMode === "select"){
     const handle = hitSelectedHandle(p);
-    if(!handle) selectedDrawing = hitDrawing(p);
+    // A polyline's first vertex is index 0, which is falsy -- testing the
+    // handle for truthiness would drop it and drag the whole shape instead.
+    if(handle == null) selectedDrawing = hitDrawing(p);
     if(selectedDrawing >= 0){
       const original = drawings[selectedDrawing];
       dragging = {
@@ -3155,6 +3166,7 @@ el.drawing.addEventListener("pointerdown", e => {
     }
     drawings.push(shape);
     saveDrawings();
+    finishAndSelect();
     scheduleDraw();
     return;
   }
@@ -3189,9 +3201,21 @@ el.drawing.addEventListener("pointerdown", e => {
     pendingPoints = [];
     pendingPoint = previewPoint = null;
     saveDrawings();
+    finishAndSelect();
   }
   scheduleDraw();
 });
+
+/* A finished shape hands control back rather than arming the tool for another
+   one. The drawing the reader just placed is selected and the mode is select,
+   so it can be nudged, dragged by a handle or deleted straight away -- which
+   is the moment they are most likely to want to adjust it. Drawing several of
+   the same kind means picking the tool again, which is the cheaper mistake. */
+function finishAndSelect(){
+  selectedDrawing = drawings.length - 1;
+  setDrawMode("select");
+  syncDrawControls();
+}
 
 el.drawing.addEventListener("pointermove", e => {
   const p = pointFromEvent(e, !!(dragging && dragging.handle) || pendingPoints.length > 0);
@@ -3209,8 +3233,9 @@ el.drawing.addEventListener("pointermove", e => {
   }
   if(dragging && selectedDrawing === dragging.index){
     const moved = JSON.parse(JSON.stringify(dragging.original));
-    if(dragging.handle){
-      moved[dragging.handle] = {t:p.t, p:p.p};
+    if(dragging.handle !== null && dragging.handle !== undefined){
+      if(typeof dragging.handle === "number") moved.pts[dragging.handle] = {t:p.t, p:p.p};
+      else moved[dragging.handle] = {t:p.t, p:p.p};
     }else{
       const dt = p.t - dragging.start.t, dp = p.p - dragging.start.p;
       if(Array.isArray(moved.pts)){
@@ -3234,7 +3259,7 @@ el.drawing.addEventListener("pointermove", e => {
     previewPoint = {t:p.t, p:p.p};
     scheduleDraw();
   }else if(drawMode === "select"){
-    el.drawing.style.cursor = hitSelectedHandle(p) ? "crosshair" :
+    el.drawing.style.cursor = hitSelectedHandle(p) != null ? "crosshair" :
       (hitDrawing(p) >= 0 ? "move" : "default");
   }
 });
@@ -3243,13 +3268,15 @@ function finishDrag(e){
   if(brushing){
     try{ el.drawing.releasePointerCapture(e.pointerId); }catch(err){}
     // A press with no movement leaves a single point, which is not a stroke.
-    if(brushing.pts.length < 2){
+    const kept = brushing.pts.length >= 2;
+    if(!kept){
       const i = drawings.indexOf(brushing);
       if(i >= 0) drawings.splice(i, 1);
       undoStack.pop();
     }
     brushing = null;
     saveDrawings();
+    if(kept) finishAndSelect();
     scheduleDraw();
     return;
   }
