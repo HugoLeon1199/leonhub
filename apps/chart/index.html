@@ -2168,6 +2168,9 @@ let previewPoint = null;
 let dragging = null;
 let brushing = null;      // freehand stroke in progress
 let drawFrame = 0;
+// How close, in pixels, a candle price has to be before the magnet takes the
+// click. Roughly a fingertip: near enough that the reader was aiming at it.
+const MAGNET_RADIUS = 12;
 let magnetEnabled = false;
 try{ magnetEnabled = localStorage.getItem("leon_chart_magnet") === "1"; }catch(e){}
 
@@ -2349,6 +2352,12 @@ function snapToOhlc(t, p, y){
     const distance = cy == null ? Math.abs(value - p) : Math.abs(cy - y);
     if(distance < bestDistance){ best = value; bestDistance = distance; }
   });
+  // Snap only when the candle price is already near the cursor. Without this
+  // the magnet reaches across the whole bar -- a click in the middle of a long
+  // wick jumped to its tip, sometimes 190px away, so the shape landed nowhere
+  // near where it was placed. A magnet that has to be aimed at is useless;
+  // one that quietly relocates the click is worse.
+  if(bestDistance > MAGNET_RADIUS) return {t, p};
   return {t:bar.time, p:best};
 }
 
@@ -3363,12 +3372,20 @@ const indEl = {
   list:  document.getElementById("ind-list"),
 };
 
-INDICATOR_KEYS.forEach(key => {
-  const o = document.createElement("option");
-  o.value = key;
-  o.textContent = INDICATORS[key].name;
-  indEl.type.appendChild(o);
-});
+// A blank first option so opening the panel does not immediately add whatever
+// happens to sit at the top of the list.
+(function fillIndicatorSelect(){
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "— chọn chỉ báo —";
+  indEl.type.appendChild(blank);
+  INDICATOR_KEYS.forEach(key => {
+    const o = document.createElement("option");
+    o.value = key;
+    o.textContent = INDICATORS[key].name;
+    indEl.type.appendChild(o);
+  });
+})();
 
 function indicatorLabel(inst){
   const def = INDICATORS[inst.type];
@@ -3434,6 +3451,7 @@ function renderIndicatorList(){
 function renderParamInputs(){
   const def = INDICATORS[indEl.type.value];
   indEl.params.replaceChildren();
+  if(!def) return;   // blank selection: nothing to configure yet
   Object.entries(def.params).forEach(([key, value]) => {
     const meta = PARAM_META[key];
     const label = document.createElement("label");
@@ -3476,9 +3494,15 @@ indEl.close.addEventListener("click", () => {
   indEl.panel.hidden = true;
   indEl.open.setAttribute("aria-pressed", "false");
 });
-indEl.type.addEventListener("change", renderParamInputs);
+// Picking from the list adds the indicator straight away. The Add button
+// stays for a second copy at different settings, but choosing a name and then
+// having to confirm it was one step too many.
+indEl.type.addEventListener("change", () => {
+  renderParamInputs();
+  if(indEl.type.value) addIndicatorFromForm();
+});
 
-indEl.add.addEventListener("click", () => {
+function addIndicatorFromForm(){
   const type = indEl.type.value;
   const def = INDICATORS[type];
   if(!def) return;
@@ -3499,7 +3523,13 @@ indEl.add.addEventListener("click", () => {
   saveIndicators();
   renderIndicatorList();
   setIndicatorStatus(`Đã thêm ${indicatorLabel(inst)}.`);
-});
+  // Back to blank, so the next pick fires a change event even if it is the
+  // same indicator again with different settings.
+  indEl.type.value = "";
+  renderParamInputs();
+}
+
+indEl.add.addEventListener("click", addIndicatorFromForm);
 
 indEl.params.addEventListener("keydown", e => {
   if(e.key === "Enter"){ indEl.add.click(); e.preventDefault(); }
