@@ -39,7 +39,14 @@ MIN_TURNOVER_USD = 1_000_000
 # Stablecoins quoted against USDT price a peg, not an asset: a 0.01% move is
 # noise on a chart whose whole range is 0.2%, and they otherwise occupy the top
 # of every turnover ranking without carrying information.
-PEGGED = {"USDC", "FDUSD", "TUSD", "BUSD", "DAI", "USDP", "EURI", "AEUR", "USD1"}
+# Any instrument that tracks a peg rather than an asset. RLUSD and EUR were
+# missed on the first pass and immediately dominated the large-order view with
+# ~0% moves, which is the tell: a peg trades in size precisely because it is not
+# supposed to move. Fiat tickers belong here for the same reason.
+PEGGED = {
+    "USDC", "FDUSD", "TUSD", "BUSD", "DAI", "USDP", "EURI", "AEUR", "USD1",
+    "RLUSD", "PYUSD", "USDE", "USDS", "EUR", "GBP", "TRY", "BRL", "ARS", "JPY",
+}
 
 
 def _num(value: Any) -> float | None:
