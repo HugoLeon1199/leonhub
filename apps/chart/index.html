@@ -11,10 +11,9 @@
 
 <!-- Lightweight Charts is not on cdnjs; jsDelivr is the other CSP-allowed host.
      Pinned, because a silent major bump would break the series API.
-     v5 for series primitives: drawings attached to the series get the chart's
-     own coordinate handling, instead of a parallel canvas that has to convert
-     time and price by hand and loses the shape whenever a conversion returns
-     null (off-screen, or past the last bar). -->
+     v5 supplies real indicator panes and the unified series API. Drawings stay
+     in a lightweight registry-backed canvas because they need editable handles;
+     their stored coordinates are market time/price, never screen pixels. -->
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
@@ -55,25 +54,36 @@ body{
 }
 .group button:hover{color:var(--text)}
 .group button[aria-pressed="true"]{background:var(--accent); color:#04150f; font-weight:600}
+.group button:disabled{opacity:.35; cursor:not-allowed}
 :root[data-theme="light"] .group button[aria-pressed="true"]{color:#fff}
 .group button.danger:hover{color:var(--down)}
 .draw-count{min-width:18px; padding:0 4px; color:var(--muted); font-size:11px;
   display:grid; place-items:center; font-variant-numeric:tabular-nums}
 .ind-panel{background:var(--panel); border-bottom:1px solid var(--line);
   padding:8px 12px; display:flex; flex-direction:column; gap:8px}
+.ind-panel[hidden]{display:none}
 .ind-add{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
 .ind-add select, .ind-add input{background:var(--panel-2); border:1px solid var(--line);
   color:var(--text); border-radius:6px; padding:5px 8px; font-size:12px; font-family:inherit}
-.ind-add input{width:78px}
+.ind-params{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.ind-param{display:inline-flex; gap:4px; align-items:center; color:var(--muted); font-size:11px}
+.ind-param input{width:72px}
+.ind-color{display:inline-flex; align-items:center; gap:4px; color:var(--muted); font-size:11px}
+.ind-color input{width:34px; height:28px; padding:2px; cursor:pointer}
 .ind-add button{background:var(--accent); color:#04150f; border:0; border-radius:6px;
   padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit}
 .ind-add button.ghost{background:var(--panel-2); color:var(--muted); font-weight:400}
+.ind-add button:disabled{opacity:.45; cursor:not-allowed}
+.ind-status{min-height:18px; color:var(--muted); font-size:11px}
+.ind-status.error{color:var(--down)}
 .ind-list{list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:6px}
 .ind-list li{display:inline-flex; align-items:center; gap:7px; background:var(--panel-2);
   border:1px solid var(--line); border-radius:999px; padding:3px 6px 3px 10px; font-size:12px}
+.ind-list li.off{opacity:.55}
 .ind-list .dot{width:8px; height:8px; border-radius:50%; flex:none}
-.ind-list .rm{background:none; border:0; color:var(--muted); cursor:pointer;
+.ind-list button{background:none; border:0; color:var(--muted); cursor:pointer;
   font-size:14px; line-height:1; padding:2px 4px; font-family:inherit}
+.ind-list .toggle:hover{color:var(--text)}
 .ind-list .rm:hover{color:var(--down)}
 .ind-list .empty{color:var(--muted); border:0; background:none; padding-left:0}
 .live{display:inline-flex; align-items:center; gap:5px}
@@ -106,10 +116,11 @@ body{
 /* ---- Chart ---- */
 main{flex:1; position:relative; min-height:0}
 #chart{position:absolute; inset:0}
-#drawings{position:absolute; inset:0; width:100%; height:100%; z-index:2;
+#drawings{position:absolute; top:0; left:0; width:100%; height:100%; z-index:2;
   pointer-events:none; touch-action:none; outline:none}
 #drawings.active{pointer-events:auto; cursor:crosshair}
 #drawings.selecting{cursor:default}
+#drawings[hidden]{display:none}
 .msg{
   position:absolute; inset:0; display:grid; place-content:center; text-align:center;
   gap:8px; color:var(--muted); background:var(--bg); padding:24px; z-index:3;
@@ -117,6 +128,57 @@ main{flex:1; position:relative; min-height:0}
 .msg strong{color:var(--text); font-size:15px}
 .msg small{font-size:12.5px; max-width:46ch}
 .msg[hidden]{display:none!important}
+
+/* ---- Right-click menu ---- */
+.context-menu{
+  position:fixed; z-index:30; width:min(292px,calc(100vw - 16px));
+  max-height:calc(100vh - 16px); overflow:auto; padding:7px;
+  border:1px solid var(--line); border-radius:8px; background:var(--panel);
+  box-shadow:0 18px 48px rgba(0,0,0,.38); color:var(--text);
+}
+.context-menu[hidden]{display:none}
+.context-menu button{
+  width:100%; display:flex; align-items:center; gap:9px; border:0; border-radius:5px;
+  padding:8px 9px; background:transparent; color:var(--text); text-align:left;
+  font:12.5px/1.25 inherit; cursor:pointer;
+}
+.context-menu button:hover,.context-menu button:focus-visible{background:var(--panel-2); outline:none}
+.context-menu button:disabled{opacity:.38; cursor:not-allowed; background:transparent}
+.context-menu .ctx-icon{width:16px; flex:none; color:var(--muted); text-align:center}
+.context-menu .ctx-label{flex:1; min-width:0}
+.context-menu .ctx-value{color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums}
+.context-menu .ctx-check{width:14px; color:var(--muted); text-align:center}
+.context-menu .danger{color:var(--down)}
+.context-menu .ctx-sep{height:1px; margin:5px 4px; background:var(--line)}
+
+.chart-toast{
+  position:fixed; left:50%; bottom:38px; z-index:40; transform:translateX(-50%);
+  max-width:min(440px,calc(100vw - 24px)); padding:8px 12px; border-radius:7px;
+  background:var(--panel-2); border:1px solid var(--line); box-shadow:0 10px 28px rgba(0,0,0,.3);
+  color:var(--text); font-size:12px; text-align:center;
+}
+.chart-toast[hidden]{display:none}
+
+.alert-dialog{
+  width:min(520px,calc(100vw - 24px)); max-height:min(620px,calc(100vh - 24px));
+  padding:0; border:1px solid var(--line); border-radius:10px; background:var(--panel);
+  color:var(--text); box-shadow:0 24px 80px rgba(0,0,0,.5);
+}
+.alert-dialog::backdrop{background:rgba(2,6,12,.66)}
+.alert-head{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line)}
+.alert-head strong{flex:1}
+.alert-head button,.alert-row button{
+  border:1px solid var(--line); border-radius:6px; background:var(--panel-2); color:var(--text);
+  padding:5px 9px; cursor:pointer; font:12px inherit;
+}
+.alert-list{padding:8px 16px 14px; max-height:440px; overflow:auto}
+.alert-empty{padding:22px 0; color:var(--muted); text-align:center}
+.alert-row{display:grid; grid-template-columns:minmax(110px,1fr) auto auto; gap:8px; align-items:center;
+  padding:9px 0; border-bottom:1px solid var(--line)}
+.alert-row:last-child{border-bottom:0}
+.alert-price{font-weight:700; font-variant-numeric:tabular-nums}
+.alert-state{display:block; margin-top:2px; color:var(--muted); font-size:11px; font-weight:400}
+.alert-row button.danger{color:var(--down)}
 
 footer{
   flex:0 0 auto; padding:5px 12px; background:var(--panel); border-top:1px solid var(--line);
@@ -136,12 +198,14 @@ footer b{color:var(--text); font-weight:600}
     <button id="ind-open" type="button" title="Thêm hoặc bỏ chỉ báo">Chỉ báo <span id="ind-count">0</span></button>
   </div>
   <div class="group" id="draw-tools" role="group" aria-label="Công cụ vẽ">
-    <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart">Pan</button>
+    <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart (Esc)">Pan / Esc</button>
     <button type="button" data-tool="select" aria-pressed="false" title="Chọn, kéo hoặc nhấn Delete để xóa hình">◇</button>
     <!-- Tool buttons are generated from TOOLS so a new tool needs one entry,
          not an entry plus a button someone has to remember to add. -->
     <button id="draw-undo" type="button" title="Hoàn tác (Ctrl+Z)">↶</button>
     <button id="draw-redo" type="button" title="Làm lại (Ctrl+Y)">↷</button>
+    <button id="draw-magnet" type="button" aria-pressed="false"
+            title="Nam châm OHLC — giữ Ctrl để đảo tạm">🧲</button>
     <button id="draw-clear" class="danger" type="button" title="Xóa tất cả hình của coin này">Xóa</button>
     <span class="draw-count" id="draw-count" title="Số hình đã lưu">0</span>
   </div>
@@ -156,11 +220,13 @@ footer b{color:var(--text); font-weight:600}
 <div class="ind-panel" id="ind-panel" hidden>
   <div class="ind-add">
     <select id="ind-type" aria-label="Loại chỉ báo"></select>
-    <input id="ind-period" type="number" min="1" max="400" step="1" placeholder="chu kỳ"
-           aria-label="Chu kỳ">
+    <div id="ind-params" class="ind-params"></div>
+    <label class="ind-color">Màu <input id="ind-color" type="color" value="#3b82f6"></label>
     <button id="ind-add" type="button">Thêm</button>
+    <button id="ind-reset" type="button" class="ghost">MA mặc định</button>
     <button id="ind-close" type="button" class="ghost">Đóng</button>
   </div>
+  <div id="ind-status" class="ind-status" aria-live="polite"></div>
   <ul class="ind-list" id="ind-list"></ul>
 </div>
 
@@ -171,6 +237,17 @@ footer b{color:var(--text); font-weight:600}
   <canvas id="drawings" tabindex="0" aria-label="Lớp vẽ phân tích kỹ thuật"></canvas>
   <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
 </main>
+
+<div id="chart-menu" class="context-menu" role="menu" aria-label="Tùy chọn biểu đồ" hidden></div>
+<div id="chart-toast" class="chart-toast" role="status" aria-live="polite" hidden></div>
+
+<dialog id="alert-dialog" class="alert-dialog" aria-labelledby="alert-title">
+  <div class="alert-head">
+    <strong id="alert-title">Cảnh báo giá</strong>
+    <button id="alert-close" type="button">Đóng</button>
+  </div>
+  <div id="alert-list" class="alert-list"></div>
+</dialog>
 
 <footer>
   <span>Nguồn: <b id="src">Binance</b></span>
@@ -199,6 +276,7 @@ const FALLBACK_COINS = [
 ];
 
 const el = {
+  main: document.querySelector("main"),
   sym: document.getElementById("sym"),
   coins: document.getElementById("coins"),
   tfs: document.getElementById("tfs"),
@@ -206,6 +284,9 @@ const el = {
   drawTools: document.getElementById("draw-tools"),
   drawClear: document.getElementById("draw-clear"),
   drawCount: document.getElementById("draw-count"),
+  drawUndo: document.getElementById("draw-undo"),
+  drawRedo: document.getElementById("draw-redo"),
+  drawMagnet: document.getElementById("draw-magnet"),
   price: document.getElementById("price"),
   chg: document.getElementById("chg"),
   stats: document.getElementById("stats"),
@@ -213,12 +294,29 @@ const el = {
   src: document.getElementById("src"),
   upd: document.getElementById("upd"),
   live: document.getElementById("live"),
+  menu: document.getElementById("chart-menu"),
+  toast: document.getElementById("chart-toast"),
+  alertDialog: document.getElementById("alert-dialog"),
+  alertList: document.getElementById("alert-list"),
 };
 
 const params = new URLSearchParams(location.search);
 let symbol = (params.get("sym") || "BTC").toUpperCase();
 let timeframe = TIMEFRAMES.includes(params.get("tf")) ? params.get("tf") : "1h";
 el.sym.value = symbol;
+
+function storedBool(key, fallback){
+  try{
+    const value = localStorage.getItem(key);
+    return value == null ? fallback : value === "1";
+  }catch(e){ return fallback; }
+}
+
+let volumeVisible = storedBool("leon_chart_volume", true);
+let showIndicatorTitles = storedBool("leon_chart_indicator_titles", true);
+let drawingsVisible = storedBool("leon_chart_drawings_visible", true);
+let crosshairMagnet = storedBool("leon_chart_crosshair_magnet", false);
+let logarithmicScale = storedBool("leon_chart_log_scale", false);
 
 function renderCoinList(symbols){
   el.coins.replaceChildren(...symbols.map(sym => {
@@ -262,11 +360,19 @@ const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).
 
 function chartTheme(){
   return {
-    layout:{ background:{color:css("--bg")}, textColor:css("--muted"), fontSize:11 },
+    layout:{
+      background:{color:css("--bg")}, textColor:css("--muted"), fontSize:11,
+      panes:{
+        enableResize:true,
+        separatorColor:css("--line"),
+        separatorHoverColor:css("--panel-2"),
+      },
+    },
     grid:{ vertLines:{color:css("--line")}, horzLines:{color:css("--line")} },
     rightPriceScale:{ borderColor:css("--line") },
     timeScale:{ borderColor:css("--line"), timeVisible:true, secondsVisible:false },
-    crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
+    crosshair:{ mode: crosshairMagnet
+      ? LightweightCharts.CrosshairMode.Magnet : LightweightCharts.CrosshairMode.Normal },
   };
 }
 
@@ -279,9 +385,13 @@ const candles = chart.addSeries(LightweightCharts.CandlestickSeries, {
   wickUpColor:css("--up"), wickDownColor:css("--down"),
 });
 const volume = chart.addSeries(LightweightCharts.HistogramSeries, {
-  priceFormat:{type:"volume"}, priceScaleId:"vol",
+  priceFormat:{type:"volume"}, priceScaleId:"vol", visible:volumeVisible,
 });
 chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.84, bottom:0} });
+candles.priceScale().applyOptions({
+  mode:logarithmicScale
+    ? LightweightCharts.PriceScaleMode.Logarithmic : LightweightCharts.PriceScaleMode.Normal,
+});
 
 /* ---------- indicator maths ----------
    Written out rather than pulled from a library: every formula below is
@@ -365,13 +475,13 @@ function rsi(bars, period){
       gain += up; loss += down;
       if(i === period){
         gain /= period; loss /= period;
-        out.push({time:bars[i].time, value:loss === 0 ? 100 : 100 - 100 / (1 + gain / loss)});
+        out.push({time:bars[i].time, value:loss === 0 ? (gain === 0 ? 50 : 100) : 100 - 100 / (1 + gain / loss)});
       }
       continue;
     }
     gain = (gain * (period - 1) + up) / period;
     loss = (loss * (period - 1) + down) / period;
-    out.push({time:bars[i].time, value:loss === 0 ? 100 : 100 - 100 / (1 + gain / loss)});
+    out.push({time:bars[i].time, value:loss === 0 ? (gain === 0 ? 50 : 100) : 100 - 100 / (1 + gain / loss)});
   }
   return out;
 }
@@ -390,7 +500,9 @@ function macd(bars, fast, slow, signal){
   line.forEach((p, i) => {
     if(sig[i] == null) return;
     signalPts.push({time:p.time, value:sig[i]});
-    histPts.push({time:p.time, value:p.value - sig[i]});
+    const value = p.value - sig[i];
+    histPts.push({time:p.time, value,
+      color:value >= 0 ? "rgba(56,211,159,.58)" : "rgba(240,101,90,.58)"});
   });
   return {line, signal:signalPts, hist:histPts};
 }
@@ -466,7 +578,7 @@ function vwap(bars){
 function supertrend(bars, period, mult){
   const a = atr(bars, period);
   const atrAt = new Map(a.map(p => [p.time, p.value]));
-  const out = [];
+  const up = [], down = [];
   let trend = 1, prevUpper = null, prevLower = null, prevClose = null;
   for(const b of bars){
     const av = atrAt.get(b.time);
@@ -483,10 +595,13 @@ function supertrend(bars, period, mult){
       if(trend === 1 && b.close < prevLower) trend = -1;
       else if(trend === -1 && b.close > prevUpper) trend = 1;
     }
-    out.push({time:b.time, value:trend === 1 ? lower : upper});
+    // Whitespace points break the opposite line, so a direction change is
+    // visible instead of painting one ambiguous colour through both regimes.
+    up.push(trend === 1 ? {time:b.time, value:lower} : {time:b.time});
+    down.push(trend === -1 ? {time:b.time, value:upper} : {time:b.time});
     prevUpper = upper; prevLower = lower; prevClose = b.close;
   }
-  return out;
+  return {up, down};
 }
 
 function ichimoku(bars, tenkanLen, kijunLen, senkouLen){
@@ -495,18 +610,34 @@ function ichimoku(bars, tenkanLen, kijunLen, senkouLen){
     if(!win.length) return null;
     return (Math.max(...win.map(b => b.high)) + Math.min(...win.map(b => b.low))) / 2;
   };
-  const tenkan = [], kijun = [];
+  const tenkan = [], kijun = [], spanA = [], spanB = [], chikou = [];
+  const futureTime = i => {
+    if(i < bars.length) return bars[i].time;
+    const step = bars.length > 1
+      ? bars[bars.length - 1].time - bars[bars.length - 2].time : 0;
+    return step ? bars[bars.length - 1].time + (i - bars.length + 1) * step : null;
+  };
   for(let i = 0; i < bars.length; i++){
+    let tenkanValue = null, kijunValue = null;
     if(i >= tenkanLen - 1){
-      const v = hl(i - tenkanLen + 1, i + 1);
-      if(v != null) tenkan.push({time:bars[i].time, value:v});
+      tenkanValue = hl(i - tenkanLen + 1, i + 1);
+      if(tenkanValue != null) tenkan.push({time:bars[i].time, value:tenkanValue});
     }
     if(i >= kijunLen - 1){
-      const v = hl(i - kijunLen + 1, i + 1);
-      if(v != null) kijun.push({time:bars[i].time, value:v});
+      kijunValue = hl(i - kijunLen + 1, i + 1);
+      if(kijunValue != null) kijun.push({time:bars[i].time, value:kijunValue});
+      const projected = futureTime(i + kijunLen);
+      if(projected != null && tenkanValue != null)
+        spanA.push({time:projected, value:(tenkanValue + kijunValue) / 2});
     }
+    if(i >= senkouLen - 1){
+      const projected = futureTime(i + kijunLen);
+      const v = hl(i - senkouLen + 1, i + 1);
+      if(projected != null && v != null) spanB.push({time:projected, value:v});
+    }
+    if(i >= kijunLen) chikou.push({time:bars[i - kijunLen].time, value:bars[i].close});
   }
-  return {tenkan, kijun};
+  return {tenkan, kijun, spanA, spanB, chikou};
 }
 
 function obv(bars){
@@ -531,7 +662,7 @@ function mfi(bars, period){
       if(tp > prev) pos += flow; else if(tp < prev) neg += flow;
     }
     out.push({time:bars[i].time,
-      value: neg === 0 ? 100 : 100 - 100 / (1 + pos / neg)});
+      value: neg === 0 ? (pos === 0 ? 50 : 100) : 100 - 100 / (1 + pos / neg)});
   }
   return out;
 }
@@ -587,54 +718,62 @@ function adx(bars, period){
    its own strip below. `build` returns the plotted lines, so adding an
    indicator means adding an entry here and nothing else. */
 const INDICATORS = {
-  sma:    {name:"SMA", pane:0, params:{period:20},
+  sma:    {name:"SMA", color:"#3b82f6", pane:0, params:{period:20},
            build:(b, p) => [{data:sma(b, p.period), color:"#3b82f6"}]},
-  ema:    {name:"EMA", pane:0, params:{period:9},
+  ema:    {name:"EMA", color:"#f59e0b", pane:0, params:{period:9},
            build:(b, p) => [{data:ema(b, p.period), color:"#f59e0b"}]},
-  wma:    {name:"WMA", pane:0, params:{period:20},
+  wma:    {name:"WMA", color:"#8b5cf6", pane:0, params:{period:20},
            build:(b, p) => [{data:wma(b, p.period), color:"#8b5cf6"}]},
-  hma:    {name:"HMA", pane:0, params:{period:20},
+  hma:    {name:"HMA", color:"#ec4899", pane:0, params:{period:20},
            build:(b, p) => [{data:hma(b, p.period), color:"#ec4899"}]},
-  bb:     {name:"Bollinger", pane:0, params:{period:20, mult:2},
+  bb:     {name:"Bollinger", color:"#94a3b8", pane:0, params:{period:20, mult:2},
            build:(b, p) => {
              const r = bollinger(b, p.period, p.mult);
              return [{data:r.upper, color:"#94a3b8"},
                      {data:r.mid, color:"#64748b", dashed:true},
                      {data:r.lower, color:"#94a3b8"}];
            }},
-  vwap:   {name:"VWAP", pane:0, params:{},
+  vwap:   {name:"VWAP", color:"#eab308", pane:0, params:{},
            build:b => [{data:vwap(b), color:"#eab308", width:2}]},
-  supertrend:{name:"Supertrend", pane:0, params:{period:10, mult:3},
-           build:(b, p) => [{data:supertrend(b, p.period, p.mult), color:"#10b981", width:2}]},
-  ichimoku:{name:"Ichimoku", pane:0, params:{tenkan:9, kijun:26, senkou:52},
+  supertrend:{name:"Supertrend", color:"#10b981", pane:0, params:{period:10, mult:3},
+           build:(b, p) => {
+             const r = supertrend(b, p.period, p.mult);
+             return [{data:r.up, color:"#10b981", width:2},
+                     {data:r.down, color:"#f0655a", width:2}];
+           }},
+  ichimoku:{name:"Ichimoku", color:"#22d3ee", pane:0, params:{tenkan:9, kijun:26, senkou:52},
            build:(b, p) => {
              const r = ichimoku(b, p.tenkan, p.kijun, p.senkou);
-             return [{data:r.tenkan, color:"#22d3ee"}, {data:r.kijun, color:"#f43f5e"}];
+             return [{data:r.tenkan, color:"#22d3ee"},
+                     {data:r.kijun, color:"#f43f5e"},
+                     {data:r.spanA, color:"#38d39f", dashed:true},
+                     {data:r.spanB, color:"#f0655a", dashed:true},
+                     {data:r.chikou, color:"#a78bfa", dashed:true}];
            }},
-  rsi:    {name:"RSI", pane:1, range:[0, 100], guides:[30, 70], params:{period:14},
+  rsi:    {name:"RSI", color:"#a78bfa", pane:1, range:[0, 100], guides:[30, 70], params:{period:14},
            build:(b, p) => [{data:rsi(b, p.period), color:"#a78bfa"}]},
-  macd:   {name:"MACD", pane:1, params:{fast:12, slow:26, signal:9},
+  macd:   {name:"MACD", color:"#3b82f6", pane:1, guides:[0], params:{fast:12, slow:26, signal:9},
            build:(b, p) => {
              const r = macd(b, p.fast, p.slow, p.signal);
              return [{data:r.line, color:"#3b82f6"},
                      {data:r.signal, color:"#f59e0b"},
                      {data:r.hist, color:"#64748b", histogram:true}];
            }},
-  stoch:  {name:"Stochastic", pane:1, range:[0, 100], guides:[20, 80],
+  stoch:  {name:"Stochastic", color:"#3b82f6", pane:1, range:[0, 100], guides:[20, 80],
            params:{period:14, smoothK:3, smoothD:3},
            build:(b, p) => {
              const r = stochastic(b, p.period, p.smoothK, p.smoothD);
              return [{data:r.k, color:"#3b82f6"}, {data:r.d, color:"#f59e0b"}];
            }},
-  atr:    {name:"ATR", pane:1, params:{period:14},
+  atr:    {name:"ATR", color:"#f97316", pane:1, params:{period:14},
            build:(b, p) => [{data:atr(b, p.period), color:"#f97316"}]},
-  adx:    {name:"ADX", pane:1, guides:[25], params:{period:14},
+  adx:    {name:"ADX", color:"#14b8a6", pane:1, range:[0, 100], guides:[25], params:{period:14},
            build:(b, p) => [{data:adx(b, p.period), color:"#14b8a6"}]},
-  cci:    {name:"CCI", pane:1, guides:[-100, 100], params:{period:20},
+  cci:    {name:"CCI", color:"#8b5cf6", pane:1, guides:[-100, 0, 100], params:{period:20},
            build:(b, p) => [{data:cci(b, p.period), color:"#8b5cf6"}]},
-  mfi:    {name:"MFI", pane:1, range:[0, 100], guides:[20, 80], params:{period:14},
+  mfi:    {name:"MFI", color:"#06b6d4", pane:1, range:[0, 100], guides:[20, 80], params:{period:14},
            build:(b, p) => [{data:mfi(b, p.period), color:"#06b6d4"}]},
-  obv:    {name:"OBV", pane:1, params:{},
+  obv:    {name:"OBV", color:"#84cc16", pane:1, params:{},
            build:b => [{data:obv(b), color:"#84cc16"}]},
 };
 const INDICATOR_KEYS = Object.keys(INDICATORS);
@@ -644,14 +783,49 @@ const INDICATOR_KEYS = Object.keys(INDICATORS);
    which a single on/off toggle per type could never express. */
 let indicators = [];
 let indicatorSeq = 1;
+const MAX_INDICATORS = 16;
+const MAX_INDICATOR_PANES = 4;
+
+const PARAM_META = {
+  period:{label:"Chu kỳ", min:1, max:400, step:1},
+  mult:{label:"Hệ số", min:.1, max:10, step:.1},
+  fast:{label:"Nhanh", min:1, max:200, step:1},
+  slow:{label:"Chậm", min:2, max:400, step:1},
+  signal:{label:"Tín hiệu", min:1, max:200, step:1},
+  tenkan:{label:"Tenkan", min:1, max:200, step:1},
+  kijun:{label:"Kijun", min:2, max:300, step:1},
+  senkou:{label:"Senkou", min:3, max:400, step:1},
+  smoothK:{label:"Mượt K", min:1, max:50, step:1},
+  smoothD:{label:"Mượt D", min:1, max:50, step:1},
+};
 
 const DEFAULT_INDICATORS = [
   // MA20 and MA50 stay on by default because those are the two averages
   // signals_build.py crosses to generate a trade: the chart shows the rule
   // that produced a signal rather than asking the reader to take it on trust.
-  {type:"sma", params:{period:20}},
-  {type:"sma", params:{period:50}, color:"#f59e0b"},
+  {type:"sma", params:{period:20}, color:"#3b82f6", visible:true},
+  {type:"sma", params:{period:50}, color:"#f59e0b", visible:true},
 ];
+
+function normaliseParams(type, raw){
+  const defaults = INDICATORS[type].params;
+  const out = {};
+  Object.keys(defaults).forEach(key => {
+    const meta = PARAM_META[key];
+    let value = Number(raw && raw[key]);
+    if(!Number.isFinite(value)) value = defaults[key];
+    if(meta){
+      value = Math.max(meta.min, Math.min(meta.max, value));
+      if(meta.step === 1) value = Math.round(value);
+    }
+    out[key] = value;
+  });
+  return out;
+}
+
+function validIndicatorColor(value){
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+}
 
 function loadIndicators(){
   let stored = null;
@@ -662,65 +836,105 @@ function loadIndicators(){
     .map(d => ({
       id: indicatorSeq++,
       type: d.type,
-      color: d.color || null,
-      params: Object.assign({}, INDICATORS[d.type].params, d.params || {}),
-    }));
+      color: validIndicatorColor(d.color) || INDICATORS[d.type].color,
+      visible: d.visible !== false,
+      params: normaliseParams(d.type, d.params),
+    })).slice(0, MAX_INDICATORS);
 }
 
 function saveIndicators(){
   try{
     localStorage.setItem("leon_chart_inds", JSON.stringify(
-      indicators.map(i => ({type:i.type, params:i.params, color:i.color}))));
+      indicators.map(i => ({type:i.type, params:i.params, color:i.color, visible:i.visible}))));
   }catch(e){}
 }
 
 function disposeIndicator(inst){
   (inst._series || []).forEach(s => { try{ chart.removeSeries(s); }catch(e){} });
   inst._series = null;
+  inst._signature = null;
+  inst._paneIndex = null;
+  scheduleDraw();
 }
 
-// Indicators sharing a pane index share a price scale, so RSI and MFI can sit
-// together on one strip instead of each claiming its own.
-function paneScaleId(inst, slot){
-  return INDICATORS[inst.type].pane === 0 ? "right" : `ind_${inst.id}`;
+function setIndicatorVisibility(inst){
+  (inst._series || []).forEach(s => {
+    try{ s.applyOptions({visible:inst.visible}); }catch(e){}
+  });
 }
 
 function buildIndicator(inst, bars){
   const def = INDICATORS[inst.type];
-  disposeIndicator(inst);
+  if(!inst.visible && def.pane !== 0){
+    disposeIndicator(inst);
+    return;
+  }
   if(!bars.length) return;
   let plots = [];
   try{ plots = def.build(bars, inst.params) || []; }catch(e){ return; }
+  const signature = plots.map(p => p.histogram ? "h" : "l").join("");
+
+  // Keep existing series when only their data changed. Recreating every pane
+  // after a history page arrived made the chart jump and discarded the user's
+  // resized pane heights.
+  if(inst._series && inst._signature === signature && inst._series.length === plots.length){
+    plots.forEach((plot, i) => inst._series[i].setData(plot.data));
+    setIndicatorVisibility(inst);
+    return;
+  }
+
+  disposeIndicator(inst);
+  const paneIndex = def.pane === 0 ? 0 : chart.panes().length;
+  inst._paneIndex = paneIndex;
 
   inst._series = plots.map((plot, slot) => {
-    const scaleId = paneScaleId(inst, slot);
     const common = {
-      priceScaleId: scaleId,
+      priceScaleId:"right",
       priceLineVisible: false, lastValueVisible: def.pane !== 0,
       crosshairMarkerVisible: false,
+      visible:inst.visible,
+      title:showIndicatorTitles && slot === 0 ? indicatorLabel(inst) : "",
     };
     const s = plot.histogram
       ? chart.addSeries(LightweightCharts.HistogramSeries,
-          Object.assign({color:plot.color}, common))
+          Object.assign({color:plot.color}, common), paneIndex)
       : chart.addSeries(LightweightCharts.LineSeries, Object.assign({
           color: slot === 0 && inst.color ? inst.color : plot.color,
           lineWidth: plot.width || 1,
-          lineStyle: plot.dashed ? 2 : 0,
-        }, common));
+          lineStyle: plot.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+        }, common), paneIndex);
     s.setData(plot.data);
     return s;
   });
+  inst._signature = signature;
 
   if(def.pane !== 0 && inst._series.length){
-    // Sub-panes stack in the lower third, above the volume strip.
-    chart.priceScale(paneScaleId(inst, 0)).applyOptions({
-      scaleMargins:{top:0.72, bottom:0.16},
+    const first = inst._series[0];
+    // Bound oscillators to their mathematical range and draw the decision
+    // levels declared by the registry. Those fields existed before, but were
+    // never applied, so RSI could autoscale to e.g. 43-58 and hide 30/70.
+    (def.range || []).forEach(price => first.createPriceLine({
+      price, color:"rgba(139,152,168,.16)", lineWidth:1,
+      lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true,
+    }));
+    (def.guides || []).filter(x => !(def.range || []).includes(x)).forEach(price =>
+      first.createPriceLine({
+        price, color:"rgba(139,152,168,.42)", lineWidth:1,
+        lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:false,
+      }));
+    requestAnimationFrame(() => {
+      const pane = chart.panes()[inst._paneIndex];
+      const mainPane = chart.panes()[0];
+      if(mainPane && mainPane.getStretchFactor() < 3) mainPane.setStretchFactor(3);
+      if(pane) pane.setStretchFactor(1);
+      scheduleDraw();
     });
   }
 }
 
 function applyIndicators(bars){
   indicators.forEach(inst => buildIndicator(inst, bars));
+  scheduleDraw();
 }
 
 /* Live tick: recompute and push only the newest point of each plot. setData on
@@ -739,6 +953,15 @@ function tickIndicators(){
       if(s && last) { try{ s.update(last); }catch(e){} }
     });
   });
+}
+
+let indicatorTickTimer = 0;
+function scheduleIndicatorTick(){
+  if(indicatorTickTimer) return;
+  indicatorTickTimer = setTimeout(() => {
+    indicatorTickTimer = 0;
+    tickIndicators();
+  }, 300);
 }
 
 // Kept as the single name the load path and the websocket path both call, so
@@ -954,6 +1177,7 @@ function openStream(sym, tf, token){
     // Keep currentBars in step so the stat strip and the moving averages read
     // the same series the chart is showing.
     const last = currentBars[currentBars.length - 1];
+    const previousClose = last && Number.isFinite(last.close) ? last.close : null;
     if(last && last.time === bar.time) currentBars[currentBars.length - 1] = bar;
     else currentBars.push(bar);
     if(currentBars.length > MAX_BARS) currentBars.splice(0, currentBars.length - MAX_BARS);
@@ -962,7 +1186,8 @@ function openStream(sym, tf, token){
     // initial load uses. The old code recomputed MA20/50 by hand right here,
     // which meant two copies of the same arithmetic that had to be kept in
     // step -- exactly the kind of pair that drifts.
-    tickIndicators();
+    scheduleIndicatorTick();
+    checkPriceAlerts(previousClose, bar.close);
     renderQuote(currentBars);
     el.upd.textContent = new Date().toLocaleTimeString("vi-VN");
     scheduleDraw();
@@ -1074,9 +1299,9 @@ async function load(){
 }
 
 /* ---------- drawing overlay ----------
-   Drawings are stored in market coordinates, never pixels. Lightweight Charts
-   converts them again on every zoom/pan, so a line remains attached to the
-   candle and price where the reader placed it. */
+   Drawings are stored in market coordinates, never pixels. The conversion is
+   repeated on every zoom/pan, so a line remains attached to the candle and
+   price where the reader placed it. */
 const drawCtx = el.drawing.getContext("2d");
 const FIB_LEVELS = [0, .236, .382, .5, .618, .786, 1];
 const FIB_EXT_LEVELS = [0, .382, .618, 1, 1.272, 1.618];
@@ -1086,7 +1311,7 @@ const FIB_EXT_LEVELS = [0, .382, .618, 1, 1.272, 1.618];
    the tool takes; everything else reads it rather than restating it. */
 const TOOLS = {
   hline: {need:1, label:"—",  title:"Đường ngang — 1 điểm"},
-  hray:  {need:2, label:"→",  title:"Tia ngang — 2 điểm, kéo dài sang phải"},
+  hray:  {need:1, label:"→",  title:"Tia ngang — 1 điểm, kéo dài sang phải"},
   trend: {need:2, label:"╱",  title:"Đường xu hướng — 2 điểm"},
   vline: {need:1, label:"│",  title:"Đường dọc — mốc thời gian"},
   rect:  {need:2, label:"▭",  title:"Hộp — 2 điểm"},
@@ -1106,6 +1331,8 @@ let pendingPoints = [];   // tools that take three points collect them here
 let previewPoint = null;
 let dragging = null;
 let drawFrame = 0;
+let magnetEnabled = false;
+try{ magnetEnabled = localStorage.getItem("leon_chart_magnet") === "1"; }catch(e){}
 
 function drawingKey(){ return "leon_draw_" + symbol.replace(/[^A-Z0-9_-]/g, ""); }
 
@@ -1132,6 +1359,7 @@ function loadDrawings(){
   pendingPoints = [];
   undoStack = []; redoStack = [];
   updateDrawCount();
+  applyDrawingsVisibility();
   scheduleDraw();
 }
 
@@ -1141,10 +1369,11 @@ function loadDrawings(){
 let undoStack = [], redoStack = [];
 const UNDO_MAX = 30;
 
-function pushUndo(){
-  undoStack.push(JSON.stringify(drawings));
+function pushUndo(snapshot = JSON.stringify(drawings)){
+  undoStack.push(snapshot);
   if(undoStack.length > UNDO_MAX) undoStack.shift();
   redoStack = [];
+  syncDrawControls();
 }
 
 function restoreFrom(stack, other){
@@ -1164,7 +1393,28 @@ function saveDrawings(){
   updateDrawCount();
 }
 
-function updateDrawCount(){ el.drawCount.textContent = String(drawings.length); }
+function syncDrawControls(){
+  el.drawUndo.disabled = undoStack.length === 0;
+  el.drawRedo.disabled = redoStack.length === 0;
+  el.drawMagnet.setAttribute("aria-pressed", String(magnetEnabled));
+}
+
+function updateDrawCount(){
+  el.drawCount.textContent = String(drawings.length);
+  syncDrawControls();
+}
+
+function applyDrawingsVisibility(){
+  el.drawing.hidden = !drawingsVisible;
+}
+
+function setDrawingsVisible(visible){
+  drawingsVisible = !!visible;
+  try{ localStorage.setItem("leon_chart_drawings_visible", drawingsVisible ? "1" : "0"); }catch(e){}
+  if(!drawingsVisible && drawMode !== "pan") setDrawMode("pan");
+  applyDrawingsVisibility();
+  scheduleDraw();
+}
 
 /* Time and pixels convert both ways only inside the loaded data. Past the last
    bar -- the empty space on the right where a trendline is most often aimed --
@@ -1174,39 +1424,92 @@ function updateDrawCount(){ el.drawCount.textContent = String(drawings.length); 
 
    Both are fixed by extrapolating along the bar spacing, which is uniform in
    coordinate space because the chart lays bars out by index, not by clock. */
-function barStep(){
-  const ts = chart.timeScale();
-  const bars = currentBars;
-  if(bars.length < 2) return null;
-  const last = bars[bars.length - 1], prev = bars[bars.length - 2];
-  const xLast = ts.timeToCoordinate(last.time), xPrev = ts.timeToCoordinate(prev.time);
-  if(xLast == null || xPrev == null || xLast === xPrev) return null;
-  const dt = last.time - prev.time;
-  if(!dt) return null;
-  return {xLast, tLast:last.time, pxPerSec:(xLast - xPrev) / dt};
+// Seconds per bar for the current timeframe. Measured from the data rather
+// than parsed from the label, so a gap-free crypto series and a VN session
+// with holidays both answer correctly.
+function tfSeconds(){
+  const b = currentBars;
+  if(b.length < 2) return 60;
+  // Median of the last few gaps: a single diff straddling a weekend would
+  // report Monday's step as three days.
+  const gaps = [];
+  for(let i = Math.max(1, b.length - 12); i < b.length; i++) gaps.push(b[i].time - b[i-1].time);
+  gaps.sort((x, y) => x - y);
+  return gaps[Math.floor(gaps.length / 2)] || 60;
 }
 
+/* Time and pixels convert through the chart's own logical index -- the bar
+   number, which the chart keeps defined past the last bar and off both edges.
+   Interpolating pixels from the spacing of the final two bars (the previous
+   approach) drifts as soon as the reader zooms, because that spacing is
+   exactly what zooming changes; asking for the logical index instead is exact
+   at any zoom. */
 function timeToX(t){
-  const direct = chart.timeScale().timeToCoordinate(t);
+  if(t == null || !isFinite(t)) return null;
+  const ts = chart.timeScale();
+  const direct = ts.timeToCoordinate(t);
   if(direct != null) return direct;
-  const step = barStep();
-  return step ? step.xLast + (t - step.tLast) * step.pxPerSec : null;
+  const b = currentBars;
+  if(!b.length) return null;
+  const last = b.length - 1;
+  return ts.logicalToCoordinate(last + Math.round((t - b[last].time) / tfSeconds()));
 }
 
 function xToTime(x){
-  const direct = chart.timeScale().coordinateToTime(x);
-  if(direct != null && Number.isFinite(+direct)) return +direct;
-  const step = barStep();
-  return step ? step.tLast + (x - step.xLast) / step.pxPerSec : null;
+  const ts = chart.timeScale();
+  const t = ts.coordinateToTime(x);
+  if(t != null){
+    // Daily and coarser series hand back {year, month, day} instead of a
+    // timestamp; both shapes have to end up as seconds.
+    return (typeof t === "object" && t.year)
+      ? Math.floor(Date.UTC(t.year, t.month - 1, t.day) / 1000)
+      : Number(t);
+  }
+  const logical = ts.coordinateToLogical(x);
+  const b = currentBars;
+  if(logical == null || !b.length) return null;
+  const last = b.length - 1;
+  return b[last].time + Math.round(logical - last) * tfSeconds();
 }
 
-function pointFromEvent(e){
+function nearestBar(t){
+  if(!currentBars.length) return null;
+  let lo = 0, hi = currentBars.length - 1;
+  while(lo < hi){
+    const mid = Math.floor((lo + hi) / 2);
+    if(currentBars[mid].time < t) lo = mid + 1; else hi = mid;
+  }
+  if(lo > 0 && Math.abs(currentBars[lo - 1].time - t) < Math.abs(currentBars[lo].time - t)) lo--;
+  return currentBars[lo];
+}
+
+function snapToOhlc(t, p, y){
+  const bar = nearestBar(t);
+  if(!bar) return {t, p};
+  const step = currentBars.length > 1
+    ? currentBars[currentBars.length - 1].time - currentBars[currentBars.length - 2].time : 0;
+  // Do not pull a projection in the blank future area back to the last candle.
+  if(step && Math.abs(t - bar.time) > step * .65) return {t, p};
+  const values = [bar.open, bar.high, bar.low, bar.close].filter(Number.isFinite);
+  if(!values.length) return {t, p};
+  let best = values[0], bestDistance = Infinity;
+  values.forEach(value => {
+    const cy = candles.priceToCoordinate(value);
+    const distance = cy == null ? Math.abs(value - p) : Math.abs(cy - y);
+    if(distance < bestDistance){ best = value; bestDistance = distance; }
+  });
+  return {t:bar.time, p:best};
+}
+
+function pointFromEvent(e, allowSnap = true){
   const rect = el.drawing.getBoundingClientRect();
   const x = e.clientX - rect.left, y = e.clientY - rect.top;
   const t = xToTime(x);
   const p = candles.coordinateToPrice(y);
   if(t == null || p == null || !Number.isFinite(t) || !Number.isFinite(+p)) return null;
-  return {t, p:+p, x, y};
+  const shouldSnap = allowSnap && (magnetEnabled !== !!e.ctrlKey);
+  const market = shouldSnap ? snapToOhlc(t, +p, y) : {t, p:+p};
+  return {t:market.t, p:market.p, x, y};
 }
 
 function pixelPoint(p){
@@ -1220,7 +1523,7 @@ function line(ctx, x1, y1, x2, y2){
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
 }
 
-function paintDrawing(d, index, ctx, w){
+function paintDrawing(d, index, ctx, w, h){
   const tool = TOOLS[d.type];
   if(!tool) return;
   const a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
@@ -1247,7 +1550,7 @@ function paintDrawing(d, index, ctx, w){
   }else if(d.type === "trend"){
     line(ctx, a.x, a.y, b.x, b.y);
   }else if(d.type === "vline"){
-    line(ctx, a.x, 0, a.x, ctx.canvas.height);
+    line(ctx, a.x, 0, a.x, h);
   }else if(d.type === "rect"){
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
     const rw = Math.abs(b.x - a.x), rh = Math.abs(b.y - a.y);
@@ -1307,8 +1610,19 @@ function paintDrawing(d, index, ctx, w){
   ctx.setLineDash([]);
 }
 
+function syncDrawingPaneHeight(){
+  let height = 0;
+  try{ height = chart.panes()[0].getHeight(); }catch(e){}
+  if(height > 0 && el.drawing.style.height !== `${height}px`)
+    el.drawing.style.height = `${height}px`;
+}
+
 function redraw(){
   drawFrame = 0;
+  if(!drawingsVisible) return;
+  // The canvas only covers the price pane. Oscillator panes remain interactive
+  // while a drawing tool is active, and candle price coordinates stay aligned.
+  syncDrawingPaneHeight();
   const rect = el.drawing.getBoundingClientRect();
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   const pxW = Math.round(rect.width * dpr), pxH = Math.round(rect.height * dpr);
@@ -1317,14 +1631,14 @@ function redraw(){
   }
   drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawCtx.clearRect(0, 0, rect.width, rect.height);
-  drawings.forEach((d, i) => paintDrawing(d, i, drawCtx, rect.width));
+  drawings.forEach((d, i) => paintDrawing(d, i, drawCtx, rect.width, rect.height));
   // Preview the shape mid-placement. Index -2 never matches selectedDrawing,
   // so it draws in the unselected style without claiming to be a real shape.
   if(pendingPoints.length && previewPoint){
     const pts = pendingPoints.concat([previewPoint]);
     const ghost = {type:drawMode, a:pts[0], b:pts[1] || previewPoint};
     if(pts[2]) ghost.c = pts[2];
-    if(shapeOk(ghost)) paintDrawing(ghost, -2, drawCtx, rect.width);
+    if(shapeOk(ghost)) paintDrawing(ghost, -2, drawCtx, rect.width, rect.height);
   }
 }
 
@@ -1381,9 +1695,26 @@ function hitDrawing(p){
   return -1;
 }
 
+function hitSelectedHandle(p){
+  if(selectedDrawing < 0 || !drawings[selectedDrawing]) return null;
+  const d = drawings[selectedDrawing];
+  for(const key of ["a", "b", "c"]){
+    if(!d[key]) continue;
+    const pt = pixelPoint(d[key]);
+    if(pt && Math.hypot(p.x - pt.x, p.y - pt.y) <= 9) return key;
+  }
+  return null;
+}
+
 function setDrawMode(mode){
+  if(mode !== "pan" && !drawingsVisible){
+    drawingsVisible = true;
+    try{ localStorage.setItem("leon_chart_drawings_visible", "1"); }catch(e){}
+    applyDrawingsVisibility();
+  }
   drawMode = mode;
   pendingPoint = previewPoint = null;
+  pendingPoints = [];
   dragging = null;
   [...el.drawTools.querySelectorAll("[data-tool]")].forEach(b =>
     b.setAttribute("aria-pressed", String(b.dataset.tool === mode)));
@@ -1403,7 +1734,7 @@ function setDrawMode(mode){
     b.type = "button";
     b.dataset.tool = key;
     b.setAttribute("aria-pressed", "false");
-    b.title = t.title;
+    b.title = `${t.title} · Vẽ liên tục; bấm lại, chuột phải hoặc Esc để thoát`;
     b.textContent = t.label;
     el.drawTools.insertBefore(b, anchor);
   });
@@ -1411,13 +1742,17 @@ function setDrawMode(mode){
 
 el.drawTools.addEventListener("click", e => {
   const button = e.target.closest("[data-tool]");
-  if(button) setDrawMode(button.dataset.tool);
+  if(button) setDrawMode(button.dataset.tool === drawMode && drawMode !== "pan"
+    ? "pan" : button.dataset.tool);
 });
 
-document.getElementById("draw-undo")
-  .addEventListener("click", () => restoreFrom(undoStack, redoStack));
-document.getElementById("draw-redo")
-  .addEventListener("click", () => restoreFrom(redoStack, undoStack));
+el.drawUndo.addEventListener("click", () => restoreFrom(undoStack, redoStack));
+el.drawRedo.addEventListener("click", () => restoreFrom(redoStack, undoStack));
+el.drawMagnet.addEventListener("click", () => {
+  magnetEnabled = !magnetEnabled;
+  try{ localStorage.setItem("leon_chart_magnet", magnetEnabled ? "1" : "0"); }catch(e){}
+  syncDrawControls();
+});
 
 el.drawClear.addEventListener("click", () => {
   if(!drawings.length) return;
@@ -1431,16 +1766,22 @@ el.drawClear.addEventListener("click", () => {
 });
 
 el.drawing.addEventListener("pointerdown", e => {
-  const p = pointFromEvent(e);
+  if(e.button !== 0) return;
+  const p = pointFromEvent(e, drawMode !== "select");
   if(!p) return;
   el.drawing.focus({preventScroll:true});
   e.preventDefault();
 
   if(drawMode === "select"){
-    selectedDrawing = hitDrawing(p);
+    const handle = hitSelectedHandle(p);
+    if(!handle) selectedDrawing = hitDrawing(p);
     if(selectedDrawing >= 0){
       const original = drawings[selectedDrawing];
-      dragging = {start:p, index:selectedDrawing, original:JSON.parse(JSON.stringify(original))};
+      dragging = {
+        start:p, index:selectedDrawing, handle,
+        original:JSON.parse(JSON.stringify(original)),
+        snapshot:JSON.stringify(drawings), dirty:false,
+      };
       el.drawing.setPointerCapture(e.pointerId);
     }
     scheduleDraw();
@@ -1455,7 +1796,7 @@ el.drawing.addEventListener("pointerdown", e => {
     const shape = {type:drawMode, a:here};
     if(drawMode === "text"){
       const note = (prompt("Ghi chú:", "") || "").trim().slice(0, 80);
-      if(!note){ undoStack.pop(); return; }
+      if(!note){ undoStack.pop(); syncDrawControls(); setDrawMode("pan"); return; }
       shape.text = note;
     }
     if(drawMode === "mark"){
@@ -1464,7 +1805,8 @@ el.drawing.addEventListener("pointerdown", e => {
       shape.dir = mid != null && p.p > +mid ? "down" : "up";
     }
     drawings.push(shape);
-    saveDrawings(); scheduleDraw();
+    saveDrawings();
+    scheduleDraw();
     return;
   }
 
@@ -1484,34 +1826,48 @@ el.drawing.addEventListener("pointerdown", e => {
 });
 
 el.drawing.addEventListener("pointermove", e => {
-  const p = pointFromEvent(e);
+  const p = pointFromEvent(e, !!(dragging && dragging.handle) || pendingPoints.length > 0);
   if(!p) return;
   if(dragging && selectedDrawing === dragging.index){
-    const dt = p.t - dragging.start.t, dp = p.p - dragging.start.p;
     const moved = JSON.parse(JSON.stringify(dragging.original));
-    moved.a.t += dt; moved.a.p += dp;
-    if(moved.b){ moved.b.t += dt; moved.b.p += dp; }
-    if(moved.c){ moved.c.t += dt; moved.c.p += dp; }
+    if(dragging.handle){
+      moved[dragging.handle] = {t:p.t, p:p.p};
+    }else{
+      const dt = p.t - dragging.start.t, dp = p.p - dragging.start.p;
+      moved.a.t += dt; moved.a.p += dp;
+      if(moved.b){ moved.b.t += dt; moved.b.p += dp; }
+      if(moved.c){ moved.c.t += dt; moved.c.p += dp; }
+    }
+    if(!dragging.dirty){
+      pushUndo(dragging.snapshot);
+      dragging.dirty = true;
+    }
     drawings[selectedDrawing] = moved;
     scheduleDraw();
   }else if(pendingPoints.length){
     previewPoint = {t:p.t, p:p.p};
     scheduleDraw();
   }else if(drawMode === "select"){
-    el.drawing.style.cursor = hitDrawing(p) >= 0 ? "move" : "default";
+    el.drawing.style.cursor = hitSelectedHandle(p) ? "crosshair" :
+      (hitDrawing(p) >= 0 ? "move" : "default");
   }
 });
 
 function finishDrag(e){
   if(!dragging) return;
   try{ el.drawing.releasePointerCapture(e.pointerId); }catch(err){}
+  const changed = dragging.dirty;
   dragging = null;
-  saveDrawings();
+  if(changed) saveDrawings();
 }
 el.drawing.addEventListener("pointerup", finishDrag);
 el.drawing.addEventListener("pointercancel", finishDrag);
 
-el.drawing.addEventListener("keydown", e => {
+document.addEventListener("keydown", e => {
+  const tag = e.target && e.target.tagName;
+  const editing = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" ||
+    (e.target && e.target.isContentEditable);
+  if(editing) return;
   const mod = e.ctrlKey || e.metaKey;
   if(mod && e.key.toLowerCase() === "z" && !e.shiftKey){
     restoreFrom(undoStack, redoStack); e.preventDefault();
@@ -1524,10 +1880,9 @@ el.drawing.addEventListener("keydown", e => {
     selectedDrawing = -1;
     saveDrawings(); scheduleDraw(); e.preventDefault();
   }else if(e.key === "Escape"){
-    pendingPoint = previewPoint = null;
-    pendingPoints = [];
-    selectedDrawing = -1;
-    scheduleDraw();
+    closeChartMenu();
+    if(el.alertDialog.open) el.alertDialog.close();
+    setDrawMode("pan");
   }
 });
 
@@ -1578,7 +1933,13 @@ chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
   // reader reaches actual blank space.
   if(range && range.from < 10) loadOlderHistory();
 });
-new ResizeObserver(scheduleDraw).observe(el.drawing.parentElement);
+const drawResizeObserver = new ResizeObserver(scheduleDraw);
+drawResizeObserver.observe(el.drawing.parentElement);
+// The outer <main> does not resize when a pane separator moves; the price pane
+// itself does. Observe both so drawing coordinates stay aligned after a manual
+// pane-height adjustment.
+const pricePaneElement = chart.panes()[0].getHTMLElement();
+if(pricePaneElement) drawResizeObserver.observe(pricePaneElement);
 
 /* ---------- controls ---------- */
 TIMEFRAMES.forEach(tf => {
@@ -1603,9 +1964,12 @@ const indEl = {
   count: document.getElementById("ind-count"),
   panel: document.getElementById("ind-panel"),
   type:  document.getElementById("ind-type"),
-  period:document.getElementById("ind-period"),
+  params:document.getElementById("ind-params"),
+  color: document.getElementById("ind-color"),
   add:   document.getElementById("ind-add"),
+  reset: document.getElementById("ind-reset"),
   close: document.getElementById("ind-close"),
+  status:document.getElementById("ind-status"),
   list:  document.getElementById("ind-list"),
 };
 
@@ -1618,78 +1982,518 @@ INDICATOR_KEYS.forEach(key => {
 
 function indicatorLabel(inst){
   const def = INDICATORS[inst.type];
-  // Show the parameter that distinguishes two instances of the same type;
-  // "EMA" twice in the list would be unreadable, "EMA 20"/"EMA 200" is not.
-  const p = inst.params.period ?? inst.params.fast ?? inst.params.tenkan;
-  return p != null ? `${def.name} ${p}` : def.name;
+  const p = inst.params;
+  if(inst.type === "macd") return `${def.name} ${p.fast}/${p.slow}/${p.signal}`;
+  if(inst.type === "ichimoku") return `${def.name} ${p.tenkan}/${p.kijun}/${p.senkou}`;
+  if(inst.type === "stoch") return `${def.name} ${p.period}/${p.smoothK}/${p.smoothD}`;
+  if("mult" in p) return `${def.name} ${p.period} ×${p.mult}`;
+  if("period" in p) return `${def.name} ${p.period}`;
+  return def.name;
 }
 
 function indicatorColor(inst){
-  const def = INDICATORS[inst.type];
-  if(inst.color) return inst.color;
-  try{ return (def.build(currentBars.slice(0, 1), inst.params)[0] || {}).color || "#8b98a5"; }
-  catch(e){ return "#8b98a5"; }
+  return validIndicatorColor(inst.color) || INDICATORS[inst.type].color || "#8b98a5";
+}
+
+function setIndicatorStatus(message, error = false){
+  indEl.status.textContent = message;
+  indEl.status.classList.toggle("error", error);
 }
 
 function renderIndicatorList(){
   indEl.count.textContent = String(indicators.length);
+  indEl.list.replaceChildren();
   if(!indicators.length){
-    indEl.list.innerHTML = '<li class="empty">Chưa có chỉ báo nào</li>';
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "Chưa có chỉ báo nào";
+    indEl.list.appendChild(empty);
     return;
   }
-  indEl.list.innerHTML = indicators.map(inst =>
-    `<li data-id="${inst.id}">` +
-    `<i class="dot" style="background:${indicatorColor(inst)}"></i>` +
-    `${indicatorLabel(inst)}` +
-    `<button class="rm" type="button" data-id="${inst.id}" ` +
-    `title="Bỏ ${indicatorLabel(inst)}" aria-label="Bỏ ${indicatorLabel(inst)}">×</button></li>`
-  ).join("");
+  indicators.forEach(inst => {
+    const label = indicatorLabel(inst);
+    const li = document.createElement("li");
+    li.dataset.id = inst.id;
+    li.classList.toggle("off", !inst.visible);
+    const dot = document.createElement("i");
+    dot.className = "dot";
+    dot.style.background = indicatorColor(inst);
+    const text = document.createElement("span");
+    text.textContent = label;
+    const toggle = document.createElement("button");
+    toggle.className = "toggle";
+    toggle.type = "button";
+    toggle.dataset.action = "toggle";
+    toggle.dataset.id = inst.id;
+    toggle.textContent = inst.visible ? "◉" : "○";
+    toggle.title = `${inst.visible ? "Ẩn" : "Hiện"} ${label}`;
+    toggle.setAttribute("aria-label", toggle.title);
+    const remove = document.createElement("button");
+    remove.className = "rm";
+    remove.type = "button";
+    remove.dataset.action = "remove";
+    remove.dataset.id = inst.id;
+    remove.textContent = "×";
+    remove.title = `Bỏ ${label}`;
+    remove.setAttribute("aria-label", remove.title);
+    li.append(dot, text, toggle, remove);
+    indEl.list.appendChild(li);
+  });
 }
 
-function syncPeriodPlaceholder(){
+function renderParamInputs(){
   const def = INDICATORS[indEl.type.value];
-  const p = def && (def.params.period ?? def.params.fast ?? def.params.tenkan);
-  indEl.period.placeholder = p != null ? String(p) : "—";
-  indEl.period.disabled = p == null;
-  indEl.period.value = "";
+  indEl.params.replaceChildren();
+  Object.entries(def.params).forEach(([key, value]) => {
+    const meta = PARAM_META[key];
+    const label = document.createElement("label");
+    label.className = "ind-param";
+    label.append(document.createTextNode(meta.label));
+    const input = document.createElement("input");
+    input.type = "number";
+    input.dataset.param = key;
+    input.min = String(meta.min);
+    input.max = String(meta.max);
+    input.step = String(meta.step);
+    input.value = String(value);
+    input.setAttribute("aria-label", meta.label);
+    label.appendChild(input);
+    indEl.params.appendChild(label);
+  });
+  indEl.color.value = def.color;
+  setIndicatorStatus(def.pane === 0 ? "Vẽ trên biểu đồ giá" : "Mở trong pane riêng có thể kéo đổi chiều cao");
+}
+
+function readIndicatorForm(type){
+  const raw = {};
+  indEl.params.querySelectorAll("[data-param]").forEach(input => {
+    raw[input.dataset.param] = Number(input.value);
+  });
+  const params = normaliseParams(type, raw);
+  if(type === "macd" && params.fast >= params.slow)
+    return {error:"MACD cần chu kỳ Nhanh nhỏ hơn Chậm."};
+  if(type === "ichimoku" && !(params.tenkan < params.kijun && params.kijun < params.senkou))
+    return {error:"Ichimoku cần Tenkan < Kijun < Senkou."};
+  return {params, color:validIndicatorColor(indEl.color.value) || INDICATORS[type].color};
 }
 
 indEl.open.addEventListener("click", () => {
   indEl.panel.hidden = !indEl.panel.hidden;
-  if(!indEl.panel.hidden){ renderIndicatorList(); syncPeriodPlaceholder(); }
+  indEl.open.setAttribute("aria-pressed", String(!indEl.panel.hidden));
+  if(!indEl.panel.hidden){ renderIndicatorList(); renderParamInputs(); }
 });
-indEl.close.addEventListener("click", () => { indEl.panel.hidden = true; });
-indEl.type.addEventListener("change", syncPeriodPlaceholder);
+indEl.close.addEventListener("click", () => {
+  indEl.panel.hidden = true;
+  indEl.open.setAttribute("aria-pressed", "false");
+});
+indEl.type.addEventListener("change", renderParamInputs);
 
 indEl.add.addEventListener("click", () => {
   const type = indEl.type.value;
   const def = INDICATORS[type];
   if(!def) return;
-  const params = Object.assign({}, def.params);
-  const raw = parseInt(indEl.period.value, 10);
-  if(Number.isFinite(raw) && raw > 0){
-    if("period" in params) params.period = raw;
-    else if("fast" in params) params.fast = raw;
-    else if("tenkan" in params) params.tenkan = raw;
+  if(indicators.length >= MAX_INDICATORS){
+    setIndicatorStatus(`Tối đa ${MAX_INDICATORS} chỉ báo để chart vẫn mượt.`, true);
+    return;
   }
-  const inst = {id: indicatorSeq++, type, color:null, params};
+  const paneCount = indicators.filter(i => i.visible && INDICATORS[i.type].pane !== 0).length;
+  if(def.pane !== 0 && paneCount >= MAX_INDICATOR_PANES){
+    setIndicatorStatus(`Tối đa ${MAX_INDICATOR_PANES} pane phụ; hãy ẩn hoặc bỏ một pane trước.`, true);
+    return;
+  }
+  const form = readIndicatorForm(type);
+  if(form.error){ setIndicatorStatus(form.error, true); return; }
+  const inst = {id: indicatorSeq++, type, color:form.color, params:form.params, visible:true};
   indicators.push(inst);
   buildIndicator(inst, currentBars);
   saveIndicators();
   renderIndicatorList();
+  setIndicatorStatus(`Đã thêm ${indicatorLabel(inst)}.`);
+});
+
+indEl.params.addEventListener("keydown", e => {
+  if(e.key === "Enter"){ indEl.add.click(); e.preventDefault(); }
+});
+
+indEl.reset.addEventListener("click", () => {
+  indicators.forEach(disposeIndicator);
+  indicators = DEFAULT_INDICATORS.map(d => ({
+    id:indicatorSeq++, type:d.type, color:d.color,
+    params:normaliseParams(d.type, d.params), visible:true,
+  }));
+  applyIndicators(currentBars);
+  saveIndicators();
+  renderIndicatorList();
+  setIndicatorStatus("Đã khôi phục SMA20 và SMA50 theo rule tín hiệu.");
 });
 
 indEl.list.addEventListener("click", e => {
-  const btn = e.target.closest(".rm");
+  const btn = e.target.closest("button[data-action]");
   if(!btn) return;
   const id = Number(btn.dataset.id);
   const i = indicators.findIndex(x => x.id === id);
   if(i < 0) return;
+  if(btn.dataset.action === "toggle"){
+    indicators[i].visible = !indicators[i].visible;
+    if(indicators[i].visible) buildIndicator(indicators[i], currentBars);
+    else if(INDICATORS[indicators[i].type].pane !== 0) disposeIndicator(indicators[i]);
+    else setIndicatorVisibility(indicators[i]);
+    saveIndicators();
+    renderIndicatorList();
+    return;
+  }
   disposeIndicator(indicators[i]);
   indicators.splice(i, 1);
   saveIndicators();
   renderIndicatorList();
+  setIndicatorStatus("Đã bỏ chỉ báo.");
 });
+
+/* ---------- local price alerts ----------
+   Alerts are deliberately local and one-shot: they need no account/backend and
+   cannot imply that a server will keep watching after this tab is closed. */
+let priceAlerts = [];
+let alertPriceLines = [];
+let toastTimer = 0;
+
+function priceAlertKey(){
+  return "leon_chart_alerts_" + symbol.replace(/[^A-Z0-9_-]/g, "");
+}
+
+function loadPriceAlerts(){
+  priceAlerts = [];
+  try{
+    const value = JSON.parse(localStorage.getItem(priceAlertKey()) || "[]");
+    if(Array.isArray(value)) priceAlerts = value.filter(a =>
+      a && typeof a.id === "string" && Number.isFinite(+a.price) && +a.price > 0)
+      .map(a => ({
+        id:a.id, price:+a.price, active:a.active !== false,
+        triggeredAt:typeof a.triggeredAt === "string" ? a.triggeredAt : null,
+        createdAt:typeof a.createdAt === "string" ? a.createdAt : new Date().toISOString(),
+      })).slice(0, 30);
+  }catch(e){}
+  renderPriceAlerts();
+  if(el.alertDialog.open) renderAlertDialog();
+}
+
+function savePriceAlerts(){
+  try{ localStorage.setItem(priceAlertKey(), JSON.stringify(priceAlerts)); }catch(e){}
+  renderPriceAlerts();
+}
+
+function renderPriceAlerts(){
+  alertPriceLines.forEach(line => { try{ candles.removePriceLine(line); }catch(e){} });
+  alertPriceLines = priceAlerts.map(a => candles.createPriceLine({
+    price:a.price,
+    color:a.active ? css("--warn") : css("--muted"),
+    lineWidth:1,
+    lineStyle:a.active ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Dotted,
+    axisLabelVisible:true,
+    title:a.active ? "Cảnh báo" : "Đã chạm",
+  }));
+}
+
+function showToast(message){
+  clearTimeout(toastTimer);
+  el.toast.textContent = message;
+  el.toast.hidden = false;
+  toastTimer = setTimeout(() => { el.toast.hidden = true; }, 2600);
+}
+
+function addPriceAlert(price){
+  if(!Number.isFinite(price) || price <= 0) return;
+  const duplicate = priceAlerts.some(a => Math.abs(a.price - price) <= Math.max(price * 1e-8, 1e-8));
+  if(duplicate){ showToast(`Đã có cảnh báo tại ${nf(price, price < 1 ? 6 : 2)}.`); return; }
+  priceAlerts.push({
+    id:`a${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`,
+    price, active:true, triggeredAt:null, createdAt:new Date().toISOString(),
+  });
+  savePriceAlerts();
+  showToast(`Đã thêm cảnh báo local tại ${nf(price, price < 1 ? 6 : 2)}.`);
+}
+
+function checkPriceAlerts(previous, current){
+  if(!Number.isFinite(previous) || !Number.isFinite(current) || previous === current) return;
+  const hit = priceAlerts.filter(a => a.active &&
+    ((previous <= a.price && current >= a.price) || (previous >= a.price && current <= a.price)));
+  if(!hit.length) return;
+  const at = new Date().toISOString();
+  hit.forEach(a => { a.active = false; a.triggeredAt = at; });
+  savePriceAlerts();
+  showToast(`${symbol} vừa chạm cảnh báo ${nf(hit[0].price, hit[0].price < 1 ? 6 : 2)}${hit.length > 1 ? ` (+${hit.length-1})` : ""}.`);
+}
+
+function renderAlertDialog(){
+  document.getElementById("alert-title").textContent = `Cảnh báo giá · ${symbol}`;
+  el.alertList.replaceChildren();
+  if(!priceAlerts.length){
+    const empty = document.createElement("div");
+    empty.className = "alert-empty";
+    empty.textContent = "Chưa có cảnh báo. Chuột phải trên pane giá để thêm.";
+    el.alertList.appendChild(empty);
+    return;
+  }
+  priceAlerts.slice().reverse().forEach(a => {
+    const row = document.createElement("div");
+    row.className = "alert-row";
+    const info = document.createElement("div");
+    info.className = "alert-price";
+    info.textContent = nf(a.price, a.price < 1 ? 6 : 2);
+    const state = document.createElement("small");
+    state.className = "alert-state";
+    state.textContent = a.active ? "Đang theo dõi khi tab mở" :
+      `Đã chạm${a.triggeredAt ? " · " + new Date(a.triggeredAt).toLocaleString("vi-VN") : ""}`;
+    info.appendChild(state);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.dataset.alertAction = "toggle";
+    toggle.dataset.id = a.id;
+    toggle.textContent = a.active ? "Tạm dừng" : "Bật lại";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.dataset.alertAction = "remove";
+    remove.dataset.id = a.id;
+    remove.textContent = "Xóa";
+    row.append(info, toggle, remove);
+    el.alertList.appendChild(row);
+  });
+}
+
+document.getElementById("alert-close").addEventListener("click", () => el.alertDialog.close());
+el.alertList.addEventListener("click", e => {
+  const button = e.target.closest("button[data-alert-action]");
+  if(!button) return;
+  const alert = priceAlerts.find(a => a.id === button.dataset.id);
+  if(!alert) return;
+  if(button.dataset.alertAction === "remove")
+    priceAlerts = priceAlerts.filter(a => a.id !== alert.id);
+  else{
+    alert.active = !alert.active;
+    if(alert.active) alert.triggeredAt = null;
+  }
+  savePriceAlerts();
+  renderAlertDialog();
+});
+
+/* ---------- right-click chart menu ---------- */
+let menuPoint = null;
+
+function closeChartMenu(){ el.menu.hidden = true; }
+
+function appendMenuItem(group, item){
+  if(item.separator){
+    const sep = document.createElement("div");
+    sep.className = "ctx-sep";
+    group.appendChild(sep);
+    return;
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.role = "menuitem";
+  button.dataset.action = item.action;
+  button.disabled = !!item.disabled;
+  if(item.danger) button.classList.add("danger");
+  const icon = document.createElement("span");
+  icon.className = "ctx-icon";
+  icon.textContent = item.icon || "";
+  const label = document.createElement("span");
+  label.className = "ctx-label";
+  label.textContent = item.label;
+  const value = document.createElement("span");
+  value.className = "ctx-value";
+  value.textContent = item.value || "";
+  const check = document.createElement("span");
+  check.className = "ctx-check";
+  check.textContent = item.checked ? "✓" : "";
+  button.append(icon, label, value, check);
+  group.appendChild(button);
+}
+
+function renderChartMenu(){
+  const scaleOptions = candles.priceScale().options();
+  const anyIndicatorsVisible = indicators.some(i => i.visible);
+  const priceText = menuPoint && Number.isFinite(menuPoint.price)
+    ? nf(menuPoint.price, menuPoint.price < 1 ? 6 : 2) : "—";
+  const items = [
+    {action:"alert-add", icon:"♧", label:`Thêm cảnh báo @ ${priceText}`, disabled:!menuPoint},
+    {action:"alert-manage", icon:"♧", label:"Quản lý cảnh báo…", value:String(priceAlerts.length)},
+    {separator:true},
+    {action:"fit-price", icon:"↔", label:"Tự co giãn scale giá"},
+    {action:"auto-price", label:"Auto-scale price", checked:scaleOptions.autoScale},
+    {action:"scale-mode", label:`Scale: ${logarithmicScale ? "Logarithmic → Normal" : "Normal → Logarithmic"}`},
+    {action:"crosshair-mode", label:`Crosshair: ${crosshairMagnet ? "Magnet → Normal (free)" : "Normal (free) → Magnet (close)"}`},
+    {separator:true},
+    {action:"volume", icon:"▥", label:"Volume bars", checked:volumeVisible},
+    {action:"indicator-titles", label:"Tiêu đề chỉ báo", checked:showIndicatorTitles},
+    {action:"indicator-visibility", icon:"◉", label:`${anyIndicatorsVisible ? "Ẩn" : "Hiện"} hết indicator`, disabled:!indicators.length},
+    {action:"drawing-visibility", icon:"◉", label:`${drawingsVisible ? "Ẩn" : "Hiện"} hết hình vẽ`, disabled:!drawings.length},
+    {action:"drawing-delete", icon:"♜", label:`Xóa hình vẽ (${drawings.length})`, disabled:!drawings.length, danger:true},
+    {action:"indicator-delete", icon:"♜", label:`Xóa hết indicator (${indicators.length})`, disabled:!indicators.length, danger:true},
+    {separator:true},
+    {action:"image-copy", icon:"▧", label:"Copy ảnh chart"},
+    {action:"image-download", icon:"⇩", label:"Tải PNG"},
+    {separator:true},
+    {action:"theme", icon:"◐", label:"Đổi giao diện sáng / tối"},
+    {action:"settings", icon:"⚙", label:"Cài đặt chỉ báo…"},
+  ];
+  el.menu.replaceChildren();
+  items.forEach(item => appendMenuItem(el.menu, item));
+}
+
+function openChartMenu(e){
+  e.preventDefault();
+  if(drawMode !== "pan") setDrawMode("pan");
+  const rect = el.main.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const time = x >= 0 && x <= rect.width ? xToTime(x) : null;
+  const pricePaneHeight = chart.panes()[0].getHeight();
+  const price = y >= 0 && y <= pricePaneHeight ? candles.coordinateToPrice(y) : null;
+  menuPoint = price != null && Number.isFinite(+price) && +price > 0
+    ? {time:time == null ? null : +time, price:+price} : null;
+  renderChartMenu();
+  el.menu.hidden = false;
+  el.menu.style.left = "0px";
+  el.menu.style.top = "0px";
+  const menuRect = el.menu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(e.clientX, innerWidth - menuRect.width - 8));
+  const top = Math.max(8, Math.min(e.clientY, innerHeight - menuRect.height - 8));
+  el.menu.style.left = `${left}px`;
+  el.menu.style.top = `${top}px`;
+  const first = el.menu.querySelector("button:not(:disabled)");
+  if(first) first.focus({preventScroll:true});
+}
+
+function setAllIndicatorsVisible(visible){
+  let panes = 0, limited = false;
+  indicators.forEach(inst => {
+    if(visible && INDICATORS[inst.type].pane !== 0){
+      if(panes >= MAX_INDICATOR_PANES){ inst.visible = false; limited = true; return; }
+      panes++;
+    }
+    inst.visible = visible;
+    if(visible) buildIndicator(inst, currentBars);
+    else if(INDICATORS[inst.type].pane !== 0) disposeIndicator(inst);
+    else setIndicatorVisibility(inst);
+  });
+  saveIndicators();
+  renderIndicatorList();
+  if(limited) showToast(`Chỉ mở ${MAX_INDICATOR_PANES} pane phụ để chart vẫn đọc được.`);
+}
+
+function updateIndicatorTitles(){
+  indicators.forEach(inst => (inst._series || []).forEach((series, slot) => {
+    try{ series.applyOptions({title:showIndicatorTitles && slot === 0 ? indicatorLabel(inst) : ""}); }catch(e){}
+  }));
+}
+
+async function chartImageBlob(){
+  const base = chart.takeScreenshot(true, true);
+  const output = document.createElement("canvas");
+  output.width = base.width;
+  output.height = base.height;
+  const ctx = output.getContext("2d");
+  ctx.drawImage(base, 0, 0);
+  if(drawingsVisible && drawings.length){
+    const mainRect = el.main.getBoundingClientRect();
+    const drawRect = el.drawing.getBoundingClientRect();
+    const sx = output.width / mainRect.width, sy = output.height / mainRect.height;
+    ctx.drawImage(el.drawing, 0, 0, el.drawing.width, el.drawing.height,
+      (drawRect.left-mainRect.left)*sx, (drawRect.top-mainRect.top)*sy,
+      drawRect.width*sx, drawRect.height*sy);
+  }
+  return new Promise((resolve, reject) => output.toBlob(
+    blob => blob ? resolve(blob) : reject(new Error("Không tạo được ảnh")), "image/png"));
+}
+
+async function runMenuAction(action){
+  if(action === "alert-add" && menuPoint) addPriceAlert(menuPoint.price);
+  else if(action === "alert-manage"){
+    renderAlertDialog();
+    el.alertDialog.showModal();
+  }else if(action === "fit-price"){
+    candles.priceScale().applyOptions({autoScale:true});
+    showToast("Đã tự co giãn trục giá.");
+  }else if(action === "auto-price"){
+    const next = !candles.priceScale().options().autoScale;
+    candles.priceScale().applyOptions({autoScale:next});
+  }else if(action === "scale-mode"){
+    logarithmicScale = !logarithmicScale;
+    candles.priceScale().applyOptions({mode:logarithmicScale
+      ? LightweightCharts.PriceScaleMode.Logarithmic : LightweightCharts.PriceScaleMode.Normal});
+    try{ localStorage.setItem("leon_chart_log_scale", logarithmicScale ? "1" : "0"); }catch(e){}
+  }else if(action === "crosshair-mode"){
+    crosshairMagnet = !crosshairMagnet;
+    chart.applyOptions({crosshair:{mode:crosshairMagnet
+      ? LightweightCharts.CrosshairMode.Magnet : LightweightCharts.CrosshairMode.Normal}});
+    try{ localStorage.setItem("leon_chart_crosshair_magnet", crosshairMagnet ? "1" : "0"); }catch(e){}
+  }else if(action === "volume"){
+    volumeVisible = !volumeVisible;
+    volume.applyOptions({visible:volumeVisible});
+    try{ localStorage.setItem("leon_chart_volume", volumeVisible ? "1" : "0"); }catch(e){}
+  }else if(action === "indicator-titles"){
+    showIndicatorTitles = !showIndicatorTitles;
+    updateIndicatorTitles();
+    try{ localStorage.setItem("leon_chart_indicator_titles", showIndicatorTitles ? "1" : "0"); }catch(e){}
+  }else if(action === "indicator-visibility"){
+    setAllIndicatorsVisible(!indicators.some(i => i.visible));
+  }else if(action === "drawing-visibility"){
+    setDrawingsVisible(!drawingsVisible);
+  }else if(action === "drawing-delete"){
+    pushUndo(); drawings = []; selectedDrawing = -1; saveDrawings(); scheduleDraw();
+  }else if(action === "indicator-delete"){
+    indicators.forEach(disposeIndicator); indicators = []; saveIndicators(); renderIndicatorList();
+  }else if(action === "image-copy"){
+    try{
+      const blob = await chartImageBlob();
+      if(!navigator.clipboard || typeof ClipboardItem === "undefined") throw new Error("Clipboard không hỗ trợ ảnh");
+      await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);
+      showToast("Đã copy ảnh chart vào clipboard.");
+    }catch(e){ showToast("Không copy được ảnh; hãy dùng Tải PNG."); }
+  }else if(action === "image-download"){
+    try{
+      const blob = await chartImageBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `LEON-${symbol}-${timeframe}-${new Date().toISOString().slice(0,10)}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("Đã tạo ảnh PNG của chart.");
+    }catch(e){ showToast("Không tạo được ảnh PNG."); }
+  }else if(action === "theme"){
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try{ localStorage.setItem("leon_theme", next); }catch(e){}
+    try{ parent.document.documentElement.dataset.theme = next; }catch(e){}
+  }else if(action === "settings"){
+    if(indEl.panel.hidden) indEl.open.click();
+    indEl.type.focus({preventScroll:true});
+  }
+}
+
+el.main.addEventListener("contextmenu", openChartMenu);
+el.menu.addEventListener("click", e => {
+  const button = e.target.closest("button[data-action]");
+  if(!button || button.disabled) return;
+  const action = button.dataset.action;
+  closeChartMenu();
+  runMenuAction(action);
+});
+el.menu.addEventListener("keydown", e => {
+  if(e.key === "Escape"){ closeChartMenu(); setDrawMode("pan"); return; }
+  if(!["ArrowDown","ArrowUp","Home","End"].includes(e.key)) return;
+  const buttons = [...el.menu.querySelectorAll("button:not(:disabled)")];
+  if(!buttons.length) return;
+  const current = Math.max(0, buttons.indexOf(document.activeElement));
+  const next = e.key === "Home" ? 0 : e.key === "End" ? buttons.length-1 :
+    (current + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+  buttons[next].focus(); e.preventDefault();
+});
+document.addEventListener("pointerdown", e => {
+  if(!el.menu.hidden && !el.menu.contains(e.target)) closeChartMenu();
+});
+window.addEventListener("resize", closeChartMenu);
 
 function syncUrl(){
   const p = new URLSearchParams(location.search);
@@ -1707,6 +2511,7 @@ el.sym.addEventListener("input", () => {
       symbol = next;
       needsFit = true;
       loadDrawings();
+      loadPriceAlerts();
       syncUrl();
       load();
     }
@@ -1725,6 +2530,7 @@ new MutationObserver(() => {
   // Histogram colors live on each data point, so applyOptions alone cannot
   // recolor bars that are already mounted.
   volume.setData(currentBars.map(volumeBar));
+  renderPriceAlerts();
   scheduleDraw();
 }).observe(document.documentElement, {attributes:true, attributeFilter:["data-theme"]});
 
@@ -1738,6 +2544,7 @@ setInterval(() => {
 
 loadCoinList();
 loadDrawings();
+loadPriceAlerts();
 loadIndicators();
 renderIndicatorList();
 load();

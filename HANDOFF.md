@@ -1,19 +1,65 @@
 # Handoff
 
-Updated 2026-09-03 23:30 (Asia/Dubai). Read `CLAUDE.md` first. The recovered
-Claude plan is `C:\Users\LEON_RM\.claude\plans\nh-gi-ho-n-calm-newell.md`;
-its A-E status table and final note are synchronized with this file.
+Updated 2026-09-04 11:22 (Asia/Dubai). Read `CLAUDE.md` first. The active Claude
+plan is `C:\Users\LEON_RM\.claude\plans\nh-gi-ho-n-calm-newell.md`; its round-3
+status and this file are synchronized through G3.
 
 ## Outcome
 
-The recovered TurtleTrading comparison plan is complete. The site now has live
+The recovered TurtleTrading comparison plan A-E is complete. The site now has live
 crypto charting and drawings, a per-ticker VN equity page, deterministic ticker
 news, exposed SSI order-book depth, ETF issuer breakdown, clearer GEX and the
-full signal track record. Structural hardening from the prior pass is preserved.
+full signal track record. Round 3 has also completed F1/F2, G0-G3 and H1:
+history coverage was backfilled, chart history pages left, Lightweight Charts is
+on v5.2.0, drawing tools were expanded and indicators now use real panes.
 
-The worktree is intentionally uncommitted on top of `f6c610b`; the user did not
-ask for a commit. Do not reset it. There is no git remote, so workflows have not
-run in GitHub Actions yet. Local server PID 28552 still serves the repo on 8811.
+The worktree contains the final G2/G3 refinement to `apps/chart/index.html` on top
+of `7a826db`; the user did not ask for a commit. Do not reset it. There is no git
+remote, so workflows have not run in GitHub Actions yet. Local server PID 3312
+serves the repo on port 8811.
+
+## Round 3 chart continuation (2026-09-04)
+
+- `66c9572` completed F1, G0, the drawing registry/extra tools and H1. `4b56c6d`
+  completed F2 lazy history. `7a826db` introduced the 16-indicator registry.
+- The uncommitted follow-up finishes G2/G3 instead of changing direction. The ten
+  drawing tools are `hline`, `hray`, `trend`, `vline`, `rect`, `fib`, `fibext`,
+  `range`, `mark`, and `text`. Horizontal ray is correctly one-click. Drawings
+  have OHLC magnet snap (Ctrl temporarily inverts it), endpoint editing, global
+  Ctrl+Z/Ctrl+Y, move undo, per-symbol persistence, future-time extrapolation and
+  a canvas constrained to the price pane.
+- All 16 indicators remain registry-driven and multi-instance. Overlay series and
+  oscillators now use actual LWC v5 panes, not multiple scales painted into one
+  strip. The panel exposes every parameter (including MACD 3-tuples, Stochastic,
+  Bollinger/Supertrend multipliers and Ichimoku 9/26/52), colour, per-instance
+  visibility, reset to signal MA20/50, and limits of 16 indicators / 4 live panes.
+- Formula/render fixes: flat RSI/MFI are 50, MACD histogram is direction-coloured,
+  Supertrend splits green/red regimes, Ichimoku publishes Tenkan/Kijun/Span A/
+  Span B/Chikou, and declared ranges/guides are rendered. WebSocket recalculation
+  is throttled to 300 ms; older-history refresh reuses mounted series and panes.
+- Drawing interaction is deliberately continuous: after the final required
+  point, the selected tool remains armed for the next shape. It exits through
+  `Pan / Esc`, right-click, Escape, or clicking the armed tool again. Every exit
+  cancels partial points, so an unfinished Fibonacci/range cannot leak into the
+  next click. Non-left pointer presses never create a drawing.
+- The chart now has a Turtle-style right-click menu with working price alerts,
+  price-scale fit/auto/log controls, free/magnet crosshair, volume and indicator
+  title toggles, show/hide/delete actions, chart copy/download, theme and a jump
+  to indicator settings. Alerts and preferences are localStorage-backed; alert
+  crossing is checked only while the chart tab is open, with a one-shot toast and
+  a manage dialog. PNG export composites the LWC screenshot and drawing canvas.
+- Important truth: drawings are still a market-coordinate canvas overlay, **not**
+  LWC Series Primitives. It is registry-backed, survives pan/zoom/future space and
+  now tracks price-pane resizing. Do not describe G1 as a primitive migration.
+- The reference chart source was audited directly. Its page publicly falls back
+  from `multi.min.js` to an unminified `/multi.js` (HTTP 200, 1,011,167 bytes,
+  10,799 lines); it is minified in production, not actually source-hidden. The
+  application layer is custom vanilla JS: 35 drawing selectors, a DrawPrimitive
+  adapter/unified renderer, and 62 registry indicators across seven categories.
+  The reference itself is one-shot (`armTool(null)` after completion), unlike the
+  user's requested continuous behavior. No application-source license notice was
+  found; reproduce behavior/formulas, do not paste its implementation verbatim.
+  See `docs/teardown-turtletrading.md` for the durable audit.
 
 ## Completed plan sections
 
@@ -80,7 +126,7 @@ run in GitHub Actions yet. Local server PID 28552 still serves the repo on 8811.
 
 - stocks: 1,751 rows; 1,725 priced; 1,719 fundamentals; 870 momentum; 1,522
   foreign room; 1,292 depth; 341 with one observed foreign-flow day.
-- signals: 214 closed, 35 open, total -76R (unchanged by design).
+- signals: 220 closed, 35 open, total -79.9R (unchanged by design).
 - news: 7 rule-based links across 5 symbols in the current 608-article digest,
   all manually audited. Headline-only matching; see the correctness note above.
 - flows: 512 days per asset; 12 BTC and 10 ETH issuer series.
@@ -110,11 +156,32 @@ Browser QA:
   drawing modes. Synthetic pointer input created hline/trend/fib; hit-test found
   the trend; storage count survived reload; theme mutation called volume
   `setData()` immediately. Test drawings/localStorage were cleaned afterward.
+- Round-3 CDP QA at 1440x900 reported LWC 5.2.0, a live Binance socket, 1,000
+  bars after automatic paging, true RSI/MACD panes, and a canvas height exactly
+  matching pane 0. Invalid MACD 30/20/5 was rejected; valid MACD 8/21/5, RSI and
+  five-line Ichimoku mounted; hiding/showing RSI removed/recreated its pane.
+- Real mouse events created a trend, selected and moved endpoint A, then global
+  Ctrl+Z/Ctrl+Y restored/reapplied it. Magnet snapped to the nearest OHLC and Ctrl
+  preserved the raw price. Formula checks passed flat RSI/MFI=50, symmetric
+  Bollinger bands, projected Ichimoku spans and split Supertrend output. The only
+  browser console error was the pre-existing missing favicon 404.
+- Follow-up CDP QA first verified one-shot completion, then the user chose
+  continuous drawing. Final QA created two consecutive trends without rearming
+  (mode stayed `trend`), then three consecutive horizontal lines. Clicking the
+  armed tool, right-click and `Esc` all returned to pan; unfinished Fibonacci
+  exited with zero pending points. At 1440x900 the menu was visually inspected
+  and clamped
+  inside the viewport. Volume, magnet, logarithmic scale, drawing visibility,
+  add/manage alert and screenshot composition all changed real chart state; the
+  composed PNG was 97,488 bytes. A clean reload had 1,000 bars and no runtime
+  exceptions; favicon 404 remains the only console error.
 
-## Remaining external work only
+## Remaining work
 
 - Add/configure a git remote before expecting Pages or scheduled workflows to
   run. This is outside the requested local implementation and requires the
   user's repository destination/authority.
+- Round 3 after the chart scope: G4 timeframe/watchlist, H2/H3 big tape and order
+  book, H4 Level Behavior, then B2 ticker-page valuation/peer improvements.
 - Deferred by the original plan: US equities, replay/training, backtester,
   wealth tracker, wiki and PWA. Do not treat those as unfinished A-E work.

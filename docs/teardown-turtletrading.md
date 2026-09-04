@@ -35,6 +35,41 @@ The AI assistant is **bring-your-own-key**: the user supplies an API key or
 points it at a local Ollama / LM Studio instance. The operator pays nothing for
 inference.
 
+## Chart source audit (2026-09-04)
+
+The chart implementation is not meaningfully hidden. Production preloads the
+self-hosted Lightweight Charts v5.2.0 build and `multi.min.js`, but the page's
+own error fallback publicly requests `/multi.js`. That unminified file returned
+HTTP 200 and measured 1,011,167 bytes / 10,799 lines. The minified file is
+574,951 bytes across three lines and has no source-map reference.
+
+Most of the product layer is custom vanilla JavaScript written on top of
+Lightweight Charts. The source describes a greenfield multi-instance chart and
+parts ported from an older in-page implementation. Its drawing stack contains a
+registry, a unified `DrawRenderer`, a `DrawPrimitive` Series Primitive adapter,
+hit testing/edit handles, per-pane state and controller-level tool arming. There
+are 35 unique `data-tool` values, including the cursor, and fixed-point polygon
+definitions for channels, pitchfork variants, Elliott waves, XABCD/ABCD,
+head-and-shoulders, Fibonacci channel and related tools.
+
+The indicator stack is also custom and registry-driven: 62 definitions in seven
+categories. Each definition carries defaults, parameter schema, line metadata,
+range/fill behavior and pane type; separate helpers compute values and attach or
+detach LWC series/primitives. Multi-instance state and `paneWith` allow compatible
+oscillators to share a pane. Standard formulas are independently reproducible;
+cloud fills, volume profiles, SMC and regime backgrounds use custom primitives.
+
+The reference app itself disarms a drawing after completion with
+`armTool(null)`. LEON intentionally differs: the selected tool remains active for
+repeated drawing and exits via right-click, Escape, Pan, or clicking the active
+tool again.
+
+No copyright/license/SPDX notice was found in the public application source.
+Public readability is not an open-source grant, so reproduce behavior and
+standard formulas without importing their application code verbatim. The
+underlying Lightweight Charts library is separately Apache-2.0 licensed and has
+an attribution requirement.
+
 ## Data model: mostly precomputed, a little live
 
 **Live, fetched in the browser.** Free, keyless, CORS-open exchange endpoints:
