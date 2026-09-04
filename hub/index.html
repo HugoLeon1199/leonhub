@@ -114,23 +114,29 @@ main{flex:1; position:relative; min-height:0}
 
 /* Each tab is an independent page. Keeping them as separate documents means a
    broken app never takes the hub down with it, and each can be deployed alone. */
+/* `primary` decides the visible row; everything else lives behind "Khác". The
+   row is ordered by how much the tab is worth opening: pages standing on the
+   point-in-time warehouse come first, and a page whose numbers are still
+   illustrative stays in the menu until it has real data behind it. */
 const TABS = [
   { key:"chart",   name:"Chart", icon:"⌁", src:"../apps/chart/", primary:true },
-  { key:"signals", name:"Signal", icon:"◉", src:"../apps/signals/", primary:true },
+  { key:"brief", name:"Tổng quan", icon:"◈", src:"../apps/brief/", primary:true },
+  { key:"stocks", name:"Cổ phiếu", icon:"▦", src:"../apps/stocks/", primary:true },
+  // The real-estate history cannot be backfilled, which makes it the one tab
+  // whose value strictly increases with every day it stays collected.
+  { key:"bds", name:"Bất động sản", icon:"⌂", src:"../apps/bds/", primary:true },
+  { key:"signals", name:"Tín hiệu", icon:"◉", src:"../apps/signals/", primary:true },
   { key:"gex", name:"Market Structure", icon:"▥", src:"../apps/gex/", primary:true },
-  { key:"stocks", name:"Phân tích", icon:"▦", src:"../apps/stocks/", primary:true },
   // Served from here rather than framed from leonquant.com, so it inherits the
   // hub's theme and survives that domain being unreachable. Its feeds are still
   // fetched from there -- see the note in apps/news/index.html.
-  { key:"news", name:"News", icon:"▤", src:"../apps/news/", primary:true },
-  { key:"training", name:"Training", icon:"▷", src:"../apps/training/", primary:true },
-  { key:"quant", name:"Quant", icon:"⚗", src:"../apps/quant/", primary:true },
-  { key:"brief", name:"Tổng quan", icon:"◈", src:"../apps/brief/" },
-  { key:"bds", name:"Bất động sản", icon:"⌂", src:"../apps/bds/" },
-  { key:"positioning", name:"Positioning", icon:"🎯", src:"../apps/positioning/" },
+  { key:"news", name:"Tin tức", icon:"▤", src:"../apps/news/", primary:true },
   { key:"flows", name:"Dòng tiền ETF", icon:"⇄", src:"../apps/flows/" },
+  { key:"positioning", name:"Positioning", icon:"🎯", src:"../apps/positioning/" },
   { key:"us", name:"Cổ phiếu Mỹ", icon:"🇺🇸", src:"../apps/us/" },
   { key:"wealth", name:"Tài chính", icon:"🌿", src:"../apps/wealth/" },
+  { key:"training", name:"Training", icon:"▷", src:"../apps/training/" },
+  { key:"quant", name:"Quant", icon:"⚗", src:"../apps/quant/" },
   { key:"wiki", name:"Wiki", icon:"▣", src:"../apps/wiki/" },
   { key:"blog", name:"Blog", icon:"✎", src:"../apps/blog/" },
   // Child route: reachable from the screener/deep links, intentionally absent
