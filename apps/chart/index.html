@@ -1137,6 +1137,157 @@ function hurst(bars, window){
   return out;
 }
 
+// Linear-regression candles: each bar replaced by the fitted value over the
+// trailing window, which strips the wicks and leaves the underlying drift.
+function linregLine(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+    for(let j = 0; j < period; j++){
+      const y = bars[i - period + 1 + j].close;
+      sx += j; sy += y; sxy += j * y; sxx += j * j;
+    }
+    const den = period * sxx - sx * sx;
+    if(!den) continue;
+    const slope = (period * sxy - sx * sy) / den;
+    const icpt = (sy - slope * sx) / period;
+    out.push({time:bars[i].time, value:icpt + slope * (period - 1)});
+  }
+  return out;
+}
+
+// UT Bot: an ATR trailing stop that flips side when price closes through it.
+function utBot(bars, keyValue, atrPeriod){
+  const a = atr(bars, atrPeriod);
+  const atrAt = new Map(a.map(p => [p.time, p.value]));
+  const out = [];
+  let stop = null, pos = 1;
+  for(const b of bars){
+    const av = atrAt.get(b.time);
+    if(av == null) continue;
+    const n = keyValue * av;
+    if(stop === null){ stop = b.close - n; out.push({time:b.time, value:stop}); continue; }
+    if(b.close > stop && pos === 1) stop = Math.max(stop, b.close - n);
+    else if(b.close < stop && pos === -1) stop = Math.min(stop, b.close + n);
+    else { pos = b.close > stop ? 1 : -1; stop = pos === 1 ? b.close - n : b.close + n; }
+    out.push({time:b.time, value:stop});
+  }
+  return out;
+}
+
+// Bill Williams fractal: a high with two lower highs on each side. The two-bar
+// lookahead is why the last two bars never carry one.
+function fractals(bars, periods){
+  const up = [], down = [];
+  for(let i = periods; i < bars.length - periods; i++){
+    let isHigh = true, isLow = true;
+    for(let j = 1; j <= periods; j++){
+      if(bars[i].high <= bars[i-j].high || bars[i].high <= bars[i+j].high) isHigh = false;
+      if(bars[i].low  >= bars[i-j].low  || bars[i].low  >= bars[i+j].low ) isLow  = false;
+    }
+    if(isHigh) up.push({time:bars[i].time, value:bars[i].high});
+    if(isLow) down.push({time:bars[i].time, value:bars[i].low});
+  }
+  return {up, down};
+}
+
+// Fair value gaps: a three-bar window where the outer two do not overlap, so
+// price skipped a range nobody traded.
+function fairValueGaps(bars){
+  const up = [], down = [];
+  for(let i = 2; i < bars.length; i++){
+    const a = bars[i-2], c = bars[i];
+    if(c.low > a.high) up.push({time:c.time, value:(c.low + a.high) / 2});
+    else if(c.high < a.low) down.push({time:c.time, value:(c.high + a.low) / 2});
+  }
+  return {up, down};
+}
+
+// Higher-timeframe close, held flat between HTF bars so the level a larger
+// chart is watching is visible on this one.
+function htfClose(bars, multiple){
+  const out = [];
+  let held = null;
+  bars.forEach((b, i) => {
+    if(i % multiple === 0) held = b.close;
+    if(held != null) out.push({time:b.time, value:held});
+  });
+  return out;
+}
+
+// Market structure: 1 while each swing high tops the last one, 0 once it does
+// not -- a break of structure in the simplest form that is still honest.
+function structureSeries(bars, lookback){
+  const out = [];
+  let lastHigh = null, state = 1;
+  for(let i = lookback; i < bars.length; i++){
+    const win = bars.slice(i - lookback, i + 1);
+    const hi = Math.max(...win.map(b => b.high));
+    if(lastHigh != null) state = hi >= lastHigh ? 1 : 0;
+    lastHigh = hi;
+    out.push({time:bars[i].time, value:state});
+  }
+  return out;
+}
+
+// Choppiness: 100 when the range is filled by noise, 0 when it is one clean
+// move. Above the guide the market is ranging.
+function choppiness(bars, period){
+  const tr = trueRanges(bars);
+  const out = [];
+  for(let i = period; i < bars.length; i++){
+    let sum = 0;
+    for(let j = i - period + 1; j <= i; j++) sum += tr[j];
+    const win = bars.slice(i - period + 1, i + 1);
+    const span = Math.max(...win.map(b => b.high)) - Math.min(...win.map(b => b.low));
+    if(!span || !sum) continue;
+    out.push({time:bars[i].time,
+      value:100 * Math.log10(sum / span) / Math.log10(period)});
+  }
+  return out;
+}
+
+// Volume regime: 1 when volume runs above its own average.
+function volumeRegime(bars, period){
+  const avg = sma(bars.map(b => ({time:b.time, close:b.volume || 0})), period);
+  const avgAt = new Map(avg.map(p => [p.time, p.value]));
+  return bars.map(b => {
+    const a = avgAt.get(b.time);
+    return a == null ? null : {time:b.time, value:(b.volume || 0) > a ? 1 : 0};
+  }).filter(Boolean);
+}
+
+// Volatility regime: 1 when ATR sits above its own average.
+function volRegime(bars, period){
+  const a = atr(bars, period);
+  const avg = sma(a.map(p => ({time:p.time, close:p.value})), period);
+  const avgAt = new Map(avg.map(p => [p.time, p.value]));
+  return a.map(p => {
+    const m = avgAt.get(p.time);
+    return m == null ? null : {time:p.time, value:p.value > m ? 1 : 0};
+  }).filter(Boolean);
+}
+
+// Two-state hidden-Markov stand-in: classify each bar by whether its return
+// exceeds the rolling mean, then require persistence before switching. Not a
+// fitted HMM, and labelled as such rather than implied to be one.
+function hmmRegime(bars, window, persist){
+  const rets = [];
+  for(let i = 1; i < bars.length; i++)
+    rets.push({time:bars[i].time, r:bars[i-1].close ? (bars[i].close - bars[i-1].close) / bars[i-1].close : 0});
+  const out = [];
+  let state = 1, run = 0;
+  for(let i = window; i < rets.length; i++){
+    const win = rets.slice(i - window, i).map(x => x.r);
+    const mean = win.reduce((a, b) => a + b, 0) / win.length;
+    const want = rets[i].r >= mean ? 1 : 0;
+    if(want === state) run = 0;
+    else if(++run >= persist){ state = want; run = 0; }
+    out.push({time:rets[i].time, value:state});
+  }
+  return out;
+}
+
 /* ---------- indicator registry ----------
    One entry per indicator. `pane` 0 draws over the candles; anything else gets
    its own strip below. `build` returns the plotted lines, so adding an
@@ -1341,6 +1492,71 @@ const INDICATORS = {
   hurstreg:{name:"Hurst", color:"#8b5cf6", pane:1, range:[0,1], guides:[0.5],
            params:{window:100},
            build:(b, p) => [{data:hurst(b, p.window), color:"#8b5cf6"}]},
+
+  linregcandles:{name:"Nến hồi quy", color:"#22d3ee", pane:0, params:{period:11},
+           build:(b, p) => [{data:linregLine(b, p.period), color:"#22d3ee", width:2}]},
+  utbot:  {name:"UT Bot", color:"#f43f5e", pane:0, params:{keyValue:1, atrPeriod:10},
+           build:(b, p) => [{data:utBot(b, p.keyValue, p.atrPeriod), color:"#f43f5e"}]},
+  fractal:{name:"Fractal", color:"#facc15", pane:0, params:{periods:2},
+           build:(b, p) => {
+             const r = fractals(b, p.periods);
+             return [{data:r.up, color:"#ef5350", dots:true},
+                     {data:r.down, color:"#26a69a", dots:true}];
+           }},
+  smc:    {name:"Fair Value Gap", color:"#26a69a", pane:0, params:{},
+           build:b => {
+             const r = fairValueGaps(b);
+             return [{data:r.up, color:"#26a69a", dots:true},
+                     {data:r.down, color:"#ef5350", dots:true}];
+           }},
+  htf:    {name:"Đóng cửa khung lớn", color:"#94a3b8", pane:0, params:{multiple:24},
+           build:(b, p) => [{data:htfClose(b, p.multiple), color:"#94a3b8", dashed:true}]},
+  volprofile:{name:"Volume Profile", color:"#ff9800", pane:1, params:{rows:24},
+           // The overlay version is the vprofile drawing tool; as an indicator
+           // it plots volume against price order so the busy prices stand out.
+           build:(b, p) => {
+             const lo = Math.min(...b.map(x => x.low)), hi = Math.max(...b.map(x => x.high));
+             if(hi <= lo) return [];
+             const rows = Math.max(5, Math.min(100, p.rows));
+             const rowH = (hi - lo) / rows, sums = new Array(rows).fill(0);
+             b.forEach(x => {
+               const i = Math.min(rows-1, Math.max(0, Math.floor((x.close - lo) / rowH)));
+               sums[i] += x.volume || 0;
+             });
+             const byBar = b.map(x => {
+               const i = Math.min(rows-1, Math.max(0, Math.floor((x.close - lo) / rowH)));
+               return {time:x.time, value:sums[i]};
+             });
+             return [{data:byBar, color:"#ff9800", histogram:true}];
+           }},
+
+  volregime:{name:"Chế độ biến động", color:"#f97316", pane:1, range:[0,1],
+           params:{period:20},
+           build:(b, p) => [{data:volRegime(b, p.period), color:"#f97316", histogram:true}]},
+  volumereg:{name:"Chế độ khối lượng", color:"#84cc16", pane:1, range:[0,1],
+           params:{period:20},
+           build:(b, p) => [{data:volumeRegime(b, p.period), color:"#84cc16", histogram:true}]},
+  adxregime:{name:"Chế độ ADX", color:"#14b8a6", pane:1, range:[0,1], params:{period:14, level:25},
+           build:(b, p) => [{data:adx(b, p.period).map(x =>
+                              ({time:x.time, value:x.value > p.level ? 1 : 0})),
+                             color:"#14b8a6", histogram:true}]},
+  supertrendreg:{name:"Chế độ Supertrend", color:"#10b981", pane:1, range:[0,1],
+           params:{period:10, mult:3},
+           build:(b, p) => {
+             const r = supertrend(b, p.period, p.mult);
+             const upAt = new Map(r.up.filter(x => x.value != null).map(x => [x.time, 1]));
+             return [{data:b.map(x => ({time:x.time, value:upAt.get(x.time) ? 1 : 0})),
+                      color:"#10b981", histogram:true}];
+           }},
+  chopreg:{name:"Choppiness", color:"#eab308", pane:1, range:[0,100], guides:[38.2, 61.8],
+           params:{period:14},
+           build:(b, p) => [{data:choppiness(b, p.period), color:"#eab308"}]},
+  structure:{name:"Cấu trúc thị trường", color:"#22d3ee", pane:1, range:[0,1],
+           params:{lookback:5},
+           build:(b, p) => [{data:structureSeries(b, p.lookback), color:"#22d3ee", histogram:true}]},
+  hmmreg: {name:"Chế độ HMM (xấp xỉ)", color:"#a855f7", pane:1, range:[0,1],
+           params:{window:50, persist:3},
+           build:(b, p) => [{data:hmmRegime(b, p.window, p.persist), color:"#a855f7", histogram:true}]},
 };
 const INDICATOR_KEYS = Object.keys(INDICATORS);
 
