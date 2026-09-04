@@ -25,6 +25,13 @@
 .method-body p{margin:11px 0 0;font-size:13px;line-height:1.62;color:var(--muted);max-width:74ch}
 .method-body b{color:var(--text)}
 .method-body code{background:var(--panel-2);padding:1px 5px;border-radius:4px;font-size:12px}
+.pnarr{margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.pkind{font-size:11px;color:var(--accent);letter-spacing:.03em;margin-bottom:6px}
+.ptags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.ptag{font-size:10.5px;padding:2px 7px;border:1px solid var(--line);border-radius:99px;color:var(--muted)}
+.padmin,.pview{font-size:12.5px;line-height:1.6;color:var(--muted);margin:0 0 8px}
+.pview b{color:var(--text);display:block;font-size:11px;letter-spacing:.03em;margin-bottom:2px}
+.psrc{display:block;font-size:10.5px;opacity:.75;margin-top:3px}
 </style>
 </head>
 <body>
@@ -106,6 +113,7 @@ const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,
 const COLORS=["#38d39f","#47a6ff","#d7b943","#d66ee8","#f0645a"];
 const CAT_LABEL={dat:"Đất", "nha-rieng":"Nhà ở", "chung-cu":"Căn hộ/Chung cư", "van-phong":"Văn phòng, Mặt bằng kinh doanh"};
 let DATA={rows:[],provinces:[],history:[]}, MAP=null, mapCat="dat", selectedProvince="", sortKey="p", sortDir=-1, trendKeys=[];
+let PROFILES={}, PROFILE_META={};
 const COLS=[
   ["d","Quận / Huyện","text"],["rs","Tỉnh mới","text"],["r","Tỉnh nguồn","text"],["i","Loại","text"],
   ["p","Giá tr/m²","num"],["g","CAGR %/năm","num"],["y","Lợi suất %","num"],["v","Định giá tương đối","text"],
@@ -114,6 +122,9 @@ const COLS=[
 
 Promise.all([
   fetch("../../data/bds.json",{cache:"no-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}),
+  fetch("../../data/province_profiles.json",{cache:"no-cache"})
+    .then(r=>r.ok?r.json():null).then(d=>{PROFILES=d?.provinces||{};PROFILE_META=d||{};renderProfile()})
+    .catch(()=>{});
   fetch("../../data/vn-map.json",{cache:"force-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()})
 ]).then(([data,map])=>{DATA=Array.isArray(data)?{rows:data,provinces:[],history:[]}:data;MAP=map;init()}).catch(err=>{
   $("updated").textContent="Không tải được dữ liệu";$("tbody").innerHTML=`<tr><td colspan="12">Chạy pipeline BĐS rồi mở bằng HTTP server (${String(err)})</td></tr>`;
@@ -179,7 +190,25 @@ function renderProfile(){
   const p=DATA.provinces.find(x=>x.name===selectedProvince),c=p?.cats?.[mapCat],rows=DATA.rows.filter(r=>r.rs===selectedProvince&&r.cs===mapCat).sort((a,b)=>b.p-a.p);
   if(!p){$("profile").innerHTML='<div class="nodata">Chọn một tỉnh trên bản đồ</div>';return}
   $("profile").innerHTML=`<h3>${esc(p.name)}</h3><div class="merged">${p.from.length>1?"Hợp nhất: "+p.from.join(" · "):"Giữ nguyên địa giới cấp tỉnh"}</div>${c?`<div class="metric"><span>${CAT_LABEL[mapCat]}</span><b>${fmt(c.p)} tr/m²</b></div><div class="metric"><span>Lợi suất trung vị</span><b>${fmt(c.y,2)}%</b></div><div class="metric"><span>Quận/huyện đủ mẫu</span><b>${c.d}</b></div><div class="metric"><span>Mẫu sau lọc</span><b>${c.n.toLocaleString("vi-VN")}</b></div><div class="rank"><h4>Khu vực giá cao nhất</h4>${rows.slice(0,6).map(r=>`<div class="rank-row" data-s="${r.slug}"><span>${esc(r.d)} <i class="dim">${esc(r.r)}</i></span><b>${fmt(r.p)}</b></div>`).join("")}</div>`:'<div class="nodata">Chưa có ô đủ 20 mẫu cho loại hình này</div>'}`;
+  $("profile").insertAdjacentHTML("beforeend",profileNarrative(p));
   $("profile").querySelectorAll("[data-s]").forEach(e=>e.onclick=()=>openDistrict(e.dataset.s,mapCat));
+}
+
+/* The written half of a province profile. Kept below the measured numbers and
+   labelled, because a paragraph sitting next to a median reads as if it were
+   also measured. Administrative structure is sourced fact; `view` is opinion
+   and says so. */
+function profileNarrative(p){
+  const pr=PROFILES[p.slug];
+  if(!pr) return "";
+  const tags=(pr.tags||[]).map(t=>`<span class="ptag">${esc(t)}</span>`).join("");
+  const admin=pr.note_admin||pr.from_note||"";
+  return `<div class="pnarr">`+
+    (pr.kind?`<div class="pkind">${esc(pr.kind)}</div>`:"")+
+    (tags?`<div class="ptags">${tags}</div>`:"")+
+    (admin?`<p class="padmin">${esc(admin)} <span class="psrc">Nguồn: Nghị quyết 202/2025/QH15</span></p>`:"")+
+    (pr.view?`<p class="pview"><b>Nhận định</b> ${esc(pr.view)}</p>`:"")+
+    `</div>`;
 }
 
 function buildTrendPicker(){DATA.rows.slice().sort((a,b)=>a.d.localeCompare(b.d,"vi")).forEach(r=>$("trendPick").add(new Option(`${r.d} · ${r.r} · ${r.i}`,`${r.slug}__${r.cs}`)));const usable=DATA.rows.filter(r=>r.cs===mapCat).sort((a,b)=>b.n-a.n).slice(0,3);trendKeys=usable.map(r=>`${r.slug}__${r.cs}`);renderChips()}

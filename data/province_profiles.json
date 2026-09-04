@@ -1,0 +1,375 @@
+{
+ "_about": "Hồ sơ 34 tỉnh/thành sau sáp nhập 2025. Phần cơ cấu hành chính lấy từ Nghị quyết 202/2025/QH15. Phần nhận định thị trường được đánh dấu riêng là quan điểm, không phải số liệu đo được. Số liệu giá lấy từ bảng bất động sản của chính LEON.",
+ "_sources": {
+  "nq202": "Nghị quyết 202/2025/QH15 về sắp xếp đơn vị hành chính cấp tỉnh, Quốc hội khóa XV, thông qua 12/6/2025 — nguồn cho danh sách 34 tỉnh và các tỉnh thành phần trước sáp nhập"
+ },
+ "_disclaimer": "Chưa công bố dân số và diện tích từng tỉnh: các con số sau sáp nhập cần lấy từ nguồn thống kê chính thức ở dạng máy đọc được, chưa dẫn được nên để trống thay vì đăng số có thể sai. Mọi nhận định trong mục 'view' là quan điểm phân tích, không phải khuyến nghị đầu tư.",
+ "provinces": {
+  "ha-noi": {
+   "kind": "Thành phố trực thuộc Trung ương",
+   "merged": false,
+   "note_admin": "Không sáp nhập với tỉnh nào, giữ nguyên ranh giới; bỏ cấp huyện, tổ chức lại còn 126 đơn vị cấp xã từ 1/7/2025.",
+   "tags": [
+    "Thủ đô",
+    "Trung tâm chính trị",
+    "Hạ tầng vành đai",
+    "Giá cao so với thu nhập"
+   ],
+   "view": "Thị trường lớn nhất miền Bắc, thanh khoản cao. Mặt bằng giá đã lên rất cao so với thu nhập bình quân, nên dư địa tăng phụ thuộc vào hạ tầng vành đai và nguồn cung mới hơn là vào định giá."
+  },
+  "ho-chi-minh": {
+   "kind": "Thành phố trực thuộc Trung ương",
+   "merged": true,
+   "from_note": "Hợp nhất TP.HCM, Bình Dương và Bà Rịa - Vũng Tàu",
+   "note_admin": "Sáp nhập ba đơn vị thành một thành phố trực thuộc Trung ương, quy mô dân số lớn nhất cả nước.",
+   "tags": [
+    "Đầu tàu kinh tế",
+    "Công nghiệp Bình Dương",
+    "Cảng biển Cái Mép",
+    "Quy mô dân số lớn nhất"
+   ],
+   "view": "Sáp nhập gộp ba thị trường rất khác nhau: đô thị lõi TP.HCM, vành đai công nghiệp Bình Dương và trục cảng - du lịch Bà Rịa - Vũng Tàu. Giá theo quận/huyện phân tán rất rộng, nên số trung vị cấp tỉnh ít có ý nghĩa hơn ở nơi khác."
+  },
+  "hai-phong": {
+   "kind": "Thành phố trực thuộc Trung ương",
+   "merged": true,
+   "from_note": "Hợp nhất Hải Phòng và Hải Dương",
+   "tags": [
+    "Cảng biển",
+    "Công nghiệp chế biến",
+    "Logistics"
+   ],
+   "view": "Cụm cảng lớn nhất miền Bắc cộng với vùng công nghiệp Hải Dương. Hạ tầng kết nối Hà Nội - Hải Phòng đã hoàn chỉnh, nên câu chuyện nghiêng về công nghiệp và logistics hơn là nhà ở đô thị."
+  },
+  "da-nang": {
+   "kind": "Thành phố trực thuộc Trung ương",
+   "merged": true,
+   "from_note": "Hợp nhất Đà Nẵng và Quảng Nam",
+   "tags": [
+    "Du lịch",
+    "Trung tâm miền Trung",
+    "Khu kinh tế Chu Lai"
+   ],
+   "view": "Trung tâm miền Trung, thị trường nghiêng về du lịch và second home nên nhạy với chu kỳ hơn thị trường nhà ở thuần. Sáp nhập Quảng Nam bổ sung quỹ đất và khu kinh tế Chu Lai."
+  },
+  "can-tho": {
+   "kind": "Thành phố trực thuộc Trung ương",
+   "merged": true,
+   "from_note": "Hợp nhất Cần Thơ, Hậu Giang và Sóc Trăng",
+   "tags": [
+    "Trung tâm ĐBSCL",
+    "Nông nghiệp",
+    "Cảng Trần Đề"
+   ],
+   "view": "Trung tâm vùng ĐBSCL. Quy hoạch cảng nước sâu Trần Đề (Sóc Trăng cũ) là yếu tố hạ tầng đáng theo dõi nhất sau sáp nhập."
+  },
+  "hue": {
+   "kind": "Thành phố trực thuộc Trung ương",
+   "merged": false,
+   "tags": [
+    "Di sản",
+    "Du lịch văn hóa",
+    "Y tế"
+   ],
+   "view": "Thị trường nhỏ, đặc thù di sản hạn chế phát triển cao tầng ở khu vực lõi. Thanh khoản thấp hơn các thành phố trực thuộc Trung ương khác."
+  },
+  "quang-ninh": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Du lịch Hạ Long",
+    "Cửa khẩu Móng Cái",
+    "Than khoáng sản"
+   ],
+   "view": "Không sáp nhập. Kinh tế dựa vào du lịch, cửa khẩu và khai khoáng; bất động sản tập trung ở trục Hạ Long - Cẩm Phả - Móng Cái."
+  },
+  "bac-ninh": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Bắc Ninh và Bắc Giang",
+   "tags": [
+    "Công nghiệp điện tử",
+    "FDI lớn",
+    "Vệ tinh Hà Nội"
+   ],
+   "view": "Trung tâm công nghiệp điện tử phía Bắc với vốn FDI lớn. Cầu nhà ở gắn chặt với lao động khu công nghiệp, nên chu kỳ bất động sản đi theo chu kỳ đơn hàng sản xuất hơn là theo lãi suất."
+  },
+  "hung-yen": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Hưng Yên và Thái Bình",
+   "tags": [
+    "Vệ tinh Hà Nội",
+    "Công nghiệp",
+    "Vành đai 4"
+   ],
+   "view": "Hưởng lợi trực tiếp từ giãn dân và công nghiệp vệ tinh Hà Nội, đặc biệt quanh trục Vành đai 4."
+  },
+  "ninh-binh": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Ninh Bình, Nam Định và Hà Nam",
+   "tags": [
+    "Du lịch Tràng An",
+    "Công nghiệp nhẹ",
+    "Nam đồng bằng"
+   ],
+   "view": "Gộp ba tỉnh nam đồng bằng Bắc Bộ thành một đơn vị dân số lớn. Du lịch di sản ở Ninh Bình và công nghiệp ở Hà Nam là hai động lực khác nhau trong cùng một tỉnh."
+  },
+  "phu-tho": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Phú Thọ, Vĩnh Phúc và Hòa Bình",
+   "tags": [
+    "Công nghiệp Vĩnh Phúc",
+    "Du lịch Hòa Bình",
+    "Trung du"
+   ],
+   "view": "Gộp ba tỉnh có đặc điểm rất khác: công nghiệp ô tô Vĩnh Phúc, trung du Phú Thọ và du lịch nghỉ dưỡng Hòa Bình."
+  },
+  "thai-nguyen": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Thái Nguyên và Bắc Kạn",
+   "tags": [
+    "Công nghiệp điện tử",
+    "Đại học",
+    "Miền núi phía Bắc"
+   ],
+   "view": "Cụm công nghiệp điện tử lớn phía Bắc cộng với vùng núi Bắc Kạn dân cư thưa. Chênh lệch nội tỉnh sau sáp nhập rất lớn."
+  },
+  "lao-cai": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Lào Cai và Yên Bái",
+   "tags": [
+    "Cửa khẩu quốc tế",
+    "Du lịch Sa Pa",
+    "Biên giới"
+   ],
+   "view": "Cửa khẩu quốc tế và du lịch Sa Pa là hai trụ chính. Thị trường bất động sản tập trung hẹp quanh thành phố Lào Cai và thị xã Sa Pa."
+  },
+  "tuyen-quang": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Tuyên Quang và Hà Giang",
+   "tags": [
+    "Miền núi",
+    "Du lịch cao nguyên đá",
+    "Dân cư thưa"
+   ],
+   "view": "Tỉnh miền núi diện tích lớn, mật độ dân số thấp. Thị trường bất động sản mỏng, số liệu giá rao thường không đủ mẫu để công bố."
+  },
+  "cao-bang": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Biên giới",
+    "Miền núi",
+    "Du lịch thác Bản Giốc"
+   ],
+   "view": "Không sáp nhập. Dân số nhỏ nhất nhóm miền núi phía Bắc, thị trường bất động sản rất mỏng."
+  },
+  "lang-son": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Cửa khẩu Hữu Nghị",
+    "Thương mại biên giới"
+   ],
+   "view": "Không sáp nhập. Kinh tế cửa khẩu là động lực chính; bất động sản gắn với thương mại biên mậu."
+  },
+  "dien-bien": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Biên giới",
+    "Miền núi",
+    "Di tích lịch sử"
+   ],
+   "view": "Không sáp nhập. Thị trường nhỏ, tập trung quanh thành phố Điện Biên Phủ."
+  },
+  "lai-chau": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Biên giới",
+    "Thủy điện",
+    "Dân số nhỏ nhất"
+   ],
+   "view": "Không sáp nhập. Dân số nhỏ nhất cả nước; dữ liệu giá rao gần như không đủ mẫu."
+  },
+  "son-la": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Nông nghiệp cao nguyên",
+    "Thủy điện",
+    "Miền núi"
+   ],
+   "view": "Không sáp nhập. Diện tích lớn, kinh tế nông nghiệp cao nguyên và thủy điện."
+  },
+  "thanh-hoa": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Khu kinh tế Nghi Sơn",
+    "Dân số lớn",
+    "Bờ biển dài"
+   ],
+   "view": "Không sáp nhập. Dân số thuộc nhóm lớn nhất cả nước; khu kinh tế Nghi Sơn với lọc hóa dầu là động lực công nghiệp chính."
+  },
+  "nghe-an": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Diện tích lớn nhất",
+    "Khu kinh tế Đông Nam",
+    "Cảng Cửa Lò"
+   ],
+   "view": "Không sáp nhập. Tỉnh có diện tích lớn nhất cả nước; thị trường bất động sản tập trung quanh Vinh và trục ven biển Cửa Lò."
+  },
+  "ha-tinh": {
+   "kind": "Tỉnh",
+   "merged": false,
+   "tags": [
+    "Khu kinh tế Vũng Áng",
+    "Thép Formosa",
+    "Cảng nước sâu"
+   ],
+   "view": "Không sáp nhập. Kinh tế phụ thuộc nhiều vào khu kinh tế Vũng Áng, nên chu kỳ bất động sản gắn với chu kỳ công nghiệp nặng."
+  },
+  "quang-tri": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Quảng Trị và Quảng Bình",
+   "tags": [
+    "Hành lang Đông - Tây",
+    "Du lịch hang động",
+    "Cửa khẩu Lao Bảo"
+   ],
+   "view": "Sáp nhập tạo dải ven biển dài với du lịch hang động Phong Nha và hành lang kinh tế Đông - Tây qua Lao Bảo."
+  },
+  "quang-ngai": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Quảng Ngãi và Kon Tum",
+   "tags": [
+    "Lọc dầu Dung Quất",
+    "Tây Nguyên",
+    "Ven biển - cao nguyên"
+   ],
+   "view": "Gộp một tỉnh ven biển công nghiệp nặng với một tỉnh Tây Nguyên, tạo chênh lệch nội tỉnh rất lớn về giá và thanh khoản."
+  },
+  "gia-lai": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Gia Lai và Bình Định",
+   "tags": [
+    "Cảng Quy Nhơn",
+    "Tây Nguyên",
+    "Nông nghiệp"
+   ],
+   "view": "Nối cao nguyên Gia Lai với cửa biển Quy Nhơn. Trục giao thông xuống cảng là yếu tố hạ tầng quyết định."
+  },
+  "dak-lak": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Đắk Lắk và Phú Yên",
+   "tags": [
+    "Cà phê",
+    "Tây Nguyên",
+    "Ven biển Phú Yên"
+   ],
+   "view": "Thủ phủ cà phê nối với dải ven biển Phú Yên. Thu nhập nông nghiệp biến động theo giá nông sản, ảnh hưởng trực tiếp tới cầu nhà đất."
+  },
+  "khanh-hoa": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Khánh Hòa và Ninh Thuận",
+   "tags": [
+    "Du lịch Nha Trang",
+    "Vân Phong",
+    "Năng lượng tái tạo"
+   ],
+   "view": "Du lịch Nha Trang cộng với khu kinh tế Vân Phong và năng lượng tái tạo Ninh Thuận. Thị trường nghỉ dưỡng nhạy với chu kỳ du lịch."
+  },
+  "lam-dong": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Lâm Đồng, Đắk Nông và Bình Thuận",
+   "tags": [
+    "Đà Lạt",
+    "Bô xít",
+    "Ven biển Bình Thuận"
+   ],
+   "view": "Tỉnh có diện tích lớn nhất sau sáp nhập. Gộp cao nguyên Đà Lạt, vùng bô xít Đắk Nông và dải ven biển Bình Thuận — ba thị trường gần như không liên quan nhau."
+  },
+  "dong-nai": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Đồng Nai và Bình Phước",
+   "tags": [
+    "Sân bay Long Thành",
+    "Công nghiệp",
+    "Vệ tinh TP.HCM"
+   ],
+   "view": "Sân bay Long Thành là dự án hạ tầng lớn nhất ảnh hưởng tới giá đất phía Nam. Cần phân biệt giá kỳ vọng quanh dự án với giá giao dịch thực tế."
+  },
+  "tay-ninh": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Tây Ninh và Long An",
+   "tags": [
+    "Cửa khẩu Mộc Bài",
+    "Vệ tinh TP.HCM",
+    "Công nghiệp Long An"
+   ],
+   "view": "Long An là vành đai công nghiệp sát TP.HCM, Tây Ninh là kinh tế cửa khẩu. Phần giáp ranh TP.HCM có thanh khoản cao hơn hẳn phần còn lại."
+  },
+  "vinh-long": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Vĩnh Long, Bến Tre và Trà Vinh",
+   "tags": [
+    "ĐBSCL",
+    "Nông nghiệp",
+    "Kinh tế biển Trà Vinh"
+   ],
+   "view": "Ba tỉnh ĐBSCL gộp lại. Kinh tế nông nghiệp và thủy sản; thị trường bất động sản mỏng ngoài các thị xã trung tâm."
+  },
+  "dong-thap": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Đồng Tháp và Tiền Giang",
+   "tags": [
+    "ĐBSCL",
+    "Cây ăn trái",
+    "Giáp TP.HCM"
+   ],
+   "view": "Phần Tiền Giang giáp TP.HCM có cầu nhà ở rõ hơn; phần Đồng Tháp thuần nông nghiệp."
+  },
+  "an-giang": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất An Giang và Kiên Giang",
+   "tags": [
+    "Phú Quốc",
+    "Biên giới Campuchia",
+    "Du lịch tâm linh"
+   ],
+   "view": "Sáp nhập đưa Phú Quốc vào cùng tỉnh với vùng biên giới An Giang. Phú Quốc là thị trường nghỉ dưỡng riêng biệt, không nên đọc chung với số trung vị toàn tỉnh."
+  },
+  "ca-mau": {
+   "kind": "Tỉnh",
+   "merged": true,
+   "from_note": "Hợp nhất Cà Mau và Bạc Liêu",
+   "tags": [
+    "Cực Nam",
+    "Thủy sản",
+    "Điện gió"
+   ],
+   "view": "Cực Nam đất nước, kinh tế biển với thủy sản và điện gió. Cao tốc Bắc - Nam thông tuyến về Cà Mau là yếu tố hạ tầng đáng chú ý nhất."
+  }
+ }
+}

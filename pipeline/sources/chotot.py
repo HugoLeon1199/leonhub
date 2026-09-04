@@ -25,6 +25,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterator
 
 from pipeline.core.http import HttpClient
@@ -156,19 +157,62 @@ def discover_regions(client: HttpClient, pages: int = 40) -> dict[int, str]:
     not exist. Harvesting the codes from ads is the only reliable route.
     """
     regions: dict[int, str] = {}
-    for category in (1010, 1020, 1040):
-        offset = 0
-        for _ in range(pages):
-            ads, _ = fetch_page(client, 0, None, category, SALE, offset, limit=PAGE_SIZE)
-            if not ads:
-                break
-            for ad in ads:
-                code = ad.get("region_v2")
-                if isinstance(code, int):
-                    regions.setdefault(code, ad.get("region_name") or "")
-            offset += len(ads)
+    # Sale and rent, across every property category. A province thin on sale
+    # ads can still be visible in the rental feed, and reading only the sale
+    # lane is what kept Bac Ninh (1001) and Bac Giang (10060) out of the crawl
+    # entirely -- a province absent from the feed is never crawled, so it stays
+    # absent from the feed. The blind spot sustains itself.
+    for category in (1010, 1020, 1040, 1050):
+        for listing_type in (SALE, RENT):
+            offset = 0
+            for _ in range(pages):
+                try:
+                    ads, _ = fetch_page(
+                        client, 0, None, category, listing_type, offset, limit=PAGE_SIZE
+                    )
+                except Exception as exc:  # one dead lane must not lose the rest
+                    log.warning("discovery %s/%s failed: %s", category, listing_type, exc)
+                    break
+                if not ads:
+                    break
+                for ad in ads:
+                    code = ad.get("region_v2")
+                    if isinstance(code, int):
+                        regions.setdefault(code, ad.get("region_name") or "")
+                offset += len(ads)
+
+    # Codes seen on any previous run are kept even when today's feed omits
+    # them. Discovery is a floor, not a snapshot: dropping a province because
+    # it had a quiet week would silently narrow the crawl and there is no
+    # backfill for the days it was missing.
+    regions.update(_remembered_regions())
+    _remember_regions(regions)
     log.info("discovered %d provinces", len(regions))
     return regions
+
+
+REGION_CACHE = Path(__file__).resolve().parents[2] / "data" / "chotot_regions.json"
+
+
+def _remembered_regions() -> dict[int, str]:
+    try:
+        raw = json.loads(REGION_CACHE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {int(k): v for k, v in raw.items() if str(k).isdigit()}
+
+
+def _remember_regions(regions: dict[int, str]) -> None:
+    merged = {**_remembered_regions(), **regions}
+    try:
+        REGION_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        REGION_CACHE.write_text(
+            json.dumps({str(k): v for k, v in sorted(merged.items())},
+                       ensure_ascii=False, indent=1),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        log.warning("could not persist region cache: %s", exc)
 
 
 def discover_districts(client: HttpClient, region: int) -> list[int]:
