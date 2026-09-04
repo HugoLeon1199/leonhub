@@ -43,7 +43,8 @@ body{
   text-transform:uppercase;
 }
 .sym-input:focus{outline:2px solid var(--accent); outline-offset:-1px}
-.group{display:flex; gap:2px; background:var(--panel-2); padding:2px; border-radius:8px}
+.group{display:flex; gap:2px; background:var(--panel-2); padding:2px; border-radius:8px;
+  flex:0 0 auto}
 .group button{
   appearance:none; border:0; background:transparent; color:var(--muted);
   font:inherit; font-size:12.5px; padding:5px 10px; border-radius:6px; cursor:pointer;
@@ -51,8 +52,16 @@ body{
 .group button:hover{color:var(--text)}
 .group button[aria-pressed="true"]{background:var(--accent); color:#04150f; font-weight:600}
 :root[data-theme="light"] .group button[aria-pressed="true"]{color:#fff}
+.group button.danger:hover{color:var(--down)}
+.draw-count{min-width:18px; padding:0 4px; color:var(--muted); font-size:11px;
+  display:grid; place-items:center; font-variant-numeric:tabular-nums}
+.live{display:inline-flex; align-items:center; gap:5px}
+.live::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--up);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--up) 18%, transparent)}
+.live[hidden]{display:none}
 
-.quote{display:flex; align-items:baseline; gap:10px; margin-left:auto; padding-right:4px}
+.quote{display:flex; align-items:baseline; gap:10px; margin-left:auto; padding-right:4px;
+  flex:0 0 auto}
 .price{font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.4px}
 .chg{font-size:13px; font-weight:600; font-variant-numeric:tabular-nums}
 .up{color:var(--up)} .down{color:var(--down)}
@@ -76,6 +85,10 @@ body{
 /* ---- Chart ---- */
 main{flex:1; position:relative; min-height:0}
 #chart{position:absolute; inset:0}
+#drawings{position:absolute; inset:0; width:100%; height:100%; z-index:2;
+  pointer-events:none; touch-action:none; outline:none}
+#drawings.active{pointer-events:auto; cursor:crosshair}
+#drawings.selecting{cursor:default}
 .msg{
   position:absolute; inset:0; display:grid; place-content:center; text-align:center;
   gap:8px; color:var(--muted); background:var(--bg); padding:24px; z-index:3;
@@ -94,9 +107,22 @@ footer b{color:var(--text); font-weight:600}
 <body>
 
 <div class="bar">
-  <input id="sym" class="sym-input" value="BTC" maxlength="12" aria-label="Mã coin"
+  <input id="sym" class="sym-input" value="BTC" maxlength="12" list="coins" aria-label="Mã coin"
          autocomplete="off" spellcheck="false">
+  <datalist id="coins"></datalist>
   <div class="group" id="tfs" role="group" aria-label="Khung thời gian"></div>
+  <div class="group" role="group" aria-label="Chỉ báo">
+    <button id="ma" type="button" aria-pressed="true" title="Hiện hoặc ẩn đường trung bình MA20 và MA50">MA20/50</button>
+  </div>
+  <div class="group" id="draw-tools" role="group" aria-label="Công cụ vẽ">
+    <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart">Pan</button>
+    <button type="button" data-tool="select" aria-pressed="false" title="Chọn, kéo hoặc nhấn Delete để xóa hình">◇</button>
+    <button type="button" data-tool="hline" aria-pressed="false" title="Vẽ mức giá ngang">—</button>
+    <button type="button" data-tool="trend" aria-pressed="false" title="Vẽ trendline bằng hai điểm">╱</button>
+    <button type="button" data-tool="fib" aria-pressed="false" title="Vẽ Fibonacci retracement bằng hai điểm">Fib</button>
+    <button id="draw-clear" class="danger" type="button" title="Xóa tất cả hình của coin này">Xóa</button>
+    <span class="draw-count" id="draw-count" title="Số hình đã lưu">0</span>
+  </div>
   <div class="quote">
     <span class="price" id="price">—</span>
     <span class="chg" id="chg"></span>
@@ -107,11 +133,13 @@ footer b{color:var(--text); font-weight:600}
 
 <main>
   <div id="chart"></div>
+  <canvas id="drawings" tabindex="0" aria-label="Lớp vẽ phân tích kỹ thuật"></canvas>
   <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
 </main>
 
 <footer>
   <span>Nguồn: <b id="src">Binance</b></span>
+  <span class="live" id="live" hidden>Trực tiếp</span>
   <span>Cập nhật: <b id="upd">—</b></span>
   <span>Dữ liệu tham khảo, không phải khuyến nghị đầu tư.</span>
 </footer>
@@ -121,22 +149,73 @@ footer b{color:var(--text); font-weight:600}
 
 const TIMEFRAMES = ["5m","15m","1h","4h","1d"];
 const LIMIT = 500;
+const COIN_CACHE_KEY = "leon_binance_coins_v1";
+const COIN_CACHE_MS = 24 * 60 * 60 * 1000;
+const FALLBACK_COINS = [
+  "BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK",
+  "SUI","TON","DOT","BCH","LTC","UNI","NEAR","APT","FIL","ARB",
+  "OP","AAVE","ATOM","ETC","ICP","INJ","RENDER","FET","PEPE","SHIB",
+];
 
 const el = {
   sym: document.getElementById("sym"),
+  coins: document.getElementById("coins"),
   tfs: document.getElementById("tfs"),
+  ma: document.getElementById("ma"),
+  drawing: document.getElementById("drawings"),
+  drawTools: document.getElementById("draw-tools"),
+  drawClear: document.getElementById("draw-clear"),
+  drawCount: document.getElementById("draw-count"),
   price: document.getElementById("price"),
   chg: document.getElementById("chg"),
   stats: document.getElementById("stats"),
   msg: document.getElementById("msg"),
   src: document.getElementById("src"),
   upd: document.getElementById("upd"),
+  live: document.getElementById("live"),
 };
 
 const params = new URLSearchParams(location.search);
 let symbol = (params.get("sym") || "BTC").toUpperCase();
 let timeframe = TIMEFRAMES.includes(params.get("tf")) ? params.get("tf") : "1h";
 el.sym.value = symbol;
+
+function renderCoinList(symbols){
+  el.coins.replaceChildren(...symbols.map(sym => {
+    const option = document.createElement("option");
+    option.value = sym;
+    return option;
+  }));
+}
+
+async function loadCoinList(){
+  let cached;
+  try{ cached = JSON.parse(localStorage.getItem(COIN_CACHE_KEY) || "null"); }catch(e){}
+  if(cached && Date.now() - cached.at < COIN_CACHE_MS && Array.isArray(cached.symbols)){
+    renderCoinList(cached.symbols);
+    return;
+  }
+  renderCoinList(FALLBACK_COINS);
+  try{
+    const res = await fetch("https://api.binance.com/api/v3/exchangeInfo");
+    if(!res.ok) throw new Error("exchangeInfo " + res.status);
+    const payload = await res.json();
+    const available = (payload.symbols || [])
+      .filter(x => x.status === "TRADING" && x.quoteAsset === "USDT" &&
+        x.isSpotTradingAllowed !== false && x.symbol.endsWith("USDT"))
+      .map(x => x.symbol.slice(0, -4))
+      .filter((x, i, all) => x && all.indexOf(x) === i)
+      .sort((a, b) => a.localeCompare(b));
+    // exchangeInfo currently exposes hundreds of tiny pairs. Keep the field
+    // scannable while pinning the widely followed names to the front.
+    const popular = FALLBACK_COINS.filter(x => available.includes(x));
+    const symbols = [...popular, ...available.filter(x => !popular.includes(x))].slice(0, 250);
+    if(symbols.length){
+      renderCoinList(symbols);
+      try{ localStorage.setItem(COIN_CACHE_KEY, JSON.stringify({at:Date.now(), symbols})); }catch(e){}
+    }
+  }catch(e){ /* the popular fallback keeps the field useful offline */ }
+}
 
 /* ---------- theme-aware chart colors ---------- */
 const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
@@ -163,6 +242,44 @@ const volume = chart.addHistogramSeries({
   priceFormat:{type:"volume"}, priceScaleId:"vol",
 });
 chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.84, bottom:0} });
+
+/* MA20 and MA50 specifically, because those are the two averages
+   signals_build.py crosses to generate a trade. Drawing them here lets a reader
+   see the rule that produced a signal rather than take it on trust — the same
+   reason the signals page prints its rules table. */
+const ma20 = chart.addLineSeries({
+  color:"#3b82f6", lineWidth:1, priceLineVisible:false, lastValueVisible:false,
+  crosshairMarkerVisible:false,
+});
+const ma50 = chart.addLineSeries({
+  color:"#f59e0b", lineWidth:1, priceLineVisible:false, lastValueVisible:false,
+  crosshairMarkerVisible:false,
+});
+
+function sma(bars, period){
+  const out = [];
+  let sum = 0;
+  for(let i = 0; i < bars.length; i++){
+    sum += bars[i].close;
+    if(i >= period) sum -= bars[i - period].close;
+    if(i >= period - 1) out.push({time:bars[i].time, value:sum / period});
+  }
+  return out;
+}
+
+let showMA = true;
+try{ showMA = localStorage.getItem("leon_chart_ma") !== "0"; }catch(e){}
+el.ma.setAttribute("aria-pressed", String(showMA));
+
+function applyMA(bars){
+  if(showMA){
+    ma20.setData(sma(bars, 20));
+    ma50.setData(sma(bars, 50));
+  }else{
+    ma20.setData([]);
+    ma50.setData([]);
+  }
+}
 
 /* ---------- data sources ----------
    Binance is fetched from the browser on purpose: it geo-blocks US datacenter
@@ -289,6 +406,110 @@ function renderQuote(bars){
 }
 
 let inflight = 0;
+// The bars currently on screen, kept so the websocket can update the last one
+// in place instead of refetching the whole series.
+let currentBars = [];
+// fitContent() is for a chart the reader has not framed yet. Calling it on
+// every refresh (as this used to) threw away their zoom and pan once a minute.
+let needsFit = true;
+
+function volumeBar(b){
+  return {
+    time: b.time, value: b.volume,
+    color: b.close >= b.open ? css("--up") + "55" : css("--down") + "55",
+  };
+}
+
+/* ---------- live stream ----------
+   Binance publishes a kline stream that pushes the in-progress candle several
+   times a second. Updating that one bar is what makes the price move on screen;
+   the old 60-second full refetch could not, and reset the viewport besides.
+   The REST poll below is kept as a fallback for when the socket cannot hold. */
+let ws = null;
+let wsRetry = 0;
+let wsTimer = null;
+let wsLastMessage = 0;
+
+function closeStream(){
+  clearTimeout(wsTimer);
+  if(ws){
+    // Drop the handlers first: an onclose that still fires would schedule a
+    // reconnect for a stream nobody is watching any more.
+    ws.onclose = ws.onerror = ws.onmessage = null;
+    try{ ws.close(); }catch(e){}
+    ws = null;
+  }
+  wsLastMessage = 0;
+  setLive(false);
+}
+
+function setLive(on){
+  el.live.hidden = !on;
+}
+
+function openStream(sym, tf, token){
+  closeStream();
+  let socket;
+  try{
+    socket = new WebSocket(
+      `wss://stream.binance.com:9443/ws/${sym.toLowerCase()}usdt@kline_${tf}`);
+  }catch(e){ return; }
+  ws = socket;
+
+  socket.onopen = () => {
+    if(token !== inflight){ closeStream(); return; }
+    wsRetry = 0;
+    wsLastMessage = Date.now();
+    setLive(true);
+  };
+
+  socket.onmessage = ev => {
+    if(token !== inflight) return;
+    let k;
+    try{ k = JSON.parse(ev.data).k; }catch(e){ return; }
+    if(!k) return;
+    wsLastMessage = Date.now();
+
+    const bar = {
+      time: k.t / 1000,
+      open:+k.o, high:+k.h, low:+k.l, close:+k.c, volume:+k.v,
+    };
+    candles.update(bar);
+    volume.update(volumeBar(bar));
+
+    // Keep currentBars in step so the stat strip and the moving averages read
+    // the same series the chart is showing.
+    const last = currentBars[currentBars.length - 1];
+    if(last && last.time === bar.time) currentBars[currentBars.length - 1] = bar;
+    else currentBars.push(bar);
+    if(currentBars.length > LIMIT) currentBars.splice(0, currentBars.length - LIMIT);
+
+    if(showMA){
+      const m20 = sma(currentBars, 20), m50 = sma(currentBars, 50);
+      if(m20.length) ma20.update(m20[m20.length - 1]);
+      if(m50.length) ma50.update(m50[m50.length - 1]);
+    }
+    renderQuote(currentBars);
+    el.upd.textContent = new Date().toLocaleTimeString("vi-VN");
+    scheduleDraw();
+  };
+
+  socket.onerror = () => { try{ socket.close(); }catch(e){} };
+
+  socket.onclose = () => {
+    if(socket !== ws || token !== inflight) return;
+    ws = null;
+    setLive(false);
+    // Back off rather than hammering: a symbol Binance does not stream would
+    // otherwise reconnect in a tight loop. The polling timer still refreshes
+    // the chart meanwhile, so a failed socket degrades instead of breaking.
+    if(wsRetry >= 5) return;
+    const wait = Math.min(30000, 1000 * Math.pow(2, wsRetry++));
+    wsTimer = setTimeout(() => {
+      if(token === inflight) openStream(sym, tf, token);
+    }, wait);
+  };
+}
 
 async function load(){
   const token = ++inflight;
@@ -304,6 +525,7 @@ async function load(){
       source = "Hyperliquid";
     }catch(fallback){
       if(token !== inflight) return;
+      closeStream();
       el.msg.innerHTML =
         `<strong>Không tải được ${symbol}</strong>` +
         `<small>Cả Binance lẫn Hyperliquid đều không trả dữ liệu cho mã này. ` +
@@ -313,12 +535,20 @@ async function load(){
   }
   if(token !== inflight) return;
 
+  currentBars = bars;
   candles.setData(bars);
-  volume.setData(bars.map(b => ({
-    time: b.time, value: b.volume,
-    color: b.close >= b.open ? css("--up") + "55" : css("--down") + "55",
-  })));
-  chart.timeScale().fitContent();
+  volume.setData(bars.map(volumeBar));
+  applyMA(bars);
+  if(needsFit){
+    chart.timeScale().fitContent();
+    needsFit = false;
+  }
+  scheduleDraw();
+
+  // Live updates ride on top of the history just loaded; Hyperliquid has no
+  // equivalent public candle stream, so that path stays on the polling timer.
+  if(source === "Binance") openStream(symbol, timeframe, token);
+  else closeStream();
 
   renderQuote(bars);
   el.src.textContent = source;
@@ -363,6 +593,251 @@ async function load(){
   ]);
 }
 
+/* ---------- drawing overlay ----------
+   Drawings are stored in market coordinates, never pixels. Lightweight Charts
+   converts them again on every zoom/pan, so a line remains attached to the
+   candle and price where the reader placed it. */
+const drawCtx = el.drawing.getContext("2d");
+const FIB_LEVELS = [0, .236, .382, .5, .618, 1];
+let drawMode = "pan";
+let drawings = [];
+let selectedDrawing = -1;
+let pendingPoint = null;
+let previewPoint = null;
+let dragging = null;
+let drawFrame = 0;
+
+function drawingKey(){ return "leon_draw_" + symbol.replace(/[^A-Z0-9_-]/g, ""); }
+
+function validPoint(p){
+  return p && Number.isFinite(+p.t) && Number.isFinite(+p.p);
+}
+
+function loadDrawings(){
+  drawings = [];
+  try{
+    const value = JSON.parse(localStorage.getItem(drawingKey()) || "[]");
+    if(Array.isArray(value)) drawings = value.filter(d =>
+      ["hline","trend","fib"].includes(d.type) && validPoint(d.a) &&
+      (d.type === "hline" || validPoint(d.b)));
+  }catch(e){}
+  selectedDrawing = -1;
+  pendingPoint = previewPoint = null;
+  updateDrawCount();
+  scheduleDraw();
+}
+
+function saveDrawings(){
+  try{ localStorage.setItem(drawingKey(), JSON.stringify(drawings)); }catch(e){}
+  updateDrawCount();
+}
+
+function updateDrawCount(){ el.drawCount.textContent = String(drawings.length); }
+
+function pointFromEvent(e){
+  const rect = el.drawing.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const t = chart.timeScale().coordinateToTime(x);
+  const p = candles.coordinateToPrice(y);
+  if(t == null || p == null || !Number.isFinite(+t) || !Number.isFinite(+p)) return null;
+  return {t:+t, p:+p, x, y};
+}
+
+function pixelPoint(p){
+  if(!validPoint(p)) return null;
+  const x = chart.timeScale().timeToCoordinate(+p.t);
+  const y = candles.priceToCoordinate(+p.p);
+  return x == null || y == null ? null : {x, y};
+}
+
+function line(ctx, x1, y1, x2, y2){
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+
+function paintDrawing(d, index, ctx, w){
+  const a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
+  if(!a || (d.type !== "hline" && !b)) return;
+  const active = index === selectedDrawing;
+  ctx.strokeStyle = active ? css("--accent") : css("--warn");
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.lineWidth = active ? 2 : 1.35;
+  ctx.setLineDash(active ? [] : [5, 3]);
+
+  if(d.type === "hline"){
+    line(ctx, 0, a.y, w, a.y);
+    ctx.font = "11px -apple-system,Segoe UI,sans-serif";
+    ctx.fillText(nf(d.a.p, d.a.p < 1 ? 6 : 2), 8, Math.max(12, a.y - 5));
+  }else if(d.type === "trend"){
+    line(ctx, a.x, a.y, b.x, b.y);
+  }else{
+    ctx.font = "10px -apple-system,Segoe UI,sans-serif";
+    FIB_LEVELS.forEach(level => {
+      const price = d.a.p + (d.b.p - d.a.p) * level;
+      const y = candles.priceToCoordinate(price);
+      if(y == null) return;
+      line(ctx, Math.min(a.x, b.x), y, Math.max(a.x, b.x), y);
+      ctx.fillText(`${(level * 100).toFixed(level === 0 || level === 1 ? 0 : 1)}%`,
+        Math.min(a.x, b.x) + 4, y - 3);
+    });
+  }
+
+  if(active && d.type !== "hline"){
+    ctx.setLineDash([]);
+    [a, b].forEach(p => {
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = css("--bg"); ctx.fill(); ctx.stroke();
+    });
+  }
+  ctx.setLineDash([]);
+}
+
+function redraw(){
+  drawFrame = 0;
+  const rect = el.drawing.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const pxW = Math.round(rect.width * dpr), pxH = Math.round(rect.height * dpr);
+  if(el.drawing.width !== pxW || el.drawing.height !== pxH){
+    el.drawing.width = pxW; el.drawing.height = pxH;
+  }
+  drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawCtx.clearRect(0, 0, rect.width, rect.height);
+  drawings.forEach((d, i) => paintDrawing(d, i, drawCtx, rect.width));
+  if(pendingPoint && previewPoint && ["trend","fib"].includes(drawMode)){
+    paintDrawing({type:drawMode, a:pendingPoint, b:previewPoint}, -2, drawCtx, rect.width);
+  }
+}
+
+function scheduleDraw(){
+  if(!drawFrame) drawFrame = requestAnimationFrame(redraw);
+}
+
+function segmentDistance(p, a, b){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  if(dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  const t = Math.max(0, Math.min(1, ((p.x-a.x)*dx + (p.y-a.y)*dy) / (dx*dx + dy*dy)));
+  return Math.hypot(p.x - (a.x+t*dx), p.y - (a.y+t*dy));
+}
+
+function hitDrawing(p){
+  for(let i = drawings.length - 1; i >= 0; i--){
+    const d = drawings[i], a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
+    if(!a) continue;
+    if(d.type === "hline" && Math.abs(p.y - a.y) <= 6) return i;
+    if(d.type === "trend" && b && segmentDistance(p, a, b) <= 6) return i;
+    if(d.type === "fib" && b){
+      const left = Math.min(a.x,b.x)-6, right = Math.max(a.x,b.x)+6;
+      if(p.x < left || p.x > right) continue;
+      const hit = FIB_LEVELS.some(level => {
+        const y = candles.priceToCoordinate(d.a.p + (d.b.p-d.a.p)*level);
+        return y != null && Math.abs(p.y-y) <= 6;
+      });
+      if(hit) return i;
+    }
+  }
+  return -1;
+}
+
+function setDrawMode(mode){
+  drawMode = mode;
+  pendingPoint = previewPoint = null;
+  dragging = null;
+  [...el.drawTools.querySelectorAll("[data-tool]")].forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.tool === mode)));
+  el.drawing.classList.toggle("active", mode !== "pan");
+  el.drawing.classList.toggle("selecting", mode === "select");
+  if(mode !== "select") selectedDrawing = -1;
+  scheduleDraw();
+}
+
+el.drawTools.addEventListener("click", e => {
+  const button = e.target.closest("[data-tool]");
+  if(button) setDrawMode(button.dataset.tool);
+});
+
+el.drawClear.addEventListener("click", () => {
+  drawings = [];
+  selectedDrawing = -1;
+  pendingPoint = previewPoint = null;
+  saveDrawings();
+  scheduleDraw();
+});
+
+el.drawing.addEventListener("pointerdown", e => {
+  const p = pointFromEvent(e);
+  if(!p) return;
+  el.drawing.focus({preventScroll:true});
+  e.preventDefault();
+
+  if(drawMode === "select"){
+    selectedDrawing = hitDrawing(p);
+    if(selectedDrawing >= 0){
+      const original = drawings[selectedDrawing];
+      dragging = {start:p, index:selectedDrawing, original:JSON.parse(JSON.stringify(original))};
+      el.drawing.setPointerCapture(e.pointerId);
+    }
+    scheduleDraw();
+    return;
+  }
+  if(drawMode === "hline"){
+    drawings.push({type:"hline", a:{t:p.t, p:p.p}});
+    saveDrawings(); scheduleDraw();
+    return;
+  }
+  if(drawMode === "trend" || drawMode === "fib"){
+    if(!pendingPoint){
+      pendingPoint = {t:p.t, p:p.p};
+      previewPoint = pendingPoint;
+    }else{
+      drawings.push({type:drawMode, a:pendingPoint, b:{t:p.t, p:p.p}});
+      pendingPoint = previewPoint = null;
+      saveDrawings();
+    }
+    scheduleDraw();
+  }
+});
+
+el.drawing.addEventListener("pointermove", e => {
+  const p = pointFromEvent(e);
+  if(!p) return;
+  if(dragging && selectedDrawing === dragging.index){
+    const dt = p.t - dragging.start.t, dp = p.p - dragging.start.p;
+    const moved = JSON.parse(JSON.stringify(dragging.original));
+    moved.a.t += dt; moved.a.p += dp;
+    if(moved.b){ moved.b.t += dt; moved.b.p += dp; }
+    drawings[selectedDrawing] = moved;
+    scheduleDraw();
+  }else if(pendingPoint){
+    previewPoint = {t:p.t, p:p.p};
+    scheduleDraw();
+  }else if(drawMode === "select"){
+    el.drawing.style.cursor = hitDrawing(p) >= 0 ? "move" : "default";
+  }
+});
+
+function finishDrag(e){
+  if(!dragging) return;
+  try{ el.drawing.releasePointerCapture(e.pointerId); }catch(err){}
+  dragging = null;
+  saveDrawings();
+}
+el.drawing.addEventListener("pointerup", finishDrag);
+el.drawing.addEventListener("pointercancel", finishDrag);
+
+el.drawing.addEventListener("keydown", e => {
+  if((e.key === "Delete" || e.key === "Backspace") && selectedDrawing >= 0){
+    drawings.splice(selectedDrawing, 1);
+    selectedDrawing = -1;
+    saveDrawings(); scheduleDraw(); e.preventDefault();
+  }else if(e.key === "Escape"){
+    pendingPoint = previewPoint = null;
+    selectedDrawing = -1;
+    scheduleDraw();
+  }
+});
+
+chart.timeScale().subscribeVisibleTimeRangeChange(scheduleDraw);
+new ResizeObserver(scheduleDraw).observe(el.drawing.parentElement);
+
 /* ---------- controls ---------- */
 TIMEFRAMES.forEach(tf => {
   const b = document.createElement("button");
@@ -370,12 +845,21 @@ TIMEFRAMES.forEach(tf => {
   b.textContent = tf;
   b.setAttribute("aria-pressed", String(tf === timeframe));
   b.addEventListener("click", () => {
+    if(tf === timeframe) return;
     timeframe = tf;
+    needsFit = true;
     [...el.tfs.children].forEach(c => c.setAttribute("aria-pressed", String(c.textContent === tf)));
     syncUrl();
     load();
   });
   el.tfs.appendChild(b);
+});
+
+el.ma.addEventListener("click", () => {
+  showMA = !showMA;
+  el.ma.setAttribute("aria-pressed", String(showMA));
+  try{ localStorage.setItem("leon_chart_ma", showMA ? "1" : "0"); }catch(e){}
+  applyMA(currentBars);
 });
 
 function syncUrl(){
@@ -390,7 +874,13 @@ el.sym.addEventListener("input", () => {
   clearTimeout(symTimer);
   symTimer = setTimeout(() => {
     const next = el.sym.value.trim().toUpperCase();
-    if(next && next !== symbol){ symbol = next; syncUrl(); load(); }
+    if(next && next !== symbol){
+      symbol = next;
+      needsFit = true;
+      loadDrawings();
+      syncUrl();
+      load();
+    }
   }, 500);
 });
 el.sym.addEventListener("keydown", e => { if(e.key === "Enter") el.sym.blur(); });
@@ -403,11 +893,22 @@ new MutationObserver(() => {
     borderUpColor:css("--up"), borderDownColor:css("--down"),
     wickUpColor:css("--up"), wickDownColor:css("--down"),
   });
+  // Histogram colors live on each data point, so applyOptions alone cannot
+  // recolor bars that are already mounted.
+  volume.setData(currentBars.map(volumeBar));
+  scheduleDraw();
 }).observe(document.documentElement, {attributes:true, attributeFilter:["data-theme"]});
 
-// Refresh while the tab is visible; pause when it is not.
-setInterval(() => { if(!document.hidden) load(); }, 60000);
+// REST is the safety net, not a second live feed. Poll only when the socket is
+// absent or has stopped delivering; a healthy Binance stream never refetches
+// all 500 bars and never churns its own connection once a minute.
+setInterval(() => {
+  const healthy = ws && ws.readyState === WebSocket.OPEN && Date.now() - wsLastMessage < 90000;
+  if(!document.hidden && !healthy) load();
+}, 60000);
 
+loadCoinList();
+loadDrawings();
 load();
 </script>
 </body>

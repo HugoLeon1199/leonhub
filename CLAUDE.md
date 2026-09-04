@@ -20,7 +20,7 @@ The warehouse is the source of truth; published JSON is a view over it.
 ```
 hub/            Tab shell
 apps/           One self-contained page per tab
-                brief chart stocks bds signals gex flows
+                brief chart stocks ticker bds signals gex flows
 pipeline/
   core/         http.py, warehouse.py, validate.py
   sources/      One module per external source
@@ -44,16 +44,20 @@ python -m pipeline.sources.ssi_board --with-depth         # depth + foreign room
 python -m pipeline.sources.vn_history                     # daily OHLC backfill
 python -m pipeline.sources.vci_direct                     # ~7 min full market
 python -m pipeline.sources.vci_direct --skip-existing     # resume
+python -m pipeline.sources.news_link --qa-sample 20       # deterministic, no AI
 
 # Crypto
 python -m pipeline.sources.etf_flows
 python -m pipeline.sources.deribit_gex --symbol BTC
+python -m pipeline.sources.deribit_gex --symbol ETH
 
 # Build, then gate
 python -m pipeline.transform.stocks_build
 python -m pipeline.transform.bds_aggregate
 python -m pipeline.transform.flows_build
 python -m pipeline.transform.signals_build
+python -m pipeline.transform.news_build
+python -m pipeline.transform.gex_build
 python -m pipeline.core.validate
 
 python -m http.server 8811    # http://localhost:8811/hub/
@@ -86,7 +90,7 @@ Every collector takes `--dry-run`.
 |---|---|---|
 | GitHub Actions | VN equities, real estate, ETF, GEX | Free and unlimited on public repos; runs while the workstation is off |
 | Local workstation | Heavy crawls, backfills, backtests | Not geo-blocked, more cores |
-| Browser | Binance candles and depth | Sidesteps the geo-block, costs nothing to serve |
+| Browser | Binance candles and perp context | Sidesteps the geo-block, costs nothing to serve |
 
 Actions cron drifts 5–30 min and can be skipped under load. Every job must be
 idempotent and resumable; market-close jobs need a buffer.

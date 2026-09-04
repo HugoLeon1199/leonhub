@@ -59,6 +59,12 @@ Every query sets `st=s` or `st=u` explicitly.
 and the BTC and ETH tables use different header shapes. Reconcile any parser
 change against the source's own Total column; all 650 days currently match.
 
+**The public NEWS artifact is a presentation document, not a stable flat feed.**
+The current schema keeps 542 canonical links in `allArticles`, while richer
+copies of those links (with `excerpt`) are nested under front-page/sector
+objects. `news_link.py` walks and de-duplicates the whole document by URL so a
+schema rearrangement does not silently throw away the text used for matching.
+
 ## Zero-fill and null-fill
 
 **Several sources zero-fill where they mean "not applicable".** ROIC is 0.0 for
@@ -80,9 +86,17 @@ symbol-less rows.
 **Two sources write `eq_quote` and they carry different columns.** SSI has depth
 and foreign detail but no share count; Vietcap has the share count. Taking the
 newest row wholesale blanked market cap for the whole market (128 of 1,729
-tickers kept one). The read is field-wise latest-non-null within the newest
-trading date, with share count carried forward separately since it only changes
-on a corporate action.
+tickers kept one). The read is field-wise latest-non-null across the ten newest
+market sessions, ordered by `(as_of, fetched_at)`, because zero on the newest
+board is often "no trade", especially on UPCOM. A carried older trade publishes
+its own date; a reference-price fallback is explicitly marked as not traded.
+Share count is carried forward separately since it only changes on a corporate
+action.
+
+**Price history has no historical foreign flow.** Do not coalesce those nulls
+to zero before a 5/20-day sum: it makes one real observation appear to be 20
+days of unchanged flow. `stocks_build.py` publishes a horizon only after that
+ticker has the corresponding number of actual foreign-flow observations.
 
 **SSI reports negative foreign room** where ownership already exceeds the cap.
 Real, but it means "no room and over the limit", not a negative percentage.

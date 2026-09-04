@@ -155,6 +155,23 @@ function render(d){
      n:"tính bằng R"},
     {k:"Đang mở", v:fmt((d.open || []).length), n:"chưa có kết quả"},
   ];
+  // Cách các lệnh kết thúc nói lên nguyên nhân lỗ rõ hơn tỉ lệ thắng: một quy
+  // tắc thuận xu hướng trong thị trường giảm sẽ chết vì dừng lỗ, không phải vì
+  // hết hạn. Con số đã được tính sẵn trong signals.json nhưng trước đây không
+  // hiển thị.
+  if(s.by_exit){
+    const ex = s.by_exit;
+    const total = (ex.stop || 0) + (ex.target || 0) + (ex.time || 0);
+    if(total){
+      tiles.push({
+        k:"Lý do đóng lệnh",
+        v:`${fmt(ex.stop || 0)} / ${fmt(ex.target || 0)} / ${fmt(ex.time || 0)}`,
+        n:`dừng lỗ ${Math.round((ex.stop || 0) / total * 100)}% · ` +
+          `chốt lời ${Math.round((ex.target || 0) / total * 100)}% · ` +
+          `hết hạn ${Math.round((ex.time || 0) / total * 100)}%`,
+      });
+    }
+  }
   if(d.benchmark && d.benchmark.median_return_pct != null){
     const b = d.benchmark.median_return_pct;
     tiles.push({

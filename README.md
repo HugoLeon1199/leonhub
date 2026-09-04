@@ -33,6 +33,7 @@ apps/           One self-contained page per tab
   brief/        Daily cross-asset summary
   chart/        Crypto candles + perp context
   stocks/       VN equity screener
+  ticker/       Per-ticker valuation, flows, signals, depth and news
   bds/          Real-estate price table
   signals/      Rules-based signals with a published track record
   gex/          Options gamma exposure
@@ -57,6 +58,9 @@ python -m pipeline.sources.vn_equity --what board
 # 2. Quarterly fundamentals back to 2018 (~7 min for 1,722 tickers)
 python -m pipeline.sources.vci_direct
 
+# 2b. SSI three-level order book + remaining foreign room
+python -m pipeline.sources.ssi_board --with-depth
+
 # 3. Real-estate listings — start this early, history cannot be backfilled
 python -m pipeline.sources.chotot --discover-regions
 python -m pipeline.sources.chotot --regions 12000,13000 --max-pages 2
@@ -68,9 +72,11 @@ python -m pipeline.sources.etf_flows
 python -m pipeline.transform.stocks_build
 python -m pipeline.transform.bds_aggregate
 python -m pipeline.transform.flows_build
+python -m pipeline.sources.news_link --qa-sample 20
+python -m pipeline.transform.news_build
 python -m pipeline.core.validate
 
-# 5. Serve locally
+# 6. Serve locally
 python -m http.server 8000
 # then open http://localhost:8000/hub/
 ```
@@ -97,11 +103,12 @@ will refuse rather than publish from a partial read.
 
 | Artifact | Contents |
 |---|---|
-| `stocks.json` | 1,751 tickers; 1,719 with fundamentals, 1,735 with an ICB industry, 870 with momentum, 1,311 with foreign room |
+| `stocks.json` | 1,751 tickers; 1,725 priced; 1,719 with fundamentals; 1,735 with industry; 870 with momentum; 1,522 with foreign room; 1,292 with SSI depth |
 | `bds.json` | 102 districts across 48 provinces, from 47,343 listings |
-| `flows.json` | 679 days of BTC and 541 of ETH ETF flow, daily and cumulative |
-| `gex_btc.json`, `gex_eth.json` | Gamma surface, flip and max pain from the live option chain |
+| `flows.json` | 512 days each of BTC/ETH ETF flow, daily, cumulative and split across 12 BTC / 10 ETH issuers |
+| `gex_btc.json`, `gex_eth.json` | Gamma surface, flip and max pain from 1,004 BTC / 850 ETH option contracts |
 | `signals.json` | 214 closed trades with their full result history |
+| `news_ticker.json` | 14 audited rule-based links across 8 tickers in the current 48-hour digest; no AI ticker guessing |
 
 The warehouse holds 1.44M quarterly fundamental observations (2018-Q1 to
 2026-Q2) and 264 trading days of daily prices across 879 tickers.
@@ -112,7 +119,7 @@ The warehouse holds 1.44M quarterly fundamental observations (2018-Q1 to
 |---|---|---|
 | GitHub Actions | VN equities, real estate | Free and unlimited on public repos; runs while the workstation is off |
 | Local workstation | Heavy crawls, backfills, backtests | Not geo-blocked; more cores |
-| Browser | Binance candles and depth | Sidesteps the geo-block and costs nothing to serve |
+| Browser | Binance candles and perp context | Sidesteps the geo-block and costs nothing to serve |
 
 ## Disclaimers
 

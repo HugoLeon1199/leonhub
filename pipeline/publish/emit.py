@@ -23,6 +23,11 @@ log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "data"
+# The pre-build copy of each artifact, kept only so validate.py can compare a
+# fresh build against what it is about to replace (row-count regressions).
+# Gitignored -- this is a same-machine handoff between build and validate, not
+# part of the published contract.
+PREV_DIR = DATA_DIR / ".prev"
 
 
 def write_json(
@@ -33,6 +38,10 @@ def write_json(
     """Write a compact JSON artifact into data/ and report its size."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = DATA_DIR / name
+
+    if path.exists():
+        PREV_DIR.mkdir(parents=True, exist_ok=True)
+        (PREV_DIR / name).write_bytes(path.read_bytes())
 
     if meta is not None or isinstance(payload, dict):
         body: Any = payload if isinstance(payload, dict) else {"rows": payload}
@@ -50,6 +59,18 @@ def write_json(
 
 def read_json(name: str) -> Any:
     path = DATA_DIR / name
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def read_prev_json(name: str) -> Any:
+    """Read the pre-build snapshot write_json() kept before its latest overwrite.
+
+    None if the artifact has never been built before -- the caller should treat
+    that as "no baseline to compare against" rather than a regression.
+    """
+    path = PREV_DIR / name
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))

@@ -37,24 +37,34 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # A namespace of its own, not the shared warehouse- prefix the three
+      # market-data workflows use: this job runs hourly and would otherwise
+      # restore-then-overwrite whichever of their caches saved most recently,
+      # silently discarding the slower one's appends (a multi-hour BDS crawl
+      # losing to an hourly GEX run is the case that motivated the split).
+      # gex.*'s own metric_ts rows still round-trip within this lineage.
       - name: Restore warehouse
         uses: actions/cache/restore@v4
         with:
           path: warehouse/leonhub.duckdb
-          key: warehouse-${{ github.run_id }}
-          restore-keys: warehouse-
+          key: gex-warehouse-${{ github.run_id }}
+          restore-keys: gex-warehouse-
 
       - name: Compute gamma exposure
         run: |
           python -m pipeline.sources.deribit_gex --symbol BTC
           python -m pipeline.sources.deribit_gex --symbol ETH
+          python -m pipeline.transform.gex_build
+
+      - name: Validate before publishing
+        run: python -m pipeline.core.validate gex_btc.json gex_eth.json
 
       - name: Save warehouse
         uses: actions/cache/save@v4
         if: always()
         with:
           path: warehouse/leonhub.duckdb
-          key: warehouse-${{ github.run_id }}
+          key: gex-warehouse-${{ github.run_id }}
 
       - name: Commit published data
         run: |

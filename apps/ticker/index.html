@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Chi tiết mã — LEON Hub</title>
+<meta name="description" content="Hồ sơ cổ phiếu Việt Nam: định giá lịch sử, dòng tiền ngoại, động lượng, sổ lệnh, tín hiệu và tin tức theo mã.">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<style>
+:root{--bg:#0d1117;--panel:#151b23;--panel-2:#1c242e;--line:#26303c;--text:#e7edf3;--muted:#8b98a8;--accent:#38d39f;--up:#38d39f;--down:#f0655a;--warn:#e0a83c}
+:root[data-theme="light"]{--bg:#f4f6f8;--panel:#fff;--panel-2:#eaeff4;--line:#d5dee6;--text:#141b22;--muted:#5d6b7a;--accent:#0c8a63;--up:#0c8a63;--down:#c2402f;--warn:#8a6412}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif}.page{max-width:1120px;margin:auto;padding:16px 16px 48px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.back{font-size:12px;color:var(--muted)}
+.hero{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin:14px 0 18px}.identity{flex:1;min-width:260px}.symbol{font-size:30px;line-height:1;font-weight:800;letter-spacing:.4px}.name{font-size:14px;color:var(--muted);margin-top:6px}.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.tag{padding:2px 7px;border:1px solid var(--line);border-radius:99px;color:var(--muted);font-size:11px}
+.quote{text-align:right}.price{font-size:27px;font-weight:750;font-variant-numeric:tabular-nums}.change{font-weight:650}.up{color:var(--up)}.down{color:var(--down)}.warn{color:var(--warn)}.dim{color:var(--muted)}.source{font-size:11px;color:var(--muted);max-width:42ch}
+.actions{display:flex;gap:7px}.button{display:inline-flex;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:6px 10px;font-size:12px;color:var(--text)}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}.card{grid-column:span 6;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}.wide{grid-column:1/-1}h2{font-size:14px;margin:0 0 3px}p.cap{margin:0 0 12px;color:var(--muted);font-size:11.5px}
+.metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}.metric{background:var(--panel-2);border-radius:7px;padding:9px}.metric .k{display:block;color:var(--muted);font-size:10.5px}.metric .v{display:block;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;margin:2px 0}.bar{display:block;height:4px;border-radius:3px;background:var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}.metric small{display:block;color:var(--muted);font-size:10px;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;color:var(--muted);font-weight:500;border-bottom:1px solid var(--line);padding:6px}td{padding:7px 6px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}tr:last-child td{border-bottom:0}.num{text-align:right}.book{display:grid;grid-template-columns:1fr 1fr;gap:12px}.book h3{font-size:11px;color:var(--muted);margin:0 0 4px}.book .bid td:first-child{color:var(--up)}.book .ask td:first-child{color:var(--down)}
+.news{display:grid;gap:8px}.article{display:block;padding:9px 10px;background:var(--panel-2);border-radius:7px;color:var(--text)}.article:hover{text-decoration:none;outline:1px solid var(--accent)}.article b{display:block;font-size:13px}.meta{display:block;color:var(--muted);font-size:10.5px;margin-top:3px}.empty{color:var(--muted);padding:12px 0}.msg{text-align:center;padding:70px 16px;color:var(--muted)}footer{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+@media(max-width:760px){.card{grid-column:1/-1}.quote{text-align:left}.hero{align-items:flex-start}.actions{width:100%}.book{grid-template-columns:1fr}.page{padding:12px 10px 36px}}
+</style>
+</head>
+<body><div class="page">
+  <a class="back" href="../../hub/?tab=stocks" target="_top">← Quay lại bộ lọc cổ phiếu</a>
+  <div id="root"><div class="msg">Đang tải hồ sơ mã…</div></div>
+  <footer id="footer"></footer>
+</div>
+<script>
+"use strict";
+const symbol = (new URLSearchParams(location.search).get("s") || "SSI").trim().toUpperCase();
+const root = document.getElementById("root");
+const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (v,d=2) => v == null || !isFinite(v) ? "—" : (+v).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const signed = (v,suffix="") => v == null ? "—" : `${v>=0?"+":""}${fmt(v,2)}${suffix}`;
+
+Promise.all([
+  fetch("../../data/stocks.json",{cache:"no-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}),
+  fetch("../../data/signals.json",{cache:"no-cache"}).then(r=>r.ok?r.json():{}).catch(()=>({})),
+  fetch("../../data/news_ticker.json",{cache:"no-cache"}).then(r=>r.ok?r.json():{}).catch(()=>({})),
+]).then(([stocks,signals,news]) => render(stocks,signals,news)).catch(() => {
+  root.innerHTML='<div class="msg">Không đọc được dữ liệu cổ phiếu. Hãy chạy lại pipeline build.</div>';
+});
+
+function provenance(r,asOf){
+  if(r.pr) return '<span class="warn">Giá tham chiếu của sàn — mã chưa có giao dịch khớp trong dữ liệu.</span>';
+  if(r.pd) return `<span class="warn">Giá khớp gần nhất ngày ${esc(r.pd)}, không phải giá phiên mới nhất.</span>`;
+  return `Giá khớp phiên ${esc(asOf || "gần nhất")}.`;
+}
+
+const VALUATIONS=[
+  ["P/E","pe","pe_p",false],["P/B","pb","pb_p",false],["P/S","ps","ps_p",false],
+  ["EV/EBITDA","ev","ev_p",false],["ROE","roe","roe_p",true],["Cổ tức","dy","dy_p",true],
+];
+function valuationCards(r){
+  return VALUATIONS.map(([label,key,pkey,higher])=>{
+    const v=r[key], pct=r[pkey]; if(v==null) return "";
+    const shown=fmt(v,2)+(higher?"%":"x");
+    const strength=pct==null?null:(higher?pct:100-pct);
+    const note=pct==null?(key==="dy"&&v===0?"Chưa ghi nhận cổ tức trong dữ liệu":"Chưa đủ 8 quý để xếp hạng"):higher
+      ?`Cao hơn ${pct}% số quý trong 8 năm qua của chính mã này`
+      :`Rẻ hơn ${100-pct}% số quý trong 8 năm qua của chính mã này`;
+    return `<div class="metric" title="${esc(note)}"><span class="k">${label}</span><span class="v">${shown}</span>`+
+      (strength==null?"":`<span class="bar"><i style="width:${Math.max(2,strength)}%"></i></span>`)+`<small>${esc(note)}</small></div>`;
+  }).join("");
+}
+
+function flowCards(r){
+  const items=[["Khối ngoại · 1 phiên","f1","tỷ VND"],["Khối ngoại · 5 phiên","f5","tỷ VND"],["Khối ngoại · 20 phiên","f20","tỷ VND"],["Room ngoại còn lại","fr","% cổ phiếu"]];
+  return items.map(([label,key,unit])=>{
+    const v=r[key], tone=key==="fr"?(v!=null&&v<1?"down":""):(v>=0?"up":"down");
+    return `<div class="metric"><span class="k">${label}</span><span class="v ${tone}">${key==="fr"?fmt(v,1):signed(v)}</span><small>${unit}</small></div>`;
+  }).join("");
+}
+
+function momentumCards(r){
+  return [["1 tháng","m1","%"],["3 tháng","m3","%"],["6 tháng","m6","%"],["Vị trí 52 tuần","pos52","%"],["Biến động chuẩn hóa","z","σ"]]
+    .map(([label,key,unit])=>{const v=r[key],tone=v==null?"dim":v>=0?"up":"down";return `<div class="metric"><span class="k">${label}</span><span class="v ${tone}">${key==="pos52"?fmt(v,0):signed(v)}</span><small>${unit}</small></div>`}).join("");
+}
+
+function orderBook(r){
+  const side=(prefix,cls)=>[1,2,3].map(i=>r[`${prefix}${i}`]==null?"":`<tr class="${cls}"><td>${fmt(r[`${prefix}${i}`],0)}</td><td class="num">${fmt(r[`${prefix}${i}v`],0)}</td></tr>`).join("");
+  const bids=side("b","bid"),asks=side("a","ask");
+  if(!bids&&!asks) return '<div class="empty">Chưa có ảnh chụp sổ lệnh SSI cho mã này.</div>';
+  return `<div class="book"><div><h3>Dư mua</h3><table><thead><tr><th>Giá</th><th class="num">Khối lượng</th></tr></thead><tbody>${bids||'<tr><td colspan="2" class="dim">Không có lệnh mua</td></tr>'}</tbody></table></div>`+
+    `<div><h3>Dư bán</h3><table><thead><tr><th>Giá</th><th class="num">Khối lượng</th></tr></thead><tbody>${asks||'<tr><td colspan="2" class="dim">Không có lệnh bán</td></tr>'}</tbody></table></div></div>`;
+}
+
+function signalTable(signals){
+  const open=(signals.open||[]).filter(x=>x.s===symbol).map(x=>({...x,state:"Đang mở"}));
+  const closed=(signals.closed||[]).filter(x=>x.s===symbol).map(x=>({...x,state:x.why==="target"?"Chốt lời":x.why==="stop"?"Dừng lỗ":"Hết hạn"}));
+  const rows=[...open,...closed].slice(0,20);
+  if(!rows.length) return '<div class="empty">Chưa có lệnh nào của quy tắc SMA20 × SMA50 cho mã này.</div>';
+  return `<table><thead><tr><th>Vào</th><th>Trạng thái / ra</th><th class="num">Giá vào</th><th class="num">Giá ra</th><th class="num">R</th></tr></thead><tbody>`+rows.map(x=>`<tr><td>${esc(x.d)}</td><td>${esc(x.state)}${x.x?` · ${esc(x.x)}`:""}</td><td class="num">${fmt(x.entry,0)}</td><td class="num">${fmt(x.exit,0)}</td><td class="num ${x.r==null?"dim":x.r>=0?"up":"down"}">${x.r==null?"—":signed(x.r,"R")}</td></tr>`).join("")+`</tbody></table>`;
+}
+
+function newsList(payload){
+  const map=payload.tickers||payload;
+  const rows=Array.isArray(map[symbol])?map[symbol]:[];
+  if(!rows.length) return '<div class="empty">Chưa có tin gần đây được khớp chắc chắn với mã này.</div>';
+  const reason={name:"khớp theo tên công ty",alias:"khớp theo tên thương hiệu",symbol:"khớp theo mã chứng khoán"};
+  return `<div class="news">`+rows.map(x=>`<a class="article" href="${esc(x.u)}" target="_blank" rel="noopener noreferrer"><b>${esc(x.t)}</b><span class="meta">${esc(x.src||"Nguồn tin")} · ${esc(x.d||"")} · ${esc(reason[x.m]||x.m||"")}</span></a>`).join("")+`</div>`;
+}
+
+function render(stocks,signals,news){
+  const rows=Array.isArray(stocks)?stocks:(stocks.rows||[]), r=rows.find(x=>x.s===symbol);
+  if(!r){root.innerHTML=`<div class="msg">Không tìm thấy mã <b>${esc(symbol)}</b> trong danh sách niêm yết.</div>`;return}
+  document.title=`${symbol} — LEON Hub`;
+  const tone=r.ch==null?"":r.ch>=0?"up":"down";
+  const tvSymbol=`${r.e==="HOSE"?"HOSE":r.e==="HNX"?"HNX":"UPCOM"}:${symbol}`;
+  root.innerHTML=`
+    <div class="hero"><div class="identity"><div class="symbol">${esc(r.s)}</div><div class="name">${esc(r.n||"Chưa có tên doanh nghiệp")}</div><div class="tags"><span class="tag">${esc(r.e||"—")}</span><span class="tag">${esc(r.i||"Chưa phân ngành")}</span>${r.mc!=null?`<span class="tag">Vốn hóa ${fmt(r.mc,1)} tỷ</span>`:""}</div></div>
+      <div class="quote"><div class="price">${fmt(r.p,0)}</div><div class="change ${tone}">${r.ch==null?"":signed(r.ch,"%")}</div><div class="source">${provenance(r,stocks.as_of)}</div></div>
+      <div class="actions"><a class="button" href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol)}" target="_blank" rel="noopener noreferrer">Chart ${esc(symbol)} ↗</a></div></div>
+    <div class="grid">
+      <section class="card wide"><h2>Định giá trong lịch sử của chính doanh nghiệp</h2><p class="cap">Thanh dài nghĩa là mức hiện tại thuận lợi hơn so với các quý đã quan sát; không so một ngân hàng với một công ty thép.</p><div class="metrics">${valuationCards(r)||'<span class="empty">Chưa có dữ liệu định giá.</span>'}</div></section>
+      <section class="card"><h2>Dòng tiền và room ngoại</h2><p class="cap">Giá trị mua trừ bán của khối ngoại; dương là mua ròng.</p><div class="metrics">${flowCards(r)}</div></section>
+      <section class="card"><h2>Động lượng</h2><p class="cap">Lợi suất theo cửa sổ, vị trí trong biên 52 tuần và độ bất thường của phiên gần nhất.</p><div class="metrics">${momentumCards(r)}</div></section>
+      <section class="card"><h2>Sổ lệnh SSI</h2><p class="cap">Ảnh chụp tối đa 3 mức giá; không phải luồng thời gian thực.</p>${orderBook(r)}</section>
+      <section class="card"><h2>Lịch sử tín hiệu</h2><p class="cap">Quy tắc công khai SMA20 cắt SMA50, long-only; hiển thị cả lệnh lỗ.</p>${signalTable(signals)}</section>
+      <section class="card wide"><h2>Tin gần đây</h2><p class="cap">Chỉ liên kết được khớp bằng tên/mã/alias có quy tắc; không dùng AI để đoán doanh nghiệp.</p>${newsList(news)}</section>
+    </div>`;
+  document.getElementById("footer").textContent=`Dữ liệu cổ phiếu: ${stocks.as_of||"—"}. Số liệu tham khảo, không phải khuyến nghị đầu tư.`;
+}
+</script></body></html>

@@ -102,13 +102,17 @@ def to_metrics(rec: dict[str, Any], as_of: datetime, fetched_at: datetime) -> li
     """
     symbol = rec.get("stockSymbol")
     rows = []
-    fields = {
-        "bid1": rec.get("best1Bid"),
-        "bid1_vol": rec.get("best1BidVol"),
-        "ask1": rec.get("best1Offer"),
-        "ask1_vol": rec.get("best1OfferVol"),
-        "foreign_room": rec.get("remainForeignQtty"),
-    }
+    fields = {"foreign_room": rec.get("remainForeignQtty")}
+    # iBoard exposes three visible levels. Keep the field names regular so the
+    # transform and ticker page can render whatever levels are present without
+    # special cases; an empty side is simply omitted.
+    for level in (1, 2, 3):
+        fields.update({
+            f"bid{level}": rec.get(f"best{level}Bid"),
+            f"bid{level}_vol": rec.get(f"best{level}BidVol"),
+            f"ask{level}": rec.get(f"best{level}Offer"),
+            f"ask{level}_vol": rec.get(f"best{level}OfferVol"),
+        })
     for name, raw in fields.items():
         value = _num(raw)
         if value is None:
@@ -193,7 +197,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--with-depth", action="store_true",
-        help="Also store bid/ask level 1 and remaining foreign room",
+        help="Also store bid/ask levels 1-3 and remaining foreign room",
     )
     args = parser.parse_args()
 

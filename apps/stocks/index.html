@@ -137,7 +137,8 @@ const COLS = [
   {k:"s",   t:"Mã",       kind:"sym"},
   {k:"n",   t:"Tên",      kind:"name"},
   {k:"e",   t:"Sàn",      kind:"text"},
-  {k:"p",   t:"Giá",      kind:"num", d:0},
+  {k:"p",   t:"Giá",      kind:"price", d:0,
+   hint:"* = giá tham chiếu của sàn, mã chưa từng khớp lệnh. † = giá khớp phiên cũ hơn, mã không giao dịch hôm nay."},
   {k:"ch",  t:"±%",       kind:"pct"},
   {k:"mc",  t:"Vốn hóa",  kind:"num", d:0, hint:"Tỷ VND"},
   {k:"pe",  t:"P/E",      kind:"num", d:1, p:"pe_p"},
@@ -237,8 +238,12 @@ fetch("../../data/stocks.json", {cache:"no-cache"})
       : "—";
     const withF = rows.filter(r => r.pe != null || r.pb != null).length;
     const priced = rows.filter(r => r.p != null).length;
+    // "Có khớp lệnh" (had a matched trade) is only true of rows with neither
+    // pr nor pd set -- the price fallback (see stocks_build.py) means `p` no
+    // longer implies a trade happened, so the coverage line must not either.
+    const traded = rows.filter(r => r.p != null && !r.pr && !r.pd).length;
     el("cover").textContent =
-      `${rows.length} mã · ${priced} có khớp lệnh · ${withF} có chỉ số cơ bản` +
+      `${rows.length} mã · ${priced} có giá (${traded} khớp lệnh hôm nay) · ${withF} có chỉ số cơ bản` +
       (META.trading_days ? ` · ${META.trading_days} phiên lịch sử` : "");
   })
   .catch(err => {
@@ -325,9 +330,21 @@ const fmt = (v, d) => v == null || !isFinite(v)
 function cell(row, col){
   const v = row[col.k];
   switch(col.kind){
-    case "sym":  return `<span class="sym">${v ?? ""}</span>`;
+    case "sym":  return `<a class="sym" href="../../hub/?tab=ticker&s=${encodeURIComponent(v ?? "")}" target="_top" title="Mở hồ sơ ${v ?? ""}">${v ?? ""}</a>`;
     case "name": return `<span class="name">${v ?? ""}</span>`;
     case "text": return v ? `<span class="dim">${v}</span>` : '<span class="dim">—</span>';
+    case "price": {
+      // p can come from three places: today's close, an older session this
+      // ticker last actually traded (pd = that date), or the exchange's own
+      // reference price for a symbol that has never traded (pr = 1). A number
+      // with no marker reads as "today's price" — that must stay true, so the
+      // other two cases are flagged rather than silently blended in.
+      if(v == null) return '<span class="dim">—</span>';
+      const out = fmt(v, col.d ?? 0);
+      if(row.pr) return `<span class="warn" title="Giá tham chiếu của sàn — mã chưa từng khớp lệnh trong dữ liệu đã thu thập, không phải giá giao dịch">${out}<sup>*</sup></span>`;
+      if(row.pd) return `<span class="dim" title="Giá khớp gần nhất ngày ${row.pd} — mã không giao dịch phiên mới nhất">${out}<sup>†</sup></span>`;
+      return out;
+    }
     case "pct":
       if(v == null) return '<span class="dim">—</span>';
       return `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(2)}</span>`;

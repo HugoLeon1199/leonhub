@@ -145,12 +145,14 @@ def collect(
                 probe.close()
 
         if skip_existing and con is not None:
+            required_period = wh.latest_completed_quarter(fetched_at)
             have = {r[0] for r in con.execute(
-                "SELECT DISTINCT symbol FROM eq_fundamental"
+                "SELECT DISTINCT symbol FROM eq_fundamental WHERE period = ?",
+                [required_period],
             ).fetchall()}
             if have:
                 symbols = [s for s in symbols if s not in have]
-                log.info("skipping %d tickers already collected", len(have))
+                log.info("skipping %d tickers already collected for %s", len(have), required_period)
 
         targets = symbols[:limit] if limit else symbols
         stats: dict[str, Any] = {
@@ -211,7 +213,7 @@ def main() -> None:
     parser.add_argument("--delay", type=float, default=0.3, help="Seconds between requests")
     parser.add_argument(
         "--skip-existing", action="store_true",
-        help="Resume: skip tickers already in the warehouse",
+        help="Resume: skip tickers that already cover the latest completed quarter",
     )
     args = parser.parse_args()
 

@@ -17,8 +17,14 @@ on:
         type: boolean
         default: false
 
+# Shared with daily-bds and flows, not a workflow-local name: all three read
+# and write the same warehouse-* cache entry, and GitHub concurrency groups
+# only serialize jobs within the same group. A workflow-local group let a BDS
+# crawl and a VN daily run overlap and race to save the cache last, silently
+# dropping whichever run's appends lost. GEX is on its own gex-warehouse-
+# namespace (see gex.yml) and does not need to join this group.
 concurrency:
-  group: vn-daily
+  group: warehouse-writer
   cancel-in-progress: false
 
 permissions:
@@ -80,7 +86,7 @@ jobs:
         run: python -m pipeline.transform.signals_build
 
       - name: Validate before publishing
-        run: python -m pipeline.core.validate stocks.json
+        run: python -m pipeline.core.validate stocks.json signals.json
 
       - name: Save warehouse
         uses: actions/cache/save@v4

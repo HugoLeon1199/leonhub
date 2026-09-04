@@ -99,6 +99,20 @@ CREATE TABLE IF NOT EXISTS eq_listing (
     PRIMARY KEY (symbol, fetched_at)
 );
 
+-- Deterministic links from the public news digest to listed companies. The
+-- match method is stored with every row so a reader can audit name/alias/code
+-- matches instead of trusting an opaque classifier.
+CREATE TABLE IF NOT EXISTS news_link (
+    symbol       VARCHAR     NOT NULL,
+    url          VARCHAR     NOT NULL,
+    title        VARCHAR     NOT NULL,
+    source       VARCHAR,
+    published_at TIMESTAMPTZ,
+    matched_by   VARCHAR     NOT NULL,
+    fetched_at   TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (symbol, url, fetched_at)
+);
+
 -- Generic timeseries for macro / flows / derivatives, so new sources need no DDL.
 CREATE TABLE IF NOT EXISTS metric_ts (
     series      VARCHAR     NOT NULL,   -- 'etf.btc.net_flow', 'defi.stablecoin.supply'
@@ -127,6 +141,20 @@ CREATE TABLE IF NOT EXISTS run_log (
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def latest_completed_quarter(at: datetime | None = None) -> str:
+    """Quarter a fundamentals refresh should already cover.
+
+    During a calendar quarter the latest completed reporting period is the
+    previous one. Sources can publish it late; in that gap ``--skip-existing``
+    intentionally retries instead of treating an older quarter as current.
+    """
+    at = at or utcnow()
+    current = (at.month - 1) // 3 + 1
+    if current == 1:
+        return f"{at.year - 1}-Q4"
+    return f"{at.year}-Q{current - 1}"
 
 
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:

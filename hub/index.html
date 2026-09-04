@@ -109,6 +109,9 @@ const TABS = [
   { key:"gex",     name:"Gamma",     icon:"◎", src:"../apps/gex/" },
   { key:"flows",   name:"Dòng tiền", icon:"⇄", src:"../apps/flows/" },
   { key:"news",    name:"Tin tức",   icon:"❏", src:"https://leonquant.com/" },
+  // Child route: reachable from the screener/deep links, intentionally absent
+  // from the primary tab bar so 1,751 ticker pages do not become a ninth silo.
+  { key:"ticker",  name:"Chi tiết mã", icon:"", src:"../apps/ticker/", hidden:true },
 ];
 const DEFAULT_TAB = "brief";
 
@@ -134,15 +137,17 @@ function childSrc(tab){
 
 function build(){
   TABS.forEach(tab => {
-    const btn = document.createElement("button");
-    btn.className = "tab";
-    btn.type = "button";
-    btn.role = "tab";
-    btn.id = "tab-" + tab.key;
-    btn.setAttribute("aria-controls", "pane-" + tab.key);
-    btn.innerHTML = `<span aria-hidden="true">${tab.icon}</span>${tab.name}`;
-    btn.addEventListener("click", () => select(tab.key, true));
-    tabBar.appendChild(btn);
+    if(!tab.hidden){
+      const btn = document.createElement("button");
+      btn.className = "tab";
+      btn.type = "button";
+      btn.role = "tab";
+      btn.id = "tab-" + tab.key;
+      btn.setAttribute("aria-controls", "pane-" + tab.key);
+      btn.innerHTML = `<span aria-hidden="true">${tab.icon}</span>${tab.name}`;
+      btn.addEventListener("click", () => select(tab.key, true));
+      tabBar.appendChild(btn);
+    }
 
     const frame = document.createElement("iframe");
     frame.className = "pane";
@@ -162,8 +167,10 @@ function select(key, pushState){
     const btn = document.getElementById("tab-" + t.key);
     const pane = document.getElementById("pane-" + t.key);
     const active = t.key === tab.key;
-    btn.setAttribute("aria-selected", String(active));
-    btn.tabIndex = active ? 0 : -1;
+    if(btn){
+      btn.setAttribute("aria-selected", String(active));
+      btn.tabIndex = active ? 0 : -1;
+    }
     pane.hidden = !active;
   });
 
@@ -190,8 +197,8 @@ document.getElementById("theme").addEventListener("click", () => {
 
 tabBar.addEventListener("keydown", e => {
   if(e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-  const keys = TABS.map(t => t.key);
-  const at = keys.indexOf(currentTab());
+  const keys = TABS.filter(t => !t.hidden).map(t => t.key);
+  const at = Math.max(0, keys.indexOf(currentTab()));
   const next = keys[(at + (e.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length];
   select(next, true);
   document.getElementById("tab-" + next).focus();

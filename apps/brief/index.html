@@ -261,8 +261,13 @@ async function equities(){
   // Sorted by market cap, not by percentile: dozens of tickers tie at the
   // bottom of their own range, so ranking by percentile just lists them
   // alphabetically. Size is what decides which of them is worth a look.
+  // Excludes rows priced off the exchange reference rather than a real trade
+  // (r.pr) -- stocks_build.py falls back to that price so a never-traded
+  // ticker still gets a market cap, but "cheap" is a market read, and an
+  // administratively-set price was never discovered by anyone buying or
+  // selling. Without this, 108 such tickers clear the mc >= 500 bar today.
   const cheap = rows
-    .filter(r => r.pe_p != null && r.pe_p <= 25 && r.roe >= 10 && r.mc >= 500)
+    .filter(r => r.pe_p != null && r.pe_p <= 25 && r.roe >= 10 && r.mc >= 500 && !r.pr)
     .sort((a,b) => b.mc - a.mc)
     .slice(0, 10);
 
