@@ -54,6 +54,10 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .zero{stroke:var(--muted); stroke-width:1; opacity:.5}
 
 table{border-collapse:collapse; width:100%; font-size:13px}
+/* The configuration actually in use, marked so the ladder reads as "here is
+   every option and here is the one running" rather than as a menu. */
+tbody tr.on{background:color-mix(in srgb, var(--accent) 12%, transparent)}
+tbody tr.on td{border-top:1px solid var(--accent); border-bottom:1px solid var(--accent)}
 th,td{padding:6px 11px; border-bottom:1px solid var(--line); white-space:nowrap}
 th{text-align:right; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
    color:var(--muted); font-weight:600; background:var(--panel-2); position:sticky; top:0}
@@ -129,6 +133,7 @@ function render(d){
     "<h2>Quy tắc</h2><dl>" +
     Object.entries({
       "Điều kiện vào": d.rules.entry,
+      "Xác nhận dòng tiền": d.rules.layers,
       "Dừng lỗ": d.rules.stop,
       "Mục tiêu": d.rules.target,
       "Thời gian giữ tối đa": d.rules.max_hold,
@@ -210,6 +215,7 @@ function render(d){
     `<p class="cap">Cộng dồn kết quả từng lệnh theo thứ tự đóng lệnh. Trục dọc là bội số rủi ro, ` +
     `không phải tiền — nên nó không phụ thuộc vào việc bạn đặt bao nhiêu vốn mỗi lệnh.</p>` +
     `<div class="card pad" id="equity"></div></section>` +
+    `<div id="ladder"></div>` +
     (d.open && d.open.length
       ? `<section><h2 class="sec">Lệnh đang mở</h2>` +
         `<p class="cap">Chưa có kết quả, nên không được tính vào thống kê phía trên.</p>` +
@@ -220,6 +226,7 @@ function render(d){
     `<div class="card"><div class="scroll" id="closed"></div></div></section>`;
 
   drawEquity(el("equity"), d.closed || []);
+  drawLadder(el("ladder"), d.layer_ladder, d.layers_required);
   if(d.open && d.open.length) drawOpen(el("open"), d.open);
   drawClosed(el("closed"), d.closed || []);
 
@@ -281,10 +288,46 @@ function drawOpen(host, rows){
     "</tbody></table>";
 }
 
+/* What the confirmation layers saw on the entry bar. A layer that abstained is
+   simply absent -- showing a dash for "no data" and a zero for "measured zero"
+   as the same glyph would hide which one happened. */
+function layerCell(L){
+  if(!L) return "—";
+  const parts = [];
+  if(L.v != null) parts.push(`KL ${L.v}x`);
+  if(L.m != null) parts.push(`${fmt(L.m)} tỷ`);
+  if(L.f) parts.push(`NN ${L.f > 0 ? "+" : ""}${fmt(L.f)} tỷ`);
+  if(L.a) parts.push("tích luỹ");
+  return `<span title="${L.n}/${L.of} lớp xác nhận">${parts.join(" · ") || "—"}</span>`;
+}
+
+/* The ladder is the honest version of "we tuned it": every threshold, not the
+   one that reads best. Published because a rule shown only in its winning
+   configuration is indistinguishable from one fitted after the fact. */
+function drawLadder(host, ladder, chosen){
+  if(!ladder || !ladder.length){ host.innerHTML = ""; return; }
+  host.innerHTML =
+    `<section><h2 class="sec">Từng lớp xác nhận đáng giá bao nhiêu</h2>` +
+    `<p class="cap">Cùng một phép chạy tiến, chỉ đổi số lớp bắt buộc. ` +
+    `Hàng được tô là cấu hình đang dùng. Kết quả vẫn âm — công bố nguyên trạng.</p>` +
+    `<div class="card"><div class="scroll"><table><thead><tr>` +
+    ["Số lớp","Số lệnh","Tỷ lệ thắng","R trung bình","Tổng R","Sụt giảm tối đa"]
+      .map(t => `<th>${t}</th>`).join("") +
+    "</tr></thead><tbody>" +
+    ladder.map(r =>
+      `<tr${r.layers === chosen ? ' class="on"' : ""}>` +
+      `<td><b>${r.layers}</b>${r.layers === 0 ? ' <span class="dim">(chỉ SMA)</span>' : ""}</td>` +
+      `<td>${fmt(r.trades)}</td><td>${r.hit_rate}%</td>` +
+      `<td class="${r.avg_r >= 0 ? "pos" : "neg"}">${r.avg_r}R</td>` +
+      `<td class="${r.total_r >= 0 ? "pos" : "neg"}"><b>${r.total_r}R</b></td>` +
+      `<td class="dim">${r.max_drawdown_r}R</td></tr>`).join("") +
+    "</tbody></table></div></div></section>";
+}
+
 function drawClosed(host, rows){
   host.innerHTML =
     "<table><thead><tr>" +
-    ["Mã","Tên","Vào","Ra","Giá vào","Giá ra","Kết quả","Lý do đóng"]
+    ["Mã","Tên","Vào","Ra","Giá vào","Giá ra","Kết quả","Dòng tiền lúc vào","Lý do đóng"]
       .map(t => `<th>${t}</th>`).join("") +
     "</tr></thead><tbody>" +
     rows.map(r =>
@@ -293,6 +336,7 @@ function drawClosed(host, rows){
       `<td class="dim">${r.d}</td><td class="dim">${r.x}</td>` +
       `<td>${fmt(r.entry)}</td><td>${fmt(r.exit)}</td>` +
       `<td class="${r.r >= 0 ? "pos" : "neg"}"><b>${r.r >= 0 ? "+" : ""}${r.r.toFixed(2)}R</b></td>` +
+      `<td class="dim">${layerCell(r.L)}</td>` +
       `<td class="dim">${EXIT_LABEL[r.why] ?? r.why}</td></tr>`).join("") +
     "</tbody></table>";
 }
