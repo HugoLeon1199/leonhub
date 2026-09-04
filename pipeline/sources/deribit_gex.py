@@ -158,6 +158,19 @@ def compute(chain: list[dict[str, Any]], spot: float, now: datetime) -> dict[str
     net_gex = call_gex - put_gex
     atm_iv = min(atm_iv_candidates)[1] if atm_iv_candidates else 0.0
 
+    # Horizon comes from the nearest expiry, capped: past a day the ATM IV of a
+    # short-dated chain stops describing the window being quoted.
+    horizon_h = DEFAULT_HORIZON_H
+    if nearest_expiry:
+        remaining = (nearest_expiry - now).total_seconds() / 3600.0
+        if remaining > 0:
+            horizon_h = min(remaining, MAX_HORIZON_H)
+
+    em1 = expected_move(spot, atm_iv, horizon_h)
+    pin = pin_risk(by_strike, spot, em1)
+    flip = gamma_flip(kept, spot, now)
+    regime = "positive" if net_gex >= 0 else "negative"
+
     return {
         "spot": round(spot, 2),
         "net_gex": round(net_gex, 1),
@@ -168,9 +181,22 @@ def compute(chain: list[dict[str, Any]], spot: float, now: datetime) -> dict[str
         "vanna": round(vanna_total, 1),
         "charm": round(charm_total, 1),
         "atm_iv": round(atm_iv, 4),
-        "regime": "positive" if net_gex >= 0 else "negative",
-        "gamma_flip": gamma_flip(kept, spot, now),
+        "regime": regime,
+        # Total dollar gamma regardless of sign: how much hedging flow exists
+        # at all, which net_gex hides when calls and puts offset.
+        "gex_notional": round(call_gex + put_gex, 1),
+        "gamma_flip": flip,
         "max_pain": max_pain(by_strike),
+        # One and two standard deviations over the quoted horizon, as prices.
+        "horizon_h": round(horizon_h, 1),
+        "em1": round(em1, 2),
+        "em2": round(em1 * 2, 2),
+        "em_up1": round(spot + em1, 2),
+        "em_dn1": round(spot - em1, 2),
+        "em_up2": round(spot + em1 * 2, 2),
+        "em_dn2": round(spot - em1 * 2, 2),
+        "pin_risk": pin,
+        "gex_sig": gex_signal(regime, spot, flip, pin),
         "nearest_expiry": nearest_expiry.date().isoformat() if nearest_expiry else None,
         "profile": [
             {"strike": k, "gex": round(v["gex"], 1)}
@@ -237,6 +263,58 @@ def max_pain(by_strike: dict[float, dict[str, float]]) -> float | None:
         if best_pain is None or pain < best_pain:
             best, best_pain = candidate, pain
     return best
+
+
+# Hours ahead the expected move is quoted over. Deribit's nearest expiry is
+# often only a few hours out, so the horizon is taken from the chain rather
+# than fixed: an expected move over a window the options do not cover is a
+# number about nothing.
+DEFAULT_HORIZON_H = 24.0
+MAX_HORIZON_H = 24.0
+
+
+def expected_move(spot: float, atm_iv: float, hours: float) -> float:
+    """One standard deviation of price over `hours`, from at-the-money IV.
+
+    The usual sigma * sqrt(t) with t in years. Quoted in price rather than
+    percent because the levels beside it are prices, and making the reader
+    convert is where mistakes happen.
+    """
+    if spot <= 0 or atm_iv <= 0 or hours <= 0:
+        return 0.0
+    return spot * atm_iv * math.sqrt(hours / 24.0 / 365.0)
+
+
+def pin_risk(by_strike: dict[float, dict[str, float]], spot: float, em: float) -> float:
+    """Share of nearby gamma sitting at the single largest strike.
+
+    High pin risk means one strike dominates the hedging flow within an
+    expected move, which is the condition under which price gets held near it
+    into expiry. Zero when nothing is close enough to pin against.
+    """
+    if em <= 0:
+        return 0.0
+    near = {k: abs(v["gex"]) for k, v in by_strike.items() if abs(k - spot) <= em * 2}
+    total = sum(near.values())
+    if not total:
+        return 0.0
+    return round(max(near.values()) / total, 3)
+
+
+def gex_signal(regime: str, spot: float, flip: float | None, pin: float) -> str:
+    """A named state, so the page states a rule rather than only a number.
+
+    Positive gamma damps moves and pins price; negative gamma amplifies them.
+    Distance to the flip level is what says how close that behaviour is to
+    changing.
+    """
+    if regime == "negative":
+        return "NEG_GEX_ACCEL"
+    if pin >= 0.4:
+        return "POS_GEX_PIN"
+    if flip and spot > 0 and abs(spot / flip - 1) < 0.02:
+        return "NEAR_FLIP"
+    return "POS_GEX_DAMP"
 
 
 def top_levels(by_strike: dict[float, dict[str, float]], spot: float, count: int = 12) -> list[dict[str, Any]]:

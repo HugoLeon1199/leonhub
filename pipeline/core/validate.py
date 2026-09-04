@@ -308,6 +308,48 @@ def validate_crypto(rows: list[dict[str, Any]], previous: list[dict[str, Any]] |
     return rep
 
 
+
+def validate_breadth(payload: dict[str, Any], previous: dict[str, Any] | None) -> Report:
+    """Guard the VN breadth series.
+
+    Percentages computed on a thin session look like a breadth collapse rather
+    than like missing data, which is the failure this checks for.
+    """
+    rep = Report()
+    series = payload.get("series") if isinstance(payload, dict) else None
+    if not isinstance(series, list) or len(series) < 20:
+        rep.error(f"Breadth has only {len(series) if isinstance(series, list) else 0} sessions")
+        return rep
+
+    days = [p.get("d") for p in series]
+    if days != sorted(days) or len(set(days)) != len(days):
+        rep.error("Breadth sessions are unordered or duplicated")
+
+    for key in ("a50", "a200", "uv"):
+        outside = [p["d"] for p in series
+                   if p.get(key) is not None and not 0 <= p[key] <= 100]
+        if outside:
+            rep.error(f"{len(outside)} breadth rows have {key} outside 0-100 (first: {outside[0]})")
+
+    floor = (payload.get("median_universe") or 0) * 0.6
+    thin = [p["d"] for p in series if floor and (p.get("n") or 0) < floor * 0.5]
+    if thin:
+        rep.warn(f"{len(thin)} published sessions cover under half the floor (first: {thin[0]})")
+
+    if previous and isinstance(previous.get("series"), list):
+        if len(series) < len(previous["series"]) - 5:
+            rep.error(
+                f"Breadth history shrank ({len(previous['series'])} → {len(series)})"
+            )
+
+    rep.stats.update(
+        sessions=len(series),
+        universe=payload.get("universe"),
+        regime=(payload.get("regime") or {}).get("label"),
+    )
+    return rep
+
+
 # ETF net flow in millions of USD. A day this large is a data error, not a
 # real creation/redemption -- the biggest single-day BTC ETF flow on record is
 # well under this.
@@ -543,6 +585,7 @@ VALIDATORS = {
     "us.json": validate_us,
     "fx.json": validate_fx,
     "crypto.json": validate_crypto,
+    "breadth.json": validate_breadth,
     "flows.json": validate_flows,
     "signals.json": validate_signals,
     "news_ticker.json": validate_news,
@@ -554,7 +597,10 @@ VALIDATORS = {
 # Validators in this set take the raw payload (dict) rather than the unwrapped
 # `rows` list -- their artifacts have no single dominant array (flows keys by
 # asset, gex is a flat scalar surface, signals mixes rules/stats/trades).
-_TAKES_PAYLOAD = {"flows.json", "signals.json", "news_ticker.json", "gex_btc.json", "gex_eth.json", "ticker/manifest.json"}
+_TAKES_PAYLOAD = {
+    "flows.json", "signals.json", "news_ticker.json", "gex_btc.json",
+    "gex_eth.json", "ticker/manifest.json", "breadth.json",
+}
 
 
 def run(names: list[str] | None = None) -> int:

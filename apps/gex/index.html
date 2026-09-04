@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
-<title>Gamma Exposure — LEON Hub</title>
+<title>Market Structure — LEON Hub</title>
 <meta name="description" content="Gamma exposure của quyền chọn Bitcoin và Ethereum: vùng gamma dương/âm, gamma flip, max pain và các mức strike tập trung dòng phòng hộ.">
 
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
@@ -102,7 +102,7 @@ footer b{color:var(--text); font-weight:600}
 <div class="page">
 
 <div class="head">
-  <h1>Gamma Exposure</h1>
+  <h1>Market Structure</h1>
   <div class="group" id="syms" role="group" aria-label="Tài sản"></div>
 </div>
 <p class="sub">Trang này trả lời một câu: <b>các nhà tạo lập quyền chọn đang buộc phải mua hay bán khi giá động đậy?</b>
@@ -149,7 +149,7 @@ Vì thế nó nói lên điều mà lịch sử giá không nói được.</p>
 <script>
 "use strict";
 
-const SYMBOLS = {btc:"Bitcoin", eth:"Ethereum"};
+const SYMBOLS = {btc:"Bitcoin", eth:"Ethereum", vn:"Chứng khoán VN"};
 const el = id => document.getElementById(id);
 let current = (new URLSearchParams(location.search).get("sym") || "btc").toLowerCase();
 if(!SYMBOLS[current]) current = "btc";
@@ -186,14 +186,100 @@ function load(){
   el("body").innerHTML = '<div class="msg">Đang tải…</div>';
   el("tiles").innerHTML = "";
   el("verdict").innerHTML = "";
-  fetch(`../../data/gex_${current}.json`, {cache:"no-cache"})
+  const vn = current === "vn";
+  const file = vn ? "breadth" : `gex_${current}`;
+  const cmd = vn
+    ? "python -m pipeline.transform.breadth_build"
+    : `python -m pipeline.sources.deribit_gex --symbol ${current.toUpperCase()}`;
+  fetch(`../../data/${file}.json`, {cache:"no-cache"})
     .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
-    .then(render)
+    .then(vn ? renderBreadth : render)
     .catch(() => {
       el("body").innerHTML =
-        `<div class="msg">Chưa có <code>data/gex_${current}.json</code>. Chạy ` +
-        `<code>python -m pipeline.sources.deribit_gex --symbol ${current.toUpperCase()}</code>.</div>`;
+        `<div class="msg">Chưa có <code>data/${file}.json</code>. Chạy <code>${cmd}</code>.</div>`;
     });
+}
+
+/* Vietnam has no listed single-stock options, so there is no dealer gamma to
+   read. Structure here is breadth: how many names participate, and whether the
+   money follows them. Each ticker counts once by construction -- that is the
+   point, since it is the check on a cap-weighted index rather than a second
+   copy of one. */
+function renderBreadth(d){
+  const l = d.latest || {}, r = d.regime || {};
+  const weak = r.label === "Suy yếu diện rộng" || (l.a200 != null && l.a200 < 40);
+
+  const tiles = [
+    {k:"Mã tăng / giảm", v:`${fmt(l.adv)} / ${fmt(l.dec)}`,
+     cls: l.adv > l.dec ? "pos" : "neg",
+     n:l.ad != null ? `tỷ lệ A/D ${l.ad}` : ""},
+    {k:"Trên MA50", v:l.a50 != null ? l.a50 + "%" : "—",
+     cls: l.a50 >= 50 ? "pos" : "neg", n:"xu hướng ngắn hạn"},
+    {k:"Trên MA200", v:l.a200 != null ? l.a200 + "%" : "—",
+     cls: l.a200 >= 50 ? "pos" : "neg", n:"xu hướng dài hạn"},
+    {k:"Tiền vào mã tăng", v:l.uv != null ? l.uv + "%" : "—",
+     cls: l.uv >= 50 ? "pos" : "neg",
+     n:"theo giá trị giao dịch, không phải số mã"},
+    {k:"Đỉnh / đáy 52 tuần", v:`${fmt(l.nh)} / ${fmt(l.nl)}`,
+     cls: l.nh >= l.nl ? "pos" : "neg", n:"số mã lập mốc mới"},
+    {k:"Khối ngoại", v:l.fn != null ? (l.fn >= 0 ? "+" : "") + fmt(l.fn, 1) + " tỷ" : "—",
+     cls: (l.fn || 0) >= 0 ? "pos" : "neg", n:"mua/bán ròng trong phiên"},
+  ];
+  el("tiles").innerHTML = tiles.map(t =>
+    `<div class="tile"><span class="k">${t.k}</span>` +
+    `<span class="v ${t.cls || ""}">${t.v}</span>` +
+    `<span class="n">${t.n || ""}</span></div>`).join("");
+
+  el("verdict").innerHTML =
+    `<div class="verdict ${weak ? "neg" : "pos"}"><b>${r.label ?? "Chưa xác định"}</b>` +
+    `${r.why ?? ""}. ${r.rule ?? ""}.</div>`;
+
+  el("body").innerHTML =
+    `<section class="card"><h2>Độ rộng theo thời gian</h2>` +
+    `<p class="cap">Phần trăm mã nằm trên MA50 và MA200, ${d.sessions} phiên gần nhất. ` +
+    `Chỉ số có thể đi lên trong khi hai đường này đi xuống — đó là lúc đà tăng ` +
+    `chỉ còn ở vài mã vốn hóa lớn.</p>` +
+    `<div class="chart-wrap"><svg id="bchart" viewBox="0 0 900 300" role="img" ` +
+    `aria-label="Độ rộng thị trường"></svg></div></section>` +
+    `<section class="card"><h2>Vì sao không phải gamma</h2>` +
+    `<p class="cap">${d.note ?? ""}</p></section>`;
+
+  drawBreadth(d.series || []);
+  el("stamp").innerHTML = l.d
+    ? `Phiên ${l.d} · ${fmt(l.n)} mã · nguồn ${d.source?.name ?? ""}`
+    : "";
+}
+
+function drawBreadth(series){
+  const svg = el("bchart");
+  if(!svg || series.length < 2) return;
+  const W = 900, H = 300, ML = 38, MR = 12, MT = 14, MB = 22;
+  const iw = W - ML - MR, ih = H - MT - MB;
+  const x = i => ML + (i / (series.length - 1)) * iw;
+  const y = v => MT + ih - (v / 100) * ih;
+  const parts = [];
+
+  [0, 25, 50, 75, 100].forEach(t => {
+    const yy = y(t);
+    parts.push(`<line x1="${ML}" x2="${W-MR}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" ` +
+      `stroke="var(--line)" stroke-width="1"${t === 50 ? ' stroke-dasharray="3 3"' : ""}/>`);
+    parts.push(`<text x="${ML-6}" y="${(yy+4).toFixed(1)}" text-anchor="end" ` +
+      `fill="var(--muted)" font-size="10">${t}%</text>`);
+  });
+
+  [["a200", "var(--accent)"], ["a50", "var(--warn)"]].forEach(([key, colour]) => {
+    const pts = series.map((p, i) => p[key] == null ? null : [x(i), y(p[key])]).filter(Boolean);
+    if(pts.length < 2) return;
+    parts.push(`<path d="${pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join("")}" ` +
+      `fill="none" stroke="${colour}" stroke-width="2" vector-effect="non-scaling-stroke"/>`);
+  });
+
+  const first = series[0].d, last = series[series.length - 1].d;
+  parts.push(`<text x="${ML}" y="${H-6}" fill="var(--muted)" font-size="10">${first}</text>`);
+  parts.push(`<text x="${W-MR}" y="${H-6}" text-anchor="end" fill="var(--muted)" font-size="10">${last}</text>`);
+  parts.push(`<text x="${ML+8}" y="${MT+12}" fill="var(--accent)" font-size="11">MA200</text>`);
+  parts.push(`<text x="${ML+66}" y="${MT+12}" fill="var(--warn)" font-size="11">MA50</text>`);
+  svg.innerHTML = parts.join("");
 }
 
 function render(d){

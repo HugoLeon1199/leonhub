@@ -80,6 +80,11 @@ jobs:
       - name: Build stocks.json
         run: python -m pipeline.transform.stocks_build
 
+      # Breadth reads the same eq_quote the screener does, so it runs in the
+      # same job right after it rather than re-opening the warehouse.
+      - name: Build market breadth
+        run: python -m pipeline.transform.breadth_build
+
       - name: Build lazy per-ticker ratio history
         run: python -m pipeline.transform.ticker_details_build
 
@@ -89,7 +94,7 @@ jobs:
         run: python -m pipeline.transform.signals_build
 
       - name: Validate before publishing
-        run: python -m pipeline.core.validate stocks.json signals.json ticker/manifest.json
+        run: python -m pipeline.core.validate stocks.json breadth.json signals.json ticker/manifest.json
 
       - name: Save warehouse
         uses: actions/cache/save@v4
