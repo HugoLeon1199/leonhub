@@ -24,7 +24,9 @@ from pipeline.core.http import HttpClient
 
 log = logging.getLogger(__name__)
 
-SOURCE_URL = "https://leonquant.com/content.json"
+# The news repo's own Pages URL, not leonquant.com: that domain now serves the
+# hub, so the digest is only at the repo address.
+SOURCE_URL = "https://hugoleon1199.github.io/leonquant/content.json"
 
 # Newsrooms use these brands far more often than the full exchange legal name.
 # This deliberately covers the most-followed/liquid names rather than trying to

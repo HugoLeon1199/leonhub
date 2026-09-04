@@ -3707,22 +3707,23 @@
     const ND = "—";
 
     /** Gốc site để fetch content.json / feed-config đúng dù trang mở tại /landing_page/ hay /repo/landing_page/ */
-    /* Served from the LEON hub, but the feeds stay on leonquant.com.
+    /* Served from the LEON hub, but the feeds stay in the news repo.
        The page itself barely changes; content.json is rebuilt daily at ~620 KB,
        so mirroring it here would add a commit that size every day -- roughly
        220 MB of history a year against GitHub's soft cap. Reading it across
-       origins costs one CORS request and keeps this copy to the markup. */
-    const NEWS_FEED_ORIGIN = "https://leonquant.com/";
+       origins costs one CORS request and keeps this copy to the markup.
+
+       The origin is the news repo's own Pages URL, not leonquant.com: that
+       domain now serves this hub, so pointing at it would ask the hub for its
+       own feed and find nothing. */
+    const NEWS_FEED_ORIGIN = "https://hugoleon1199.github.io/leonquant/";
 
     function siteBaseUrl() {
       if (window.location.protocol === "file:") {
         return new URL(".", window.location.href).href;
       }
-      const host = window.location.hostname.replace(/^www\./, "").toLowerCase();
-      if (host === "leonquant.com") {
-        return `${window.location.origin}/`;
-      }
-      // Any other host is a hub copy: the data lives at the origin above.
+      // Every host this copy runs on is a hub host, leonquant.com included --
+      // the feeds are always somewhere else.
       return NEWS_FEED_ORIGIN;
       let path = window.location.pathname.replace(/\/$/, "");
       for (const suf of ["/index.html", "/landing_page.html", "/landing_page"]) {
@@ -3743,15 +3744,11 @@
       return new URL(name, siteBaseUrl()).href;
     }
 
-    /** Khi custom domain (Cloudflare) lỗi 503, lấy JSON từ bản GitHub Pages đã deploy. */
-    const GITHUB_PAGES_FEED_MIRROR = "https://hugoleon1199.github.io/leonquant/";
-
+    /* The original had a fallback here from the custom domain to the Pages
+       mirror. siteBaseUrl() now returns that mirror directly, so listing it
+       twice would only repeat a failed request. */
     async function fetchJsonFeed(paths) {
       const bases = [siteBaseUrl()];
-      const host = window.location.hostname.replace(/^www\./, "").toLowerCase();
-      if (host === "leonquant.com") {
-        bases.push(GITHUB_PAGES_FEED_MIRROR);
-      }
       for (const base of bases) {
         for (const p of paths) {
           try {
