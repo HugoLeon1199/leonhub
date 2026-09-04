@@ -1,88 +1,66 @@
 # Handoff
 
-Updated 2026-09-04 11:22 (Asia/Dubai). Read `CLAUDE.md` first. The active Claude
-plan is `C:\Users\LEON_RM\.claude\plans\nh-gi-ho-n-calm-newell.md`; its round-3
-status and this file are synchronized through G3.
+Updated 2026-09-04. Read `CLAUDE.md` first. The active Claude plan is
+`C:\Users\LEON_RM\.claude\plans\nh-gi-ho-n-calm-newell.md`.
 
-## Outcome
+## Chart tooling now matches the reference set
 
-The recovered TurtleTrading comparison plan A-E is complete. The site now has live
-crypto charting and drawings, a per-ticker VN equity page, deterministic ticker
-news, exposed SSI order-book depth, ETF issuer breakdown, clearer GEX and the
-full signal track record. Round 3 has also completed F1/F2, G0-G3 and H1:
-history coverage was backfilled, chart history pages left, Lightweight Charts is
-on v5.2.0, drawing tools were expanded and indicators now use real panes.
+**62 indicators, 34 drawing tools** — the same counts as
+`chart.turtletrading.vn`, reached by writing the formulas out rather than
+copying an implementation. Verified in headless Chrome over 1000 real bars:
+all 62 compute finite values and mount at once across 38 panes; all 34 draw
+from synthetic mouse clicks, render, hit-test and survive reload.
 
-The worktree contains the final G2/G3 refinement to `apps/chart/index.html` on top
-of `7a826db`; the user did not ask for a commit. Do not reset it. There is no git
-remote, so workflows have not run in GitHub Actions yet. Local server PID 3312
-serves the repo on port 8811.
+Two indicators are deliberately named for what they are: the HMM regime is a
+two-state classifier with a persistence filter (label says "xấp xỉ"), and
+market structure is a swing-high comparison. Neither claims more than it does.
 
-## Round 3 chart continuation (2026-09-04)
+## Branch and remote
 
-- `66c9572` completed F1, G0, the drawing registry/extra tools and H1. `4b56c6d`
-  completed F2 lazy history. `7a826db` introduced the 16-indicator registry.
-- The uncommitted follow-up finishes G2/G3 instead of changing direction. The ten
-  drawing tools are `hline`, `hray`, `trend`, `vline`, `rect`, `fib`, `fibext`,
-  `range`, `mark`, and `text`. Horizontal ray is correctly one-click. Drawings
-  have OHLC magnet snap (Ctrl temporarily inverts it), endpoint editing, global
-  Ctrl+Z/Ctrl+Y, move undo, per-symbol persistence, future-time extrapolation and
-  a canvas constrained to the price pane.
-- All 16 indicators remain registry-driven and multi-instance. Overlay series and
-  oscillators now use actual LWC v5 panes, not multiple scales painted into one
-  strip. The panel exposes every parameter (including MACD 3-tuples, Stochastic,
-  Bollinger/Supertrend multipliers and Ichimoku 9/26/52), colour, per-instance
-  visibility, reset to signal MA20/50, and limits of 16 indicators / 4 live panes.
-- Formula/render fixes: flat RSI/MFI are 50, MACD histogram is direction-coloured,
-  Supertrend splits green/red regimes, Ichimoku publishes Tenkan/Kijun/Span A/
-  Span B/Chikou, and declared ranges/guides are rendered. WebSocket recalculation
-  is throttled to 300 ms; older-history refresh reuses mounted series and panes.
-- Drawing interaction is deliberately continuous: after the final required
-  point, the selected tool remains armed for the next shape. It exits through
-  `Pan / Esc`, right-click, Escape, or clicking the armed tool again. Every exit
-  cancels partial points, so an unfinished Fibonacci/range cannot leak into the
-  next click. Non-left pointer presses never create a drawing.
-- The chart now has a Turtle-style right-click menu with working price alerts,
-  price-scale fit/auto/log controls, free/magnet crosshair, volume and indicator
-  title toggles, show/hide/delete actions, chart copy/download, theme and a jump
-  to indicator settings. Alerts and preferences are localStorage-backed; alert
-  crossing is checked only while the chart tab is open, with a one-shot toast and
-  a manage dialog. PNG export composites the LWC screenshot and drawing canvas.
-- Important truth: drawings are still a market-coordinate canvas overlay, **not**
-  LWC Series Primitives. It is registry-backed, survives pan/zoom/future space and
-  now tracks price-pane resizing. Do not describe G1 as a primitive migration.
-- The reference chart source was audited directly. Its page publicly falls back
-  from `multi.min.js` to an unminified `/multi.js` (HTTP 200, 1,011,167 bytes,
-  10,799 lines); it is minified in production, not actually source-hidden. The
-  application layer is custom vanilla JS: 35 drawing selectors, a DrawPrimitive
-  adapter/unified renderer, and 62 registry indicators across seven categories.
-  The reference itself is one-shot (`armTool(null)` after completion), unlike the
-  user's requested continuous behavior. No application-source license notice was
-  found; reproduce behavior/formulas, do not paste its implementation verbatim.
-  See `docs/teardown-turtletrading.md` for the durable audit.
+Repo is public at `https://github.com/HugoLeon1199/leonhub`, Pages serving
+`hub-upgrades` at `https://hugoleon1199.github.io/leonhub/hub/`.
 
-## Completed plan sections
+Commits on `hub-upgrades` above `f6c610b`:
+- `b2a9900` rounds 1-2 (pipeline hardening, ticker page, per-ticker news)
+- `66c9572` F1/G0/G1/G2/H1 — backfill, LWC v5, drawing registry, GEX tiles
+- `4b56c6d` F2 lazy history paging
+- `7a826db` 16-indicator registry
+- `87b4c5d` drawing coordinates via logical index
+- `eb11bc9` +15 drawing tools
+- `47c9e34` +10 drawing tools (34 total)
+- `b8d0707` +33 indicators (49 total)
+- `8772619` +13 indicators (62 total)
 
-- **A1/A2/A3:** `apps/chart/index.html` uses Binance kline WebSocket updates,
-  bounded 500-bar state, reconnect backoff and REST only as a stale/dead-socket
-  fallback. Viewport is preserved. Theme changes recolor mounted volume bars.
-  A 250-pair Binance datalist is cached 24h. MA20/MA50 has a persisted toggle.
-- **A4:** canvas tools for horizontal level, trendline and Fibonacci. Drawings
-  store time/price coordinates per symbol, redraw on pan/zoom/resize/theme,
-  support hit-test/select/drag/Delete/clear and survive reload via localStorage.
-- **B:** new `apps/ticker/index.html`; hidden `ticker` route in `hub/index.html`;
-  stock symbols deep-link through the hub. Page shows `pr`/`pd` provenance,
-  own-history valuation percentiles, 1/5/20 foreign flow when observed, room,
-  momentum, SSI depth, open/closed signals, audited news and a stock chart link.
-- **C:** new `news_link` warehouse table, `pipeline/sources/news_link.py`,
-  `pipeline/transform/news_build.py`, validator, `data/news_ticker.json` and
-  `.github/workflows/news.yml`. Matching is deterministic: normalized legal
-  names, reviewed large-cap aliases and context-gated symbols; every row stores
-  `matched_by`. It consumes `https://leonquant.com/content.json` without changing
-  the NEWS repo or using AI.
-- **D/E:** GEX explanation, signal exit reasons and all 214 closed trades;
-  three-level SSI collection contract and 1,292 current rows with level-1 data;
-  Farside breakdown for 12 BTC and 10 ETH ETF issuers.
+## Reference source
+
+`https://chart.turtletrading.vn/multi.js` serves **unminified** (1,011,167
+bytes, 10,876 lines) — the production page loads `multi.min.js` but the plain
+file is public. Cloudflare allows it with a browser User-Agent:
+
+```bash
+UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+curl -sL -A "$UA" --compressed -o multi.js "https://chart.turtletrading.vn/multi.js"
+```
+
+Saved under `C:\Users\LEON_RM\Downloads\leon\site\` along with every app page.
+No application-source licence notice was found; behaviour and formulas were
+reproduced, implementation was not pasted.
+
+## Coordinate handling — the fix that mattered
+
+Drawing points landed slightly off the click and drifted with zoom. The cause
+was extrapolating from the pixel spacing of the last two bars, which is exactly
+what zooming changes. Now `coordinateToLogical` / `logicalToCoordinate` convert
+through the chart's own bar index, which stays defined past the last bar and off
+both edges. Measured: 0.0px vertical error, <=1.3px horizontal (bar-centre
+rounding), 0.33px in future space.
+
+Bar interval is the **median** of recent gaps, not one difference — a weekend
+would otherwise report Monday's step as three days. Daily series hand back
+`{year,month,day}` instead of a timestamp and are converted.
+
+**Drawings remain a market-coordinate canvas overlay, not LWC Series
+Primitives.** Do not describe them as a primitive migration.
 
 ## Important correctness decisions
 
