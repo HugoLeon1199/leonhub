@@ -75,9 +75,39 @@ def write_json(
         body, ensure_ascii=False, separators=(",", ":"), default=str,
         allow_nan=False,
     )
+
+    # `updated_at` changes on every run by definition, so a byte comparison
+    # would call every file new even when the data is identical -- and each of
+    # these is a single line, so git stores a whole fresh copy rather than a
+    # diff. Across 1,719 ticker dossiers that is ~51MB of history per refresh
+    # for, usually, no change at all. Compare everything except the timestamp
+    # and keep the existing file when only that moved.
+    if path.exists() and _same_but_for_timestamp(path, body):
+        log.debug("unchanged %s", path.name)
+        return path
+
     path.write_text(text, encoding="utf-8")
     log.info("wrote %s (%.1f KB)", path.name, len(text.encode()) / 1024)
     return path
+
+
+def _same_but_for_timestamp(path: Path, body: Any) -> bool:
+    """True when the file on disk matches `body` apart from `updated_at`.
+
+    Any parse or type problem answers False: rewriting a file needlessly costs
+    disk, but skipping a write that was actually needed would publish stale
+    numbers, so the uncertain case has to fall through to the write.
+    """
+    if not isinstance(body, dict):
+        return False
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(existing, dict):
+        return False
+    return {k: v for k, v in existing.items() if k != "updated_at"} == \
+           {k: v for k, v in body.items() if k != "updated_at"}
 
 
 def read_json(name: str) -> Any:
