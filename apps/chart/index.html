@@ -713,6 +713,430 @@ function adx(bars, period){
   return out;
 }
 
+function vwma(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    let pv = 0, v = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      const vol = bars[j].volume || 0;
+      pv += bars[j].close * vol; v += vol;
+    }
+    out.push({time:bars[i].time, value: v ? pv / v : bars[i].close});
+  }
+  return out;
+}
+
+// Parabolic SAR: the stop flips side when price crosses it, and the
+// acceleration factor steps up on each new extreme.
+function psar(bars, step, maxStep){
+  if(bars.length < 2) return [];
+  const out = [];
+  let up = bars[1].close >= bars[0].close;
+  let sar = up ? bars[0].low : bars[0].high;
+  let ep = up ? bars[0].high : bars[0].low;
+  let af = step;
+  for(let i = 1; i < bars.length; i++){
+    sar = sar + af * (ep - sar);
+    const b = bars[i];
+    if(up){
+      if(b.low < sar){ up = false; sar = ep; ep = b.low; af = step; }
+      else if(b.high > ep){ ep = b.high; af = Math.min(maxStep, af + step); }
+    }else{
+      if(b.high > sar){ up = true; sar = ep; ep = b.high; af = step; }
+      else if(b.low < ep){ ep = b.low; af = Math.min(maxStep, af + step); }
+    }
+    out.push({time:b.time, value:sar});
+  }
+  return out;
+}
+
+// Alligator: three smoothed averages of the median price, each pushed forward
+// by its own offset. The offsets are the point -- the lines only separate
+// once a trend is real.
+function smma(values, period){
+  const out = [];
+  let prev = null, sum = 0;
+  for(let i = 0; i < values.length; i++){
+    if(i < period - 1){ sum += values[i]; out.push(null); continue; }
+    if(prev === null){ sum += values[i]; prev = sum / period; }
+    else prev = (prev * (period - 1) + values[i]) / period;
+    out.push(prev);
+  }
+  return out;
+}
+
+function alligator(bars){
+  const med = bars.map(b => (b.high + b.low) / 2);
+  const mk = (period, shift) => {
+    const v = smma(med, period), out = [];
+    for(let i = 0; i < bars.length; i++){
+      const src = i - shift;
+      if(src < 0 || v[src] == null) continue;
+      out.push({time:bars[i].time, value:v[src]});
+    }
+    return out;
+  };
+  return {jaw:mk(13, 8), teeth:mk(8, 5), lips:mk(5, 3)};
+}
+
+function williamsR(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1);
+    const hi = Math.max(...win.map(b => b.high));
+    const lo = Math.min(...win.map(b => b.low));
+    out.push({time:bars[i].time, value: hi === lo ? -50 : -100 * (hi - bars[i].close) / (hi - lo)});
+  }
+  return out;
+}
+
+function roc(bars, period){
+  const out = [];
+  for(let i = period; i < bars.length; i++){
+    const base = bars[i - period].close;
+    out.push({time:bars[i].time, value: base ? (bars[i].close - base) / base * 100 : 0});
+  }
+  return out;
+}
+
+function momentum(bars, period){
+  const out = [];
+  for(let i = period; i < bars.length; i++)
+    out.push({time:bars[i].time, value:bars[i].close - bars[i - period].close});
+  return out;
+}
+
+// TRIX: rate of change of a triple-smoothed EMA -- the triple smoothing is
+// what strips the noise a single EMA leaves behind.
+function trix(bars, period){
+  const c = bars.map(b => b.close);
+  const e1 = emaValues(c, period);
+  const e2 = emaValues(e1.map(v => v == null ? 0 : v), period);
+  const e3 = emaValues(e2.map(v => v == null ? 0 : v), period);
+  const out = [];
+  for(let i = 1; i < bars.length; i++){
+    if(e3[i] == null || e3[i-1] == null || !e3[i-1]) continue;
+    out.push({time:bars[i].time, value:(e3[i] - e3[i-1]) / e3[i-1] * 100});
+  }
+  return out;
+}
+
+function tsi(bars, longLen, shortLen){
+  const diff = [], absDiff = [];
+  for(let i = 1; i < bars.length; i++){
+    const d = bars[i].close - bars[i-1].close;
+    diff.push(d); absDiff.push(Math.abs(d));
+  }
+  const s1 = emaValues(emaValues(diff, longLen).map(v => v == null ? 0 : v), shortLen);
+  const s2 = emaValues(emaValues(absDiff, longLen).map(v => v == null ? 0 : v), shortLen);
+  const out = [];
+  for(let i = 0; i < diff.length; i++){
+    if(s1[i] == null || s2[i] == null || !s2[i]) continue;
+    out.push({time:bars[i+1].time, value:100 * s1[i] / s2[i]});
+  }
+  return out;
+}
+
+function ultimate(bars, fast, mid, slow){
+  const bp = [], tr = [];
+  for(let i = 1; i < bars.length; i++){
+    const low = Math.min(bars[i].low, bars[i-1].close);
+    bp.push(bars[i].close - low);
+    tr.push(Math.max(bars[i].high, bars[i-1].close) - low);
+  }
+  const sumOf = (arr, end, n) => {
+    let s = 0;
+    for(let j = end - n + 1; j <= end; j++) s += arr[j];
+    return s;
+  };
+  const out = [];
+  for(let i = slow - 1; i < bp.length; i++){
+    const a = sumOf(tr, i, fast) ? sumOf(bp, i, fast) / sumOf(tr, i, fast) : 0;
+    const b = sumOf(tr, i, mid)  ? sumOf(bp, i, mid)  / sumOf(tr, i, mid)  : 0;
+    const c = sumOf(tr, i, slow) ? sumOf(bp, i, slow) / sumOf(tr, i, slow) : 0;
+    out.push({time:bars[i+1].time, value:100 * (4*a + 2*b + c) / 7});
+  }
+  return out;
+}
+
+function awesome(bars, fast, slow){
+  const med = bars.map(b => ({time:b.time, close:(b.high + b.low) / 2}));
+  const f = sma(med, fast), s = sma(med, slow);
+  const byTime = new Map(f.map(p => [p.time, p.value]));
+  return s.map(p => {
+    const fv = byTime.get(p.time);
+    return fv == null ? null : {time:p.time, value:fv - p.value};
+  }).filter(Boolean);
+}
+
+function aroon(bars, period){
+  const up = [], down = [];
+  for(let i = period; i < bars.length; i++){
+    const win = bars.slice(i - period, i + 1);
+    let hi = 0, lo = 0;
+    win.forEach((b, j) => {
+      if(b.high >= win[hi].high) hi = j;
+      if(b.low <= win[lo].low) lo = j;
+    });
+    up.push({time:bars[i].time, value:100 * hi / period});
+    down.push({time:bars[i].time, value:100 * lo / period});
+  }
+  return {up, down};
+}
+
+function vortex(bars, period){
+  const plus = [], minus = [];
+  const tr = trueRanges(bars);
+  for(let i = period; i < bars.length; i++){
+    let vp = 0, vm = 0, trSum = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      vp += Math.abs(bars[j].high - bars[j-1].low);
+      vm += Math.abs(bars[j].low - bars[j-1].high);
+      trSum += tr[j];
+    }
+    if(!trSum) continue;
+    plus.push({time:bars[i].time, value:vp / trSum});
+    minus.push({time:bars[i].time, value:vm / trSum});
+  }
+  return {plus, minus};
+}
+
+function elderRay(bars, period){
+  const e = ema(bars, period);
+  const byTime = new Map(e.map(p => [p.time, p.value]));
+  const bull = [], bear = [];
+  bars.forEach(b => {
+    const v = byTime.get(b.time);
+    if(v == null) return;
+    bull.push({time:b.time, value:b.high - v});
+    bear.push({time:b.time, value:b.low - v});
+  });
+  return {bull, bear};
+}
+
+function keltner(bars, period, atrPeriod, mult){
+  const mid = ema(bars, period);
+  const a = atr(bars, atrPeriod);
+  const atrAt = new Map(a.map(p => [p.time, p.value]));
+  const upper = [], lower = [], centre = [];
+  mid.forEach(p => {
+    const av = atrAt.get(p.time);
+    if(av == null) return;
+    centre.push(p);
+    upper.push({time:p.time, value:p.value + mult * av});
+    lower.push({time:p.time, value:p.value - mult * av});
+  });
+  return {upper, mid:centre, lower};
+}
+
+function donchian(bars, period){
+  const upper = [], lower = [], mid = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1);
+    const hi = Math.max(...win.map(b => b.high));
+    const lo = Math.min(...win.map(b => b.low));
+    const t = bars[i].time;
+    upper.push({time:t, value:hi});
+    lower.push({time:t, value:lo});
+    mid.push({time:t, value:(hi + lo) / 2});
+  }
+  return {upper, mid, lower};
+}
+
+function envelope(bars, period, pct){
+  const mid = sma(bars, period);
+  return {
+    upper: mid.map(p => ({time:p.time, value:p.value * (1 + pct / 100)})),
+    mid,
+    lower: mid.map(p => ({time:p.time, value:p.value * (1 - pct / 100)})),
+  };
+}
+
+// Annualised standard deviation of log returns.
+function historicalVol(bars, period){
+  const rets = [];
+  for(let i = 1; i < bars.length; i++)
+    rets.push(bars[i-1].close ? Math.log(bars[i].close / bars[i-1].close) : 0);
+  const out = [];
+  for(let i = period - 1; i < rets.length; i++)
+    out.push({time:bars[i+1].time, value:stdev(rets.slice(i - period + 1, i + 1)) * Math.sqrt(365) * 100});
+  return out;
+}
+
+// Where today's range sits among the last `history` ranges. Low readings mean
+// the market is coiled, which is what the compression indicator watches for.
+function rangePercentile(bars, period, history){
+  const a = atr(bars, period);
+  const out = [];
+  for(let i = history; i < a.length; i++){
+    const win = a.slice(i - history, i + 1).map(p => p.value);
+    const cur = a[i].value;
+    const below = win.filter(v => v < cur).length;
+    out.push({time:a[i].time, value:100 * below / win.length});
+  }
+  return out;
+}
+
+function chandelier(bars, period, mult){
+  const a = atr(bars, period);
+  const atrAt = new Map(a.map(p => [p.time, p.value]));
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const av = atrAt.get(bars[i].time);
+    if(av == null) continue;
+    const hi = Math.max(...bars.slice(i - period + 1, i + 1).map(b => b.high));
+    out.push({time:bars[i].time, value:hi - mult * av});
+  }
+  return out;
+}
+
+function chaikinMF(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    let mfv = 0, vol = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      const b = bars[j], span = b.high - b.low;
+      const mult = span ? ((b.close - b.low) - (b.high - b.close)) / span : 0;
+      mfv += mult * (b.volume || 0);
+      vol += b.volume || 0;
+    }
+    out.push({time:bars[i].time, value: vol ? mfv / vol : 0});
+  }
+  return out;
+}
+
+function accumDist(bars){
+  const out = [];
+  let acc = 0;
+  bars.forEach(b => {
+    const span = b.high - b.low;
+    const mult = span ? ((b.close - b.low) - (b.high - b.close)) / span : 0;
+    acc += mult * (b.volume || 0);
+    out.push({time:b.time, value:acc});
+  });
+  return out;
+}
+
+// Swing points: a bar whose high tops the `left` bars before and `right` after
+// it. The lookahead is why the most recent bars never carry a pivot.
+function pivots(bars, left, right){
+  const highs = [], lows = [];
+  for(let i = left; i < bars.length - right; i++){
+    const win = bars.slice(i - left, i + right + 1);
+    if(bars[i].high >= Math.max(...win.map(b => b.high)))
+      highs.push({time:bars[i].time, value:bars[i].high});
+    if(bars[i].low <= Math.min(...win.map(b => b.low)))
+      lows.push({time:bars[i].time, value:bars[i].low});
+  }
+  return {highs, lows};
+}
+
+// Classic floor-trader pivots from the previous session.
+function pivotPoints(bars){
+  const byDay = new Map();
+  bars.forEach(b => {
+    const day = Math.floor(b.time / 86400);
+    const cur = byDay.get(day);
+    if(!cur) byDay.set(day, {high:b.high, low:b.low, close:b.close});
+    else {
+      cur.high = Math.max(cur.high, b.high);
+      cur.low = Math.min(cur.low, b.low);
+      cur.close = b.close;
+    }
+  });
+  const days = [...byDay.keys()].sort((a, b) => a - b);
+  const level = {p:[], r1:[], s1:[], r2:[], s2:[]};
+  bars.forEach(b => {
+    const day = Math.floor(b.time / 86400);
+    const idx = days.indexOf(day);
+    if(idx <= 0) return;
+    const prev = byDay.get(days[idx - 1]);
+    const p = (prev.high + prev.low + prev.close) / 3;
+    const span = prev.high - prev.low;
+    level.p.push({time:b.time, value:p});
+    level.r1.push({time:b.time, value:2*p - prev.low});
+    level.s1.push({time:b.time, value:2*p - prev.high});
+    level.r2.push({time:b.time, value:p + span});
+    level.s2.push({time:b.time, value:p - span});
+  });
+  return level;
+}
+
+// ZigZag keeps only the swings that moved more than `dev` percent, so the
+// line reads the structure rather than every wiggle.
+function zigzag(bars, dev){
+  if(!bars.length) return [];
+  const out = [{time:bars[0].time, value:bars[0].close}];
+  let lastIdx = 0, dir = 0;
+  for(let i = 1; i < bars.length; i++){
+    const last = out[out.length - 1].value;
+    const change = (bars[i].close - last) / last * 100;
+    if(dir >= 0 && change <= -dev){ out.push({time:bars[i].time, value:bars[i].close}); dir = -1; lastIdx = i; }
+    else if(dir <= 0 && change >= dev){ out.push({time:bars[i].time, value:bars[i].close}); dir = 1; lastIdx = i; }
+    else if((dir > 0 && bars[i].close > last) || (dir < 0 && bars[i].close < last)){
+      out[out.length - 1] = {time:bars[i].time, value:bars[i].close};
+      lastIdx = i;
+    }
+  }
+  return out;
+}
+
+// Squeeze: Bollinger bands inside Keltner channels means volatility has
+// contracted, and the release is what traders position for.
+function squeeze(bars, period, bbMult, kcMult){
+  const bb = bollinger(bars, period, bbMult);
+  const kc = keltner(bars, period, period, kcMult);
+  const kcUp = new Map(kc.upper.map(p => [p.time, p.value]));
+  const kcDn = new Map(kc.lower.map(p => [p.time, p.value]));
+  const out = [];
+  bb.upper.forEach((p, i) => {
+    const up = kcUp.get(p.time), dn = kcDn.get(p.time);
+    if(up == null || dn == null) return;
+    const on = p.value < up && bb.lower[i].value > dn;
+    out.push({time:p.time, value: on ? 1 : 0});
+  });
+  return out;
+}
+
+// Regime helpers: each returns a 0/1 series that the registry paints as a
+// coloured strip, so the reader sees when a condition held rather than
+// reading a number and deciding for themselves.
+function regimeFromPair(bars, fast, slow){
+  const f = ema(bars, fast), s = ema(bars, slow);
+  const sAt = new Map(s.map(p => [p.time, p.value]));
+  return f.map(p => {
+    const sv = sAt.get(p.time);
+    return sv == null ? null : {time:p.time, value: p.value > sv ? 1 : 0};
+  }).filter(Boolean);
+}
+
+function drawdownSeries(bars){
+  let peak = -Infinity;
+  return bars.map(b => {
+    peak = Math.max(peak, b.close);
+    return {time:b.time, value: peak ? (b.close - peak) / peak * 100 : 0};
+  });
+}
+
+// Hurst exponent by rescaled range: above 0.5 the series trends, below it
+// mean-reverts. Estimated over one window rather than a full R/S regression,
+// which is enough to colour a regime strip.
+function hurst(bars, window){
+  const out = [];
+  for(let i = window; i < bars.length; i++){
+    const win = bars.slice(i - window, i).map(b => b.close);
+    const rets = [];
+    for(let j = 1; j < win.length; j++) rets.push(win[j] - win[j-1]);
+    const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+    let cum = 0, min = 0, max = 0;
+    rets.forEach(r => { cum += r - mean; min = Math.min(min, cum); max = Math.max(max, cum); });
+    const sd = stdev(rets);
+    const rs = sd ? (max - min) / sd : 0;
+    out.push({time:bars[i].time, value: rs > 0 ? Math.log(rs) / Math.log(rets.length) : 0.5});
+  }
+  return out;
+}
+
 /* ---------- indicator registry ----------
    One entry per indicator. `pane` 0 draws over the candles; anything else gets
    its own strip below. `build` returns the plotted lines, so adding an
@@ -775,6 +1199,148 @@ const INDICATORS = {
            build:(b, p) => [{data:mfi(b, p.period), color:"#06b6d4"}]},
   obv:    {name:"OBV", color:"#84cc16", pane:1, params:{},
            build:b => [{data:obv(b), color:"#84cc16"}]},
+
+  // --- moving averages and overlays ---
+  vwma:   {name:"VWMA", color:"#0ea5e9", pane:0, params:{period:20},
+           build:(b, p) => [{data:vwma(b, p.period), color:"#0ea5e9"}]},
+  emacross:{name:"EMA Cross", color:"#f59e0b", pane:0, params:{fast:9, slow:21},
+           build:(b, p) => [{data:ema(b, p.fast), color:"#3b82f6"},
+                            {data:ema(b, p.slow), color:"#f59e0b"}]},
+  psar:   {name:"Parabolic SAR", color:"#e11d48", pane:0, params:{step:0.02, max:0.2},
+           build:(b, p) => [{data:psar(b, p.step, p.max), color:"#e11d48", dots:true}]},
+  alligator:{name:"Alligator", color:"#22c55e", pane:0, params:{},
+           build:b => {
+             const r = alligator(b);
+             return [{data:r.jaw, color:"#3b82f6"},
+                     {data:r.teeth, color:"#ef4444"},
+                     {data:r.lips, color:"#22c55e"}];
+           }},
+  keltner:{name:"Keltner", color:"#94a3b8", pane:0, params:{period:20, atrPeriod:10, mult:2},
+           build:(b, p) => {
+             const r = keltner(b, p.period, p.atrPeriod, p.mult);
+             return [{data:r.upper, color:"#94a3b8"},
+                     {data:r.mid, color:"#64748b", dashed:true},
+                     {data:r.lower, color:"#94a3b8"}];
+           }},
+  donchian:{name:"Donchian", color:"#a3a3a3", pane:0, params:{period:20},
+           build:(b, p) => {
+             const r = donchian(b, p.period);
+             return [{data:r.upper, color:"#a3a3a3"},
+                     {data:r.mid, color:"#737373", dashed:true},
+                     {data:r.lower, color:"#a3a3a3"}];
+           }},
+  envelope:{name:"Envelope", color:"#c084fc", pane:0, params:{period:20, pct:2.5},
+           build:(b, p) => {
+             const r = envelope(b, p.period, p.pct);
+             return [{data:r.upper, color:"#c084fc"},
+                     {data:r.mid, color:"#a855f7", dashed:true},
+                     {data:r.lower, color:"#c084fc"}];
+           }},
+  linregchan:{name:"Kênh hồi quy", color:"#22d3ee", pane:0, params:{period:100},
+           build:(b, p) => {
+             const win = b.slice(-Math.min(p.period, b.length));
+             if(win.length < 3) return [];
+             let sx=0, sy=0, sxy=0, sxx=0;
+             win.forEach((bar, i) => { sx+=i; sy+=bar.close; sxy+=i*bar.close; sxx+=i*i; });
+             const n = win.length, den = n*sxx - sx*sx;
+             if(!den) return [];
+             const slope = (n*sxy - sx*sy)/den, icpt = (sy - slope*sx)/n;
+             const resid = win.map((bar, i) => bar.close - (icpt + slope*i));
+             const sd = Math.sqrt(resid.reduce((a, r) => a + r*r, 0)/n);
+             const mk = off => win.map((bar, i) => ({time:bar.time, value:icpt + slope*i + off}));
+             return [{data:mk(0), color:"#22d3ee"},
+                     {data:mk(sd), color:"#22d3ee", dashed:true},
+                     {data:mk(-sd), color:"#22d3ee", dashed:true}];
+           }},
+  chandelier:{name:"Chandelier Exit", color:"#fb923c", pane:0, params:{period:22, mult:3},
+           build:(b, p) => [{data:chandelier(b, p.period, p.mult), color:"#fb923c"}]},
+  pivotpoints:{name:"Pivot Points", color:"#eab308", pane:0, params:{},
+           build:b => {
+             const r = pivotPoints(b);
+             return [{data:r.p, color:"#eab308"},
+                     {data:r.r1, color:"#ef5350", dashed:true},
+                     {data:r.s1, color:"#26a69a", dashed:true},
+                     {data:r.r2, color:"#ef5350", dashed:true},
+                     {data:r.s2, color:"#26a69a", dashed:true}];
+           }},
+  zigzag: {name:"ZigZag", color:"#f472b6", pane:0, params:{dev:5},
+           build:(b, p) => [{data:zigzag(b, p.dev), color:"#f472b6", width:2}]},
+  pivot:  {name:"Pivot cao/thấp", color:"#facc15", pane:0, params:{left:5, right:5},
+           build:(b, p) => {
+             const r = pivots(b, p.left, p.right);
+             return [{data:r.highs, color:"#ef5350", dots:true},
+                     {data:r.lows, color:"#26a69a", dots:true}];
+           }},
+
+  // --- oscillators ---
+  willr:  {name:"Williams %R", color:"#c084fc", pane:1, range:[-100, 0], guides:[-80, -20],
+           params:{period:14},
+           build:(b, p) => [{data:williamsR(b, p.period), color:"#c084fc"}]},
+  roc:    {name:"ROC", color:"#38bdf8", pane:1, guides:[0], params:{period:9},
+           build:(b, p) => [{data:roc(b, p.period), color:"#38bdf8"}]},
+  momentum:{name:"Momentum", color:"#818cf8", pane:1, guides:[0], params:{period:10},
+           build:(b, p) => [{data:momentum(b, p.period), color:"#818cf8"}]},
+  trix:   {name:"TRIX", color:"#fb7185", pane:1, guides:[0], params:{period:15},
+           build:(b, p) => [{data:trix(b, p.period), color:"#fb7185"}]},
+  tsi:    {name:"TSI", color:"#2dd4bf", pane:1, guides:[0], params:{long:25, short:13},
+           build:(b, p) => [{data:tsi(b, p.long, p.short), color:"#2dd4bf"}]},
+  ultimate:{name:"Ultimate Osc", color:"#a78bfa", pane:1, range:[0,100], guides:[30,70],
+           params:{fast:7, mid:14, slow:28},
+           build:(b, p) => [{data:ultimate(b, p.fast, p.mid, p.slow), color:"#a78bfa"}]},
+  ao:     {name:"Awesome Osc", color:"#64748b", pane:1, guides:[0], params:{fast:5, slow:34},
+           build:(b, p) => [{data:awesome(b, p.fast, p.slow), color:"#64748b", histogram:true}]},
+  aroon:  {name:"Aroon", color:"#26a69a", pane:1, range:[0,100], guides:[30,70],
+           params:{period:14},
+           build:(b, p) => {
+             const r = aroon(b, p.period);
+             return [{data:r.up, color:"#26a69a"}, {data:r.down, color:"#ef5350"}];
+           }},
+  vortex: {name:"Vortex", color:"#26a69a", pane:1, guides:[1], params:{period:14},
+           build:(b, p) => {
+             const r = vortex(b, p.period);
+             return [{data:r.plus, color:"#26a69a"}, {data:r.minus, color:"#ef5350"}];
+           }},
+  elderray:{name:"Elder Ray", color:"#26a69a", pane:1, guides:[0], params:{period:13},
+           build:(b, p) => {
+             const r = elderRay(b, p.period);
+             return [{data:r.bull, color:"#26a69a", histogram:true},
+                     {data:r.bear, color:"#ef5350", histogram:true}];
+           }},
+  cmf:    {name:"CMF", color:"#0ea5e9", pane:1, guides:[0], params:{period:20},
+           build:(b, p) => [{data:chaikinMF(b, p.period), color:"#0ea5e9"}]},
+  ad:     {name:"A/D Line", color:"#84cc16", pane:1, params:{},
+           build:b => [{data:accumDist(b), color:"#84cc16"}]},
+  hv:     {name:"Biến động lịch sử", color:"#f97316", pane:1, params:{period:20},
+           build:(b, p) => [{data:historicalVol(b, p.period), color:"#f97316"}]},
+  rangevol:{name:"Phân vị biên độ", color:"#eab308", pane:1, range:[0,100], guides:[20,80],
+           params:{period:20, history:200},
+           build:(b, p) => [{data:rangePercentile(b, p.period, p.history), color:"#eab308"}]},
+  compression:{name:"Nén biên độ", color:"#a855f7", pane:1, range:[0,100], guides:[20],
+           params:{period:20, history:200},
+           build:(b, p) => [{data:rangePercentile(b, p.period, p.history), color:"#a855f7"}]},
+  volume: {name:"Khối lượng + MA", color:"#64748b", pane:1, params:{maPeriod:20},
+           build:(b, p) => [
+             {data:b.map(x => ({time:x.time, value:x.volume || 0})), color:"#64748b", histogram:true},
+             {data:sma(b.map(x => ({time:x.time, close:x.volume || 0})), p.maPeriod), color:"#f59e0b"},
+           ]},
+
+  // --- regime strips: 0/1 conditions, drawn as a band ---
+  squeeze:{name:"TTM Squeeze", color:"#f43f5e", pane:1, range:[0,1],
+           params:{period:20, bbMult:2, kcMult:1.5},
+           build:(b, p) => [{data:squeeze(b, p.period, p.bbMult, p.kcMult),
+                             color:"#f43f5e", histogram:true}]},
+  trenddet:{name:"Chế độ xu hướng", color:"#26a69a", pane:1, range:[0,1],
+           params:{fast:20, slow:50},
+           build:(b, p) => [{data:regimeFromPair(b, p.fast, p.slow), color:"#26a69a", histogram:true}]},
+  bullbear:{name:"Tăng / Giảm", color:"#26a69a", pane:1, range:[0,1],
+           params:{fast:50, slow:200},
+           build:(b, p) => [{data:regimeFromPair(b, p.fast, p.slow), color:"#26a69a", histogram:true}]},
+  drawdownreg:{name:"Sụt giảm từ đỉnh", color:"#ef5350", pane:1, guides:[-10, -20],
+           params:{},
+           build:b => [{data:drawdownSeries(b), color:"#ef5350"}]},
+  hurstreg:{name:"Hurst", color:"#8b5cf6", pane:1, range:[0,1], guides:[0.5],
+           params:{window:100},
+           build:(b, p) => [{data:hurst(b, p.window), color:"#8b5cf6"}]},
 };
 const INDICATOR_KEYS = Object.keys(INDICATORS);
 
@@ -901,7 +1467,14 @@ function buildIndicator(inst, bars){
       : chart.addSeries(LightweightCharts.LineSeries, Object.assign({
           color: slot === 0 && inst.color ? inst.color : plot.color,
           lineWidth: plot.width || 1,
-          lineStyle: plot.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+          // Parabolic SAR and pivots are point series, not curves: joining
+          // them would draw a line through gaps that carry no meaning.
+          lineStyle: plot.dots
+            ? LightweightCharts.LineStyle.Dotted
+            : plot.dashed ? LightweightCharts.LineStyle.Dashed
+                          : LightweightCharts.LineStyle.Solid,
+          pointMarkersVisible: !!plot.dots,
+          lineVisible: !plot.dots,
         }, common), paneIndex);
     s.setData(plot.data);
     return s;
