@@ -1,0 +1,13 @@
+{
+  "name": "LEON Hub — Market Research",
+  "short_name": "LEON",
+  "description": "Chart, market structure, analysis, training, quant and personal finance tools.",
+  "start_url": "./hub/?tab=chart",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#151b23",
+  "icons": [
+    {"src": "./assets/leon-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

@@ -6,6 +6,8 @@
 <meta name="color-scheme" content="dark light">
 <title>LEON Hub — Đầu tư, Trading, Bất động sản</title>
 <meta name="description" content="Tổng hợp dữ liệu đầu tư: chứng khoán Việt Nam, crypto, bất động sản, dòng tiền vĩ mô. Số liệu từ nguồn công khai, ghi rõ nguồn và thời điểm.">
+<meta name="theme-color" content="#151b23">
+<link rel="manifest" href="../manifest.webmanifest">
 
 <!-- Theme before first paint, so a dark-mode reader never sees a white flash. -->
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
@@ -17,7 +19,7 @@
   --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
   --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f; --accent-dim:#1e7a5e;
   --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
-  --tab-h:52px;
+  --top-h:44px; --tab-h:47px;
 }
 :root[data-theme="light"]{
   --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
@@ -32,9 +34,9 @@ body{
   display:flex; flex-direction:column; overflow:hidden;
 }
 
-/* ---- Tab bar ---- */
+/* ---- Hub chrome ---- */
 header{
-  height:var(--tab-h); flex:0 0 auto; display:flex; align-items:center;
+  height:var(--top-h); flex:0 0 auto; display:flex; align-items:center;
   gap:2px; padding:0 8px; background:var(--panel); border-bottom:1px solid var(--line);
 }
 .brand{
@@ -42,12 +44,12 @@ header{
   padding:0 12px 0 4px; letter-spacing:-.2px; white-space:nowrap;
 }
 .brand svg{flex:0 0 auto}
-nav{display:flex; gap:2px; overflow-x:auto; flex:1; scrollbar-width:none}
+nav{height:var(--tab-h);display:flex;gap:2px;overflow-x:auto;flex:1;scrollbar-width:none;justify-content:space-around;align-items:center}
 nav::-webkit-scrollbar{display:none}
 .tab{
   appearance:none; border:0; background:transparent; color:var(--muted);
-  font:inherit; font-size:13.5px; padding:7px 13px; border-radius:7px;
-  cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:6px;
+  font:inherit; font-size:12px; padding:6px 12px; border-radius:7px;
+  cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:5px;justify-content:center;min-width:90px;
 }
 .tab:hover{background:var(--panel-2); color:var(--text)}
 .tab[aria-selected="true"]{background:var(--accent-dim); color:#fff; font-weight:600}
@@ -59,6 +61,10 @@ nav::-webkit-scrollbar{display:none}
   font-size:14px; flex:0 0 auto; display:grid; place-items:center;
 }
 .icon-btn:hover{color:var(--text)}
+.current{font-size:12px;color:var(--muted);padding-left:8px;border-left:1px solid var(--line)}
+.bottom{height:var(--tab-h);flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line);display:flex;padding:0 6px;position:relative;z-index:20}
+.more-menu{position:fixed;right:8px;bottom:calc(var(--tab-h) + 7px);z-index:30;width:260px;padding:7px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 45px #0008;display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.more-menu[hidden]{display:none}.more-menu button{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:7px;padding:9px;text-align:left;cursor:pointer}.more-menu button:hover,.more-menu button.on{background:var(--panel-2);color:var(--text);border-color:var(--line)}
 
 /* ---- Panel area ---- */
 main{flex:1; position:relative; min-height:0}
@@ -89,11 +95,14 @@ main{flex:1; position:relative; min-height:0}
     </svg>
     LEON
   </span>
-  <nav id="tabs" role="tablist" aria-label="Khu vực"></nav>
+  <span class="current" id="current">Chart</span>
+  <span style="flex:1"></span>
   <button class="icon-btn" id="theme" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện">◐</button>
 </header>
 
 <main id="panes"></main>
+<footer class="bottom"><nav id="tabs" role="tablist" aria-label="Khu vực"></nav></footer>
+<div class="more-menu" id="moreMenu" hidden></div>
 
 <script>
 "use strict";
@@ -101,25 +110,33 @@ main{flex:1; position:relative; min-height:0}
 /* Each tab is an independent page. Keeping them as separate documents means a
    broken app never takes the hub down with it, and each can be deployed alone. */
 const TABS = [
-  { key:"brief",   name:"Tổng quan", icon:"◈", src:"../apps/brief/" },
-  { key:"chart",   name:"Chart",     icon:"◱", src:"../apps/chart/" },
-  { key:"stocks",  name:"Cổ phiếu",  icon:"▦", src:"../apps/stocks/" },
-  { key:"bds",     name:"Bất động sản", icon:"⌂", src:"../apps/bds/" },
-  { key:"signals", name:"Tín hiệu",  icon:"◭", src:"../apps/signals/" },
-  { key:"gex",     name:"Gamma",     icon:"◎", src:"../apps/gex/" },
-  { key:"flows",   name:"Dòng tiền", icon:"⇄", src:"../apps/flows/" },
+  { key:"chart",   name:"Chart", icon:"⌁", src:"../apps/chart/", primary:true },
+  { key:"signals", name:"Signal", icon:"◉", src:"../apps/signals/", primary:true },
+  { key:"gex", name:"Market Structure", icon:"▥", src:"../apps/gex/", primary:true },
+  { key:"stocks", name:"Phân tích", icon:"▦", src:"../apps/stocks/", primary:true },
   // Served from here rather than framed from leonquant.com, so it inherits the
   // hub's theme and survives that domain being unreachable. Its feeds are still
   // fetched from there -- see the note in apps/news/index.html.
-  { key:"news",    name:"Tin tức",   icon:"❏", src:"../apps/news/" },
+  { key:"news", name:"News", icon:"▤", src:"../apps/news/", primary:true },
+  { key:"training", name:"Training", icon:"▷", src:"../apps/training/", primary:true },
+  { key:"quant", name:"Quant", icon:"⚗", src:"../apps/quant/", primary:true },
+  { key:"brief", name:"Tổng quan", icon:"◈", src:"../apps/brief/" },
+  { key:"bds", name:"Bất động sản", icon:"⌂", src:"../apps/bds/" },
+  { key:"positioning", name:"Positioning", icon:"🎯", src:"../apps/positioning/" },
+  { key:"flows", name:"Dòng tiền ETF", icon:"⇄", src:"../apps/flows/" },
+  { key:"us", name:"Cổ phiếu Mỹ", icon:"🇺🇸", src:"../apps/us/" },
+  { key:"wealth", name:"Tài chính", icon:"🌿", src:"../apps/wealth/" },
+  { key:"wiki", name:"Wiki", icon:"▣", src:"../apps/wiki/" },
+  { key:"blog", name:"Blog", icon:"✎", src:"../apps/blog/" },
   // Child route: reachable from the screener/deep links, intentionally absent
   // from the primary tab bar so 1,751 ticker pages do not become a ninth silo.
   { key:"ticker",  name:"Chi tiết mã", icon:"", src:"../apps/ticker/", hidden:true },
 ];
-const DEFAULT_TAB = "brief";
+const DEFAULT_TAB = "chart";
 
 const tabBar = document.getElementById("tabs");
 const paneHost = document.getElementById("panes");
+const moreMenu = document.getElementById("moreMenu");
 const loaded = new Set();
 
 function currentTab(){
@@ -140,7 +157,7 @@ function childSrc(tab){
 
 function build(){
   TABS.forEach(tab => {
-    if(!tab.hidden){
+    if(!tab.hidden && tab.primary){
       const btn = document.createElement("button");
       btn.className = "tab";
       btn.type = "button";
@@ -161,6 +178,18 @@ function build(){
     frame.loading = "lazy";
     paneHost.appendChild(frame);
   });
+  const more = document.createElement("button");
+  more.className = "tab"; more.type = "button"; more.id = "tab-more";
+  more.innerHTML = '<span aria-hidden="true">•••</span>Khác';
+  more.onclick = e => { moreMenu.hidden = !moreMenu.hidden; e.stopPropagation(); };
+  tabBar.appendChild(more);
+  TABS.filter(t => !t.hidden && !t.primary).forEach(tab => {
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.dataset.key = tab.key;
+    btn.innerHTML = `${tab.icon} ${tab.name}`;
+    btn.onclick = () => { select(tab.key, true); moreMenu.hidden = true; };
+    moreMenu.appendChild(btn);
+  });
 }
 
 function select(key, pushState){
@@ -176,6 +205,9 @@ function select(key, pushState){
     }
     pane.hidden = !active;
   });
+  const inMore = !tab.primary && !tab.hidden;
+  document.getElementById("tab-more").setAttribute("aria-selected", String(inMore));
+  moreMenu.querySelectorAll("button").forEach(button => button.classList.toggle("on", button.dataset.key === tab.key));
 
   // Load on first view, then leave it mounted so switching back is instant.
   if(!loaded.has(tab.key)){
@@ -184,6 +216,7 @@ function select(key, pushState){
   }
 
   document.title = `${tab.name} — LEON Hub`;
+  document.getElementById("current").textContent = tab.name;
 
   if(pushState){
     const params = new URLSearchParams(location.search);
@@ -200,7 +233,7 @@ document.getElementById("theme").addEventListener("click", () => {
 
 tabBar.addEventListener("keydown", e => {
   if(e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-  const keys = TABS.filter(t => !t.hidden).map(t => t.key);
+  const keys = TABS.filter(t => !t.hidden && t.primary).map(t => t.key);
   const at = Math.max(0, keys.indexOf(currentTab()));
   const next = keys[(at + (e.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length];
   select(next, true);
@@ -209,9 +242,19 @@ tabBar.addEventListener("keydown", e => {
 });
 
 addEventListener("popstate", () => select(currentTab(), false));
+document.addEventListener("click", e => { if(!moreMenu.contains(e.target) && e.target.id !== "tab-more") moreMenu.hidden = true; });
 
 build();
 select(currentTab(), false);
+/* The worker file sits at the site root, but registering it from /hub/ would
+   default its scope to /hub/ -- leaving the tab iframes under /apps/ and the
+   manifest's declared "./" scope uncontrolled. Ask for the root scope
+   explicitly; the root-level file is what makes that request legal. */
+if("serviceWorker" in navigator && location.protocol !== "file:"){
+  const root = new URL("../", location.href);
+  navigator.serviceWorker.register(new URL("sw.js", root), {scope: root.pathname})
+    .catch(() => {});
+}
 </script>
 </body>
 </html>

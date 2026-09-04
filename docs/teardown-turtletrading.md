@@ -109,10 +109,46 @@ not replace a company dossier.
 The current warehouse already contains enough data to add quarterly ratio
 charts and peer percentiles without a new vendor: 1,443,259 fundamental rows,
 1,722 symbols, 42 periods and 83 distinct metrics overall. VIC has 41 periods
-and 28 ratio metrics from 2018-Q1 through 2026-Q2. However, the VIC metrics are
-ratios rather than statement values. Revenue, net income, EPS, free cash flow,
-shares outstanding, company narrative, management, ownership and subsidiary
-data are absent and need dedicated ingestion.
+and 28 ratio metrics from 2018-Q1 through 2026-Q2.
+
+**Re-audited 2026-09-04, after `vci_company` and `ticker_details_build` landed.**
+The dossier gap above is closed and this paragraph's earlier claim that
+narrative, ownership and subsidiary data were absent no longer holds.
+`data/ticker/*.json` publishes 1,719 dossiers, and `apps/ticker/` renders
+fourteen sections against them. Measured coverage:
+
+| Section | Coverage | Note |
+|---|---|---|
+| `m` ratio history | 1,719 (100%) | 29 metrics, quarterly and annual |
+| `co` company profile | 1,719 (100%) | narrative, listing date, state/foreign ownership, Vietcap rating and target |
+| `events` | 1,718 (99.9%) | median 30 per ticker |
+| `owners` | 1,716 (99.8%) | median 14 holders |
+| `st` statement lines | 1,697 (98.7%) | 22 distinct lines; 16 of them at 96%+ |
+| `rel` subsidiaries | 895 (52.1%) | genuinely sparse: most tickers have none |
+
+Statement values — revenue (`isa3`), net income (`isa20`), inventory (`bsa15`),
+operating cash flow (`cfa18`) — are published as quarterly and annual series,
+not merely as ratios. `eq_statement` holds 10.1M rows.
+
+What remains genuinely absent, and why:
+
+- **No intrinsic value is printed anywhere, by design.** `valuationGuard()` in
+  `apps/ticker/` names the model the industry requires (DCF, Residual Income
+  for financials, NAV/SOTP for real estate), states which inputs the warehouse
+  lacks, and refuses to emit a number. This is the deliberate response to the
+  reference's DCF returning 2,803 VND against a market price of 256,100.
+- **Order-book levels 2 and 3 are rendered but never populated.** The full path
+  supports them — `ssi_board.py` requests `best1..3`, `DEPTH_KEYS` maps all
+  three — but `metric_ts` holds level 1 only, because `--with-depth` has not
+  been run since the level-1-only pass. `orderBook()` loops `[1,2,3]` and the
+  last two rows come out blank on every ticker.
+- **`f5` and `f20` are absent from `stocks.json`** for every row. Correct
+  behaviour, not a defect: foreign flow exists for exactly one session so far,
+  and the horizon is withheld until that many real observations exist. `f1` is
+  present for 341 rows (19%).
+- **`eq_quote` starts 2025-08-11**, ~13 months. The "Diễn biến giá 5 năm" panel
+  is honest because it fetches VPS live in the browser rather than reading the
+  warehouse; nothing server-side can yet answer a five-year question.
 
 The reference's extra surface area also exposes correctness risks. The captured
 VIC page showed current price 256,100 while its displayed high was 236,000. Its

@@ -39,6 +39,12 @@ session's close where DNSE lagged a day and disagreed on the prior one.
 **SSI iBoard pins CORS to `iboard.ssi.com.vn`** and refuses three exchange calls
 made back to back. Pipeline-side only, with a few seconds between calls.
 
+**Yahoo Finance's chart endpoint has no CORS header.** US OHLCV is collected
+pipeline-side into `data/us.json`; browser code must not call the endpoint
+directly. The endpoint is a delayed chart feed, not a licensed fundamental
+database: label it as delayed OHLCV, publish the timestamp, and never infer
+P/E, earnings or a fair value from fields it does not return.
+
 **vnstock rate-limits far below what it advertises and signals the breach by
 raising `SystemExit`.** Measured unauthenticated: cut off after ~12 `ratio()`
 calls even paced at 9/minute. `SystemExit` derives from `BaseException`, so
@@ -118,6 +124,16 @@ action.
 to zero before a 5/20-day sum: it makes one real observation appear to be 20
 days of unchanged flow. `stocks_build.py` publishes a horizon only after that
 ticker has the corresponding number of actual foreign-flow observations.
+
+**SSI iBoard keeps only level 1 after the close.** The daily job runs at ~15:03
+ICT, eighteen minutes after the 14:45 session end, and at that point
+`best2Bid`/`best3Bid` and their offer counterparts come back null for every
+ticker -- only the final level-1 quote survives. The collector already requests
+all three levels and `DEPTH_KEYS` maps all three, so nothing is dropped in code:
+the warehouse simply has one level because that is what the source served. A
+page that renders levels 2-3 unconditionally will show two blank rows on every
+ticker. Either run the depth pass inside the session or render only the levels
+present.
 
 **SSI reports negative foreign room** where ownership already exceeds the cap.
 Real, but it means "no room and over the limit", not a negative percentage.

@@ -3118,7 +3118,15 @@ function watchDrawingTransform(){
     logicalRange && q(logicalRange.from), logicalRange && q(logicalRange.to),
     paneHeight,
   ].join("|");
-  if(drawTransformSignature && signature !== drawTransformSignature) scheduleDraw();
+  // Repaint inside this same frame rather than queueing another one. The poll
+  // already runs after the chart has applied its new transform, so deferring to
+  // the next rAF leaves the overlay one frame behind for the whole drag -- the
+  // visible symptom being drawings that trail the candles while the price axis
+  // is dragged, then snap into place when it stops.
+  if(drawTransformSignature && signature !== drawTransformSignature){
+    if(drawFrame){ cancelAnimationFrame(drawFrame); drawFrame = 0; }
+    redraw();
+  }
   drawTransformSignature = signature;
   if(!drawTransformFrame) drawTransformFrame = requestAnimationFrame(watchDrawingTransform);
 }

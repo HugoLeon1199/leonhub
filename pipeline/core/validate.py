@@ -32,6 +32,10 @@ MAX_ROW_DROP = 0.05
 BDS_PRICE_RANGE = (1.0, 3000.0)
 # A published district cell must rest on at least this many listings.
 BDS_MIN_SAMPLES = 20
+# A US row must carry enough sessions to draw the one-year chart and compute a
+# 126-session momentum. The collector publishes a 260-session trailing window;
+# a short holiday year still clears this floor.
+US_MIN_SESSIONS = 200
 # Equity prices in VND. A stock at 5 VND or 5 million VND is a parsing error.
 EQUITY_PRICE_RANGE = (100.0, 5_000_000.0)
 # Ratios published as percent; outside this band the fraction/percent
@@ -168,6 +172,45 @@ def validate_bds(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | No
                 f"({len(previous)} → {len(rows)})"
             )
 
+    return rep
+
+
+def validate_us(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | None) -> Report:
+    """Guard the curated delayed-US snapshot and its one-year chart series."""
+    rep = Report()
+    if not isinstance(rows, list) or len(rows) < 30:
+        rep.error(f"US snapshot has only {len(rows) if isinstance(rows, list) else 0} rows")
+        return rep
+    symbols = [row.get("s") for row in rows]
+    if len(set(symbols)) != len(symbols) or any(not symbol for symbol in symbols):
+        rep.error("US snapshot contains a missing or duplicate symbol")
+    malformed = []
+    stale_close = []
+    for row in rows:
+        history = row.get("hist")
+        if not isinstance(history, list) or len(history) < US_MIN_SESSIONS:
+            malformed.append(row.get("s"))
+            continue
+        if any(not isinstance(point, list) or len(point) != 2 for point in history):
+            malformed.append(row.get("s"))
+            continue
+        dates = [point[0] for point in history]
+        if dates != sorted(dates) or len(set(dates)) != len(dates):
+            malformed.append(row.get("s"))
+        price = row.get("p")
+        if not isinstance(price, (int, float)) or price <= 0:
+            malformed.append(row.get("s"))
+        elif history[-1][1] and abs(price / history[-1][1] - 1) > 0.10:
+            stale_close.append(row.get("s"))
+    if malformed:
+        rep.error(f"{len(malformed)} US rows have malformed price/history (first: {malformed[0]})")
+    if stale_close:
+        rep.warn(f"{len(stale_close)} US quotes differ >10% from last daily close")
+    if previous:
+        drop = 1 - len(rows) / len(previous)
+        if drop > MAX_ROW_DROP:
+            rep.error(f"US coverage fell {drop:.1%} ({len(previous)} → {len(rows)})")
+    rep.stats.update(rows=len(rows), histories=sum(bool(r.get("hist")) for r in rows))
     return rep
 
 
@@ -403,6 +446,7 @@ def validate_ticker_manifest(payload: dict[str, Any], previous: dict[str, Any] |
 VALIDATORS = {
     "stocks.json": validate_stocks,
     "bds.json": validate_bds,
+    "us.json": validate_us,
     "flows.json": validate_flows,
     "signals.json": validate_signals,
     "news_ticker.json": validate_news,
