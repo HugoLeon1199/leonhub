@@ -154,6 +154,12 @@ footer b{color:var(--text); font-weight:600}
 
 const TIMEFRAMES = ["5m","15m","1h","4h","1d"];
 const LIMIT = 500;
+// How many bars may accumulate once older pages are pulled in. Separate from
+// LIMIT on purpose: LIMIT is the size of one fetch, this is the ceiling on the
+// series. Trimming the series back to LIMIT after a websocket tick -- which is
+// what used to happen -- threw away every page the reader had just scrolled
+// back to load.
+const MAX_BARS = 5000;
 const COIN_CACHE_KEY = "leon_binance_coins_v1";
 const COIN_CACHE_MS = 24 * 60 * 60 * 1000;
 const FALLBACK_COINS = [
@@ -292,8 +298,11 @@ function applyMA(bars){
    browser succeeds. Hyperliquid is the fallback and needs no key either. */
 const HL_INTERVAL = {"5m":"5m","15m":"15m","1h":"1h","4h":"4h","1d":"1d"};
 
-async function fromBinance(sym, tf){
-  const url = `https://api.binance.com/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=${LIMIT}`;
+// endTime pages backwards: Binance returns the LIMIT bars ending there, which
+// is how scrolling left keeps finding more history instead of running out.
+async function fromBinance(sym, tf, endTime){
+  const url = `https://api.binance.com/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=${LIMIT}`
+    + (endTime ? `&endTime=${endTime}` : "");
   const res = await fetch(url);
   if(!res.ok) throw new Error("binance " + res.status);
   const rows = await res.json();
@@ -303,8 +312,8 @@ async function fromBinance(sym, tf){
   }));
 }
 
-async function fromHyperliquid(sym, tf){
-  const end = Date.now();
+async function fromHyperliquid(sym, tf, endTime){
+  const end = endTime || Date.now();
   const spanMs = {"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440}[tf] * 60000 * LIMIT;
   const res = await fetch("https://api.hyperliquid.xyz/info", {
     method:"POST",
@@ -417,6 +426,13 @@ let currentBars = [];
 // fitContent() is for a chart the reader has not framed yet. Calling it on
 // every refresh (as this used to) threw away their zoom and pan once a minute.
 let needsFit = true;
+// Which feed answered last, and how far back the series currently reaches.
+// Paging older bars needs both: the same source that served the first page,
+// and the timestamp to page backwards from.
+let currentSource = "Binance";
+let oldestTime = null;
+let loadingHistory = false;
+let historyExhausted = false;
 
 function volumeBar(b){
   return {
@@ -487,7 +503,7 @@ function openStream(sym, tf, token){
     const last = currentBars[currentBars.length - 1];
     if(last && last.time === bar.time) currentBars[currentBars.length - 1] = bar;
     else currentBars.push(bar);
-    if(currentBars.length > LIMIT) currentBars.splice(0, currentBars.length - LIMIT);
+    if(currentBars.length > MAX_BARS) currentBars.splice(0, currentBars.length - MAX_BARS);
 
     if(showMA){
       const m20 = sma(currentBars, 20), m50 = sma(currentBars, 50);
@@ -541,6 +557,12 @@ async function load(){
   if(token !== inflight) return;
 
   currentBars = bars;
+  currentSource = source;
+  oldestTime = bars.length ? bars[0].time : null;
+  // A refresh of the same symbol re-fetches only the newest page, so any older
+  // pages are gone and the reader may page back through them again.
+  historyExhausted = false;
+  loadingHistory = false;
   candles.setData(bars);
   volume.setData(bars.map(volumeBar));
   applyMA(bars);
@@ -1056,7 +1078,53 @@ el.drawing.addEventListener("keydown", e => {
   }
 });
 
+/* ---------- paging older history ----------
+   The first fetch is the most recent LIMIT bars, which on the 5m chart is under
+   two days. Scrolling left used to simply run out. Now nearing the left edge
+   pulls the previous page and prepends it, so the reader can keep going back
+   until the exchange has nothing older. */
+async function loadOlderHistory(){
+  if(loadingHistory || historyExhausted || oldestTime == null) return;
+  if(!currentBars.length) return;
+  loadingHistory = true;
+  const token = inflight;
+  try{
+    // endTime is inclusive, so step back one second to avoid refetching the
+    // bar already held at the left edge.
+    const endMs = (oldestTime - 1) * 1000;
+    const older = currentSource === "Hyperliquid"
+      ? await fromHyperliquid(symbol, timeframe, endMs)
+      : await fromBinance(symbol, timeframe, endMs);
+
+    if(token !== inflight) return;          // symbol or timeframe changed mid-flight
+    const fresh = older.filter(b => b.time < oldestTime);
+    if(!fresh.length){ historyExhausted = true; return; }
+
+    currentBars = fresh.concat(currentBars);
+    if(currentBars.length > MAX_BARS) currentBars = currentBars.slice(-MAX_BARS);
+    oldestTime = currentBars[0].time;
+
+    // setData, not update: prepending rewrites the start of the series, and
+    // the viewport stays where the reader put it because no fitContent runs.
+    candles.setData(currentBars);
+    volume.setData(currentBars.map(volumeBar));
+    applyMA(currentBars);
+    scheduleDraw();
+  }catch(e){
+    // A failed page is not fatal; the reader keeps the bars already loaded.
+    historyExhausted = true;
+  }finally{
+    loadingHistory = false;
+  }
+}
+
 chart.timeScale().subscribeVisibleTimeRangeChange(scheduleDraw);
+chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+  // `from` counts bars from the left edge of the data, going negative once the
+  // viewport scrolls past it. Ten bars of slack starts the fetch before the
+  // reader reaches actual blank space.
+  if(range && range.from < 10) loadOlderHistory();
+});
 new ResizeObserver(scheduleDraw).observe(el.drawing.parentElement);
 
 /* ---------- controls ---------- */
