@@ -1343,7 +1343,20 @@ const TOOLS = {
           color:"#f472b6", labels:["LS","","H","","RS"]},
   long:  {need:2, label:"⊞",  title:"Vị thế mua — kéo TP/SL", color:"#26a69a"},
   short: {need:2, label:"⊟",  title:"Vị thế bán — kéo TP/SL", color:"#ef5350"},
+  arrow: {need:2, label:"↗",  title:"Mũi tên — 2 điểm", color:"#f59e0b"},
+  crossline:{need:1, label:"✛", title:"Đường chữ thập — 1 điểm", color:"#64748b"},
+  infoline:{need:2, label:"ⓘ", title:"Đo chi tiết — góc, Δgiá, Δ%, số nến", color:"#ff9800"},
+  callout:{need:2, label:"💬", title:"Chú thích có đường dẫn — 2 điểm", color:"#22d3ee"},
+  brush: {need:0, label:"✎",  title:"Vẽ tay — giữ chuột và kéo", color:"#ffeb3b"},
+  avwap: {need:1, label:"aV", title:"VWAP neo — 1 điểm, tính tới hiện tại", color:"#06b6d4"},
+  vprofile:{need:2, label:"▥", title:"Volume Profile vùng chọn — 2 điểm", color:"#ff9800"},
+  gannbox:{need:2, label:"⊠", title:"Gann Box — 2 điểm, lưới fib + chéo", color:"#f59e0b"},
+  fibchannel:{need:3, label:"Fib║", title:"Fibonacci Channel — 3 điểm", color:"#9c27b0"},
 };
+// mark carries a direction; arrowdown is the same tool aimed the other way,
+// chosen from the price at the click rather than from a separate button.
+const GANN_BOX_LEVELS = [0.25, 0.382, 0.5, 0.618, 0.75];
+const FIB_CHANNEL_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
 // Ratios a harmonic leg is allowed to land on, and the tolerance that counts
 // as "landed". Straight from the standard pattern definitions.
@@ -1364,6 +1377,7 @@ let pendingPoint = null;
 let pendingPoints = [];   // tools that take three points collect them here
 let previewPoint = null;
 let dragging = null;
+let brushing = null;      // freehand stroke in progress
 let drawFrame = 0;
 let magnetEnabled = false;
 try{ magnetEnabled = localStorage.getItem("leon_chart_magnet") === "1"; }catch(e){}
@@ -1389,6 +1403,9 @@ function shapeOk(d){
   const tool = d && TOOLS[d.type];
   if(!tool) return false;
   const pts = shapePoints(d);
+  // A freehand stroke has no fixed vertex count, but two points is the
+  // minimum that draws as a line rather than a dot.
+  if(tool.need === 0) return pts.length >= 2 && pts.every(validPoint);
   if(pts.length < tool.need) return false;
   return pts.every(validPoint);
 }
@@ -1754,6 +1771,203 @@ const POLY_PAINT = {
     }
   },
 
+  arrow(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    line(ctx, A.x, A.y, B.x, B.y);
+    const ang = Math.atan2(B.y - A.y, B.x - A.x), head = 10;
+    ctx.save(); ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(B.x, B.y);
+    ctx.lineTo(B.x - head * Math.cos(ang - Math.PI/7), B.y - head * Math.sin(ang - Math.PI/7));
+    ctx.lineTo(B.x - head * Math.cos(ang + Math.PI/7), B.y - head * Math.sin(ang + Math.PI/7));
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  },
+
+  crossline(ctx, px, mk, d, u){
+    const A = px[0];
+    line(ctx, 0, A.y, u.w, A.y);
+    line(ctx, A.x, 0, A.x, u.h);
+    ctx.font = u.small;
+    ctx.fillText(u.price(mk[0].p), 6, A.y - 4);
+  },
+
+  // A trendline that reads itself out: angle on screen, price move, percent,
+  // and how many bars it spans.
+  infoline(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    line(ctx, A.x, A.y, B.x, B.y);
+    const dp = mk[1].p - mk[0].p;
+    const pct = mk[0].p ? dp / mk[0].p * 100 : 0;
+    const lo = Math.min(mk[0].t, mk[1].t), hi = Math.max(mk[0].t, mk[1].t);
+    const bars = currentBars.filter(bar => bar.time >= lo && bar.time <= hi).length;
+    // Screen angle, so it answers "how steep does this look" rather than a
+    // price-per-second figure nobody reads.
+    const ang = Math.atan2(-(B.y - A.y), B.x - A.x) * 180 / Math.PI;
+    const label = `${ang.toFixed(1)}° · ${dp >= 0 ? "+" : ""}${u.price(dp)}` +
+                  ` (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%) · ${bars} nến`;
+    ctx.save(); ctx.setLineDash([]);
+    ctx.font = "11px -apple-system,Segoe UI,sans-serif";
+    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = css("--panel"); ctx.globalAlpha = 0.85;
+    ctx.fillRect(mx - tw/2 - 4, my - 9, tw + 8, 18);
+    ctx.globalAlpha = 1; ctx.fillStyle = u.active ? css("--accent") : u.base;
+    ctx.fillText(label, mx - tw/2, my + 4);
+    ctx.restore();
+  },
+
+  callout(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    line(ctx, A.x, A.y, B.x, B.y);
+    ctx.save(); ctx.setLineDash([]);
+    ctx.font = "11px -apple-system,Segoe UI,sans-serif";
+    const text = d.text || "";
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = css("--panel"); ctx.globalAlpha = 0.9;
+    ctx.fillRect(B.x, B.y - 11, tw + 10, 22);
+    ctx.globalAlpha = 1;
+    ctx.strokeRect(B.x, B.y - 11, tw + 10, 22);
+    ctx.fillStyle = u.active ? css("--accent") : u.base;
+    ctx.fillText(text, B.x + 5, B.y + 4);
+    ctx.restore();
+    u.dot(A, 2.5);
+  },
+
+  brush(ctx, px, mk, d, u){
+    if(px.length < 2) { if(px.length) u.dot(px[0], 2); return; }
+    ctx.save(); ctx.setLineDash([]);
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(px[0].x, px[0].y);
+    px.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  // VWAP restarted at the anchor rather than at the session boundary: it
+  // answers "what has the average buyer paid since this event".
+  avwap(ctx, px, mk, d, u){
+    const anchor = mk[0].t;
+    let pv = 0, vol = 0;
+    const pts = [];
+    for(const bar of currentBars){
+      if(bar.time < anchor) continue;
+      const typical = (bar.high + bar.low + bar.close) / 3;
+      const v = bar.volume || 0;
+      if(v > 0){ pv += typical * v; vol += v; }
+      else { pv += typical; vol += 1; }
+      const x = timeToX(bar.time), y = candles.priceToCoordinate(pv / vol);
+      if(x != null && y != null) pts.push({x, y});
+    }
+    if(pts.length < 2){ u.dot(px[0], 3); return; }
+    ctx.save(); ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    u.dot(pts[0], 3);
+    ctx.font = u.small;
+    const last = pts[pts.length - 1];
+    ctx.fillText("aVWAP", last.x - 42, last.y - 4);
+    ctx.restore();
+  },
+
+  // Volume by price over the selected span. Each bar's volume is dropped into
+  // the row its close falls in -- an approximation of the true distribution,
+  // which would need tick data, and the one every charting package draws.
+  vprofile(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const xl = Math.min(A.x, B.x), xr = Math.max(A.x, B.x);
+    ctx.save();
+    ctx.setLineDash([4, 3]); ctx.globalAlpha = 0.45;
+    line(ctx, xl, 0, xl, u.h); line(ctx, xr, 0, xr, u.h);
+    ctx.restore();
+
+    const t0 = Math.min(mk[0].t, mk[1].t), t1 = Math.max(mk[0].t, mk[1].t);
+    const inside = currentBars.filter(bar => bar.time >= t0 && bar.time <= t1);
+    if(inside.length < 2) return;
+    const lo = Math.min(...inside.map(b => b.low));
+    const hi = Math.max(...inside.map(b => b.high));
+    if(hi <= lo) return;
+    const rows = 24, rowH = (hi - lo) / rows;
+    const sums = new Array(rows).fill(0);
+    inside.forEach(bar => {
+      const idx = Math.min(rows - 1, Math.max(0, Math.floor((bar.close - lo) / rowH)));
+      sums[idx] += bar.volume || 0;
+    });
+    const peak = Math.max(...sums);
+    if(!peak) return;
+    const span = (xr - xl) * 0.9;
+    ctx.save(); ctx.setLineDash([]);
+    let pocIdx = 0;
+    sums.forEach((v, i) => { if(v > sums[pocIdx]) pocIdx = i; });
+    sums.forEach((v, i) => {
+      if(!v) return;
+      const yTop = candles.priceToCoordinate(lo + (i + 1) * rowH);
+      const yBot = candles.priceToCoordinate(lo + i * rowH);
+      if(yTop == null || yBot == null) return;
+      ctx.globalAlpha = i === pocIdx ? 0.55 : 0.28;
+      ctx.fillRect(xl, yTop, span * (v / peak), Math.max(1, yBot - yTop));
+    });
+    ctx.globalAlpha = 1;
+    // Point of control: the price that traded most in the window.
+    const pocY = candles.priceToCoordinate(lo + (pocIdx + 0.5) * rowH);
+    if(pocY != null){
+      ctx.strokeStyle = css("--warn");
+      line(ctx, xl, pocY, xr, pocY);
+      ctx.font = u.small;
+      ctx.fillStyle = css("--warn");
+      ctx.fillText("POC", xr + 3, pocY + 3);
+    }
+    ctx.restore();
+  },
+
+  gannbox(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const x = Math.min(A.x, B.x), y = Math.min(A.y, B.y);
+    const w = Math.abs(B.x - A.x), h = Math.abs(B.y - A.y);
+    ctx.strokeRect(x, y, w, h);
+    ctx.save();
+    ctx.globalAlpha = 0.4; ctx.setLineDash([3, 3]);
+    GANN_BOX_LEVELS.forEach(level => {
+      line(ctx, x, y + h * level, x + w, y + h * level);
+      line(ctx, x + w * level, y, x + w * level, y + h);
+    });
+    ctx.setLineDash([]); ctx.globalAlpha = 0.6;
+    line(ctx, x, y, x + w, y + h);
+    line(ctx, x, y + h, x + w, y);
+    ctx.restore();
+    u.dot(A, 1.5); u.dot(B, 1.5);
+  },
+
+  // Fibonacci levels drawn between a base line and a parallel through the
+  // third point, so the retracements tilt with the trend instead of lying flat.
+  fibchannel(ctx, px, mk, d, u){
+    const [A, B, C] = px;
+    if(!C) return;
+    const slope = B.x === A.x ? 0 : (B.y - A.y) / (B.x - A.x);
+    const at = (anc, x) => anc.y + slope * (x - anc.x);
+    const xs = px.map(p => p.x);
+    const xl = Math.min(...xs), xr = Math.max(...xs);
+    ctx.font = u.small;
+    FIB_CHANNEL_LEVELS.forEach(level => {
+      const yl = at(A, xl) + (at(C, xl) - at(A, xl)) * level;
+      const yr = at(A, xr) + (at(C, xr) - at(A, xr)) * level;
+      ctx.save();
+      if(level !== 0 && level !== 1) ctx.globalAlpha = 0.7;
+      line(ctx, xl, yl, xr, yr);
+      ctx.restore();
+      ctx.fillText(`${(level * 100).toFixed(1)}%`, xl + 3, yl - 3);
+    });
+    px.forEach(p => u.dot(p, 1.5));
+  },
+
   // Entry with a target above and a stop below (inverted for a short), drawn
   // as two tinted boxes so the risk and reward are compared by area.
   position(ctx, px, mk, d, u){
@@ -2117,6 +2331,17 @@ el.drawing.addEventListener("pointerdown", e => {
   if(!tool) return;
   const here = {t:p.t, p:p.p};
 
+  // Freehand is the one tool with no vertex count: the stroke starts on press
+  // and is collected on move until release.
+  if(tool.need === 0){
+    pushUndo();
+    brushing = {type:drawMode, pts:[here]};
+    drawings.push(brushing);
+    el.drawing.setPointerCapture(e.pointerId);
+    scheduleDraw();
+    return;
+  }
+
   if(tool.need === 1){
     pushUndo();
     const shape = {type:drawMode, a:here};
@@ -2152,6 +2377,16 @@ el.drawing.addEventListener("pointerdown", e => {
       const entry = pendingPoints[0].p, target = pendingPoints[1].p;
       shape.entry = entry; shape.tp = target; shape.sl = entry - (target - entry);
     }
+    if(drawMode === "callout"){
+      const note = (prompt("Chú thích:", "") || "").trim().slice(0, 80);
+      if(!note){
+        undoStack.pop();
+        pendingPoints = []; pendingPoint = previewPoint = null;
+        scheduleDraw();
+        return;
+      }
+      shape.text = note;
+    }
     drawings.push(shape);
     pendingPoints = [];
     pendingPoint = previewPoint = null;
@@ -2163,6 +2398,17 @@ el.drawing.addEventListener("pointerdown", e => {
 el.drawing.addEventListener("pointermove", e => {
   const p = pointFromEvent(e, !!(dragging && dragging.handle) || pendingPoints.length > 0);
   if(!p) return;
+  if(brushing){
+    // Thin the stroke as it is collected: a pointermove per pixel would store
+    // thousands of points for one gesture and redraw them on every pan.
+    const last = brushing.pts[brushing.pts.length - 1];
+    const lastPx = pixelPoint(last);
+    if(!lastPx || Math.hypot(p.x - lastPx.x, p.y - lastPx.y) >= 3){
+      brushing.pts.push({t:p.t, p:p.p});
+      scheduleDraw();
+    }
+    return;
+  }
   if(dragging && selectedDrawing === dragging.index){
     const moved = JSON.parse(JSON.stringify(dragging.original));
     if(dragging.handle){
@@ -2196,6 +2442,19 @@ el.drawing.addEventListener("pointermove", e => {
 });
 
 function finishDrag(e){
+  if(brushing){
+    try{ el.drawing.releasePointerCapture(e.pointerId); }catch(err){}
+    // A press with no movement leaves a single point, which is not a stroke.
+    if(brushing.pts.length < 2){
+      const i = drawings.indexOf(brushing);
+      if(i >= 0) drawings.splice(i, 1);
+      undoStack.pop();
+    }
+    brushing = null;
+    saveDrawings();
+    scheduleDraw();
+    return;
+  }
   if(!dragging) return;
   try{ el.drawing.releasePointerCapture(e.pointerId); }catch(err){}
   const changed = dragging.dirty;
