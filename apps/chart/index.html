@@ -10,8 +10,12 @@
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
 
 <!-- Lightweight Charts is not on cdnjs; jsDelivr is the other CSP-allowed host.
-     Pinned, because a silent major bump would break the series API. -->
-<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+     Pinned, because a silent major bump would break the series API.
+     v5 for series primitives: drawings attached to the series get the chart's
+     own coordinate handling, instead of a parallel canvas that has to convert
+     time and price by hand and loses the shape whenever a conversion returns
+     null (off-screen, or past the last bar). -->
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
 :root{
@@ -117,9 +121,10 @@ footer b{color:var(--text); font-weight:600}
   <div class="group" id="draw-tools" role="group" aria-label="Công cụ vẽ">
     <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart">Pan</button>
     <button type="button" data-tool="select" aria-pressed="false" title="Chọn, kéo hoặc nhấn Delete để xóa hình">◇</button>
-    <button type="button" data-tool="hline" aria-pressed="false" title="Vẽ mức giá ngang">—</button>
-    <button type="button" data-tool="trend" aria-pressed="false" title="Vẽ trendline bằng hai điểm">╱</button>
-    <button type="button" data-tool="fib" aria-pressed="false" title="Vẽ Fibonacci retracement bằng hai điểm">Fib</button>
+    <!-- Tool buttons are generated from TOOLS so a new tool needs one entry,
+         not an entry plus a button someone has to remember to add. -->
+    <button id="draw-undo" type="button" title="Hoàn tác (Ctrl+Z)">↶</button>
+    <button id="draw-redo" type="button" title="Làm lại (Ctrl+Y)">↷</button>
     <button id="draw-clear" class="danger" type="button" title="Xóa tất cả hình của coin này">Xóa</button>
     <span class="draw-count" id="draw-count" title="Số hình đã lưu">0</span>
   </div>
@@ -233,12 +238,12 @@ function chartTheme(){
 const chart = LightweightCharts.createChart(document.getElementById("chart"), {
   ...chartTheme(), autoSize:true,
 });
-const candles = chart.addCandlestickSeries({
+const candles = chart.addSeries(LightweightCharts.CandlestickSeries, {
   upColor:css("--up"), downColor:css("--down"),
   borderUpColor:css("--up"), borderDownColor:css("--down"),
   wickUpColor:css("--up"), wickDownColor:css("--down"),
 });
-const volume = chart.addHistogramSeries({
+const volume = chart.addSeries(LightweightCharts.HistogramSeries, {
   priceFormat:{type:"volume"}, priceScaleId:"vol",
 });
 chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.84, bottom:0} });
@@ -247,11 +252,11 @@ chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.84, bottom:0} });
    signals_build.py crosses to generate a trade. Drawing them here lets a reader
    see the rule that produced a signal rather than take it on trust — the same
    reason the signals page prints its rules table. */
-const ma20 = chart.addLineSeries({
+const ma20 = chart.addSeries(LightweightCharts.LineSeries, {
   color:"#3b82f6", lineWidth:1, priceLineVisible:false, lastValueVisible:false,
   crosshairMarkerVisible:false,
 });
-const ma50 = chart.addLineSeries({
+const ma50 = chart.addSeries(LightweightCharts.LineSeries, {
   color:"#f59e0b", lineWidth:1, priceLineVisible:false, lastValueVisible:false,
   crosshairMarkerVisible:false,
 });
@@ -598,11 +603,31 @@ async function load(){
    converts them again on every zoom/pan, so a line remains attached to the
    candle and price where the reader placed it. */
 const drawCtx = el.drawing.getContext("2d");
-const FIB_LEVELS = [0, .236, .382, .5, .618, 1];
+const FIB_LEVELS = [0, .236, .382, .5, .618, .786, 1];
+const FIB_EXT_LEVELS = [0, .382, .618, 1, 1.272, 1.618];
+
+/* One table per tool instead of the same switch written out in the paint, the
+   hit test, the click handler and the load validator. `need` is how many points
+   the tool takes; everything else reads it rather than restating it. */
+const TOOLS = {
+  hline: {need:1, label:"—",  title:"Đường ngang — 1 điểm"},
+  hray:  {need:2, label:"→",  title:"Tia ngang — 2 điểm, kéo dài sang phải"},
+  trend: {need:2, label:"╱",  title:"Đường xu hướng — 2 điểm"},
+  vline: {need:1, label:"│",  title:"Đường dọc — mốc thời gian"},
+  rect:  {need:2, label:"▭",  title:"Hộp — 2 điểm"},
+  fib:   {need:2, label:"Fib", title:"Fibonacci thoái lui — 2 điểm"},
+  fibext:{need:3, label:"Fib+", title:"Fibonacci mở rộng — 3 điểm"},
+  range: {need:2, label:"⇔",  title:"Đo khoảng — Δgiá, Δ%, số nến"},
+  mark:  {need:1, label:"▲",  title:"Đánh dấu — 1 điểm"},
+  text:  {need:1, label:"T",  title:"Ghi chú — 1 điểm"},
+};
+const TOOL_KEYS = Object.keys(TOOLS);
+
 let drawMode = "pan";
 let drawings = [];
 let selectedDrawing = -1;
 let pendingPoint = null;
+let pendingPoints = [];   // tools that take three points collect them here
 let previewPoint = null;
 let dragging = null;
 let drawFrame = 0;
@@ -613,16 +638,48 @@ function validPoint(p){
   return p && Number.isFinite(+p.t) && Number.isFinite(+p.p);
 }
 
+function shapeOk(d){
+  const tool = d && TOOLS[d.type];
+  if(!tool || !validPoint(d.a)) return false;
+  if(tool.need >= 2 && !validPoint(d.b)) return false;
+  if(tool.need >= 3 && !validPoint(d.c)) return false;
+  return true;
+}
+
 function loadDrawings(){
   drawings = [];
   try{
     const value = JSON.parse(localStorage.getItem(drawingKey()) || "[]");
-    if(Array.isArray(value)) drawings = value.filter(d =>
-      ["hline","trend","fib"].includes(d.type) && validPoint(d.a) &&
-      (d.type === "hline" || validPoint(d.b)));
+    if(Array.isArray(value)) drawings = value.filter(shapeOk);
   }catch(e){}
   selectedDrawing = -1;
   pendingPoint = previewPoint = null;
+  pendingPoints = [];
+  undoStack = []; redoStack = [];
+  updateDrawCount();
+  scheduleDraw();
+}
+
+/* Undo/redo hold whole-array snapshots. The drawing list is small and the
+   shapes are plain data, so a snapshot is cheaper to get right than a log of
+   reversible edits. */
+let undoStack = [], redoStack = [];
+const UNDO_MAX = 30;
+
+function pushUndo(){
+  undoStack.push(JSON.stringify(drawings));
+  if(undoStack.length > UNDO_MAX) undoStack.shift();
+  redoStack = [];
+}
+
+function restoreFrom(stack, other){
+  if(!stack.length) return;
+  other.push(JSON.stringify(drawings));
+  try{ drawings = JSON.parse(stack.pop()).filter(shapeOk); }catch(e){ return; }
+  selectedDrawing = -1;
+  pendingPoint = previewPoint = null;
+  pendingPoints = [];
+  try{ localStorage.setItem(drawingKey(), JSON.stringify(drawings)); }catch(e){}
   updateDrawCount();
   scheduleDraw();
 }
@@ -634,18 +691,52 @@ function saveDrawings(){
 
 function updateDrawCount(){ el.drawCount.textContent = String(drawings.length); }
 
+/* Time and pixels convert both ways only inside the loaded data. Past the last
+   bar -- the empty space on the right where a trendline is most often aimed --
+   coordinateToTime returns null, and a click there used to be dropped in
+   silence. Same in reverse: pan a shape off screen and timeToCoordinate stops
+   answering, so the shape vanished instead of being clipped.
+
+   Both are fixed by extrapolating along the bar spacing, which is uniform in
+   coordinate space because the chart lays bars out by index, not by clock. */
+function barStep(){
+  const ts = chart.timeScale();
+  const bars = currentBars;
+  if(bars.length < 2) return null;
+  const last = bars[bars.length - 1], prev = bars[bars.length - 2];
+  const xLast = ts.timeToCoordinate(last.time), xPrev = ts.timeToCoordinate(prev.time);
+  if(xLast == null || xPrev == null || xLast === xPrev) return null;
+  const dt = last.time - prev.time;
+  if(!dt) return null;
+  return {xLast, tLast:last.time, pxPerSec:(xLast - xPrev) / dt};
+}
+
+function timeToX(t){
+  const direct = chart.timeScale().timeToCoordinate(t);
+  if(direct != null) return direct;
+  const step = barStep();
+  return step ? step.xLast + (t - step.tLast) * step.pxPerSec : null;
+}
+
+function xToTime(x){
+  const direct = chart.timeScale().coordinateToTime(x);
+  if(direct != null && Number.isFinite(+direct)) return +direct;
+  const step = barStep();
+  return step ? step.tLast + (x - step.xLast) / step.pxPerSec : null;
+}
+
 function pointFromEvent(e){
   const rect = el.drawing.getBoundingClientRect();
   const x = e.clientX - rect.left, y = e.clientY - rect.top;
-  const t = chart.timeScale().coordinateToTime(x);
+  const t = xToTime(x);
   const p = candles.coordinateToPrice(y);
-  if(t == null || p == null || !Number.isFinite(+t) || !Number.isFinite(+p)) return null;
-  return {t:+t, p:+p, x, y};
+  if(t == null || p == null || !Number.isFinite(t) || !Number.isFinite(+p)) return null;
+  return {t, p:+p, x, y};
 }
 
 function pixelPoint(p){
   if(!validPoint(p)) return null;
-  const x = chart.timeScale().timeToCoordinate(+p.t);
+  const x = timeToX(+p.t);
   const y = candles.priceToCoordinate(+p.p);
   return x == null || y == null ? null : {x, y};
 }
@@ -655,36 +746,86 @@ function line(ctx, x1, y1, x2, y2){
 }
 
 function paintDrawing(d, index, ctx, w){
+  const tool = TOOLS[d.type];
+  if(!tool) return;
   const a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
-  if(!a || (d.type !== "hline" && !b)) return;
+  if(!a || (tool.need >= 2 && !b)) return;
   const active = index === selectedDrawing;
   ctx.strokeStyle = active ? css("--accent") : css("--warn");
   ctx.fillStyle = ctx.strokeStyle;
   ctx.lineWidth = active ? 2 : 1.35;
   ctx.setLineDash(active ? [] : [5, 3]);
 
+  const price = v => nf(v, v < 1 ? 6 : 2);
+  const small = "10px -apple-system,Segoe UI,sans-serif";
+
   if(d.type === "hline"){
     line(ctx, 0, a.y, w, a.y);
     ctx.font = "11px -apple-system,Segoe UI,sans-serif";
-    ctx.fillText(nf(d.a.p, d.a.p < 1 ? 6 : 2), 8, Math.max(12, a.y - 5));
+    ctx.fillText(price(d.a.p), 8, Math.max(12, a.y - 5));
+  }else if(d.type === "hray"){
+    // Anchored at a, extended right at a's price: a level that only applies
+    // from the moment it was set, unlike hline which claims all of history.
+    line(ctx, a.x, a.y, w, a.y);
+    ctx.font = small;
+    ctx.fillText(price(d.a.p), Math.min(a.x + 6, w - 60), a.y - 4);
   }else if(d.type === "trend"){
     line(ctx, a.x, a.y, b.x, b.y);
-  }else{
-    ctx.font = "10px -apple-system,Segoe UI,sans-serif";
-    FIB_LEVELS.forEach(level => {
-      const price = d.a.p + (d.b.p - d.a.p) * level;
-      const y = candles.priceToCoordinate(price);
+  }else if(d.type === "vline"){
+    line(ctx, a.x, 0, a.x, ctx.canvas.height);
+  }else if(d.type === "rect"){
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    const rw = Math.abs(b.x - a.x), rh = Math.abs(b.y - a.y);
+    ctx.globalAlpha = 0.12; ctx.fillRect(x, y, rw, rh); ctx.globalAlpha = 1;
+    ctx.strokeRect(x, y, rw, rh);
+  }else if(d.type === "mark"){
+    const up = d.dir !== "down", s = 7;
+    ctx.beginPath();
+    if(up){ ctx.moveTo(a.x, a.y - s); ctx.lineTo(a.x - s, a.y + s); ctx.lineTo(a.x + s, a.y + s); }
+    else  { ctx.moveTo(a.x, a.y + s); ctx.lineTo(a.x - s, a.y - s); ctx.lineTo(a.x + s, a.y - s); }
+    ctx.closePath(); ctx.fill();
+  }else if(d.type === "text"){
+    ctx.font = "12px -apple-system,Segoe UI,sans-serif";
+    ctx.fillText(d.text || "", a.x + 4, a.y - 4);
+  }else if(d.type === "range"){
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    const rw = Math.abs(b.x - a.x), rh = Math.abs(b.y - a.y);
+    ctx.globalAlpha = 0.1; ctx.fillRect(x, y, rw, rh); ctx.globalAlpha = 1;
+    ctx.strokeRect(x, y, rw, rh);
+    const dp = d.b.p - d.a.p;
+    const pct = d.a.p ? (dp / d.a.p) * 100 : 0;
+    // Bars, not clock time: on a chart with gaps the reader is counting
+    // candles, and a weekend would otherwise inflate the answer.
+    const step = currentBars.length > 1
+      ? (currentBars[currentBars.length-1].time - currentBars[0].time) / (currentBars.length-1)
+      : 0;
+    const bars = step ? Math.round(Math.abs(d.b.t - d.a.t) / step) : 0;
+    ctx.font = small;
+    ctx.fillText(`${dp >= 0 ? "+" : ""}${price(dp)}  ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%  ${bars} nến`,
+      x + 4, y - 4);
+  }else if(d.type === "fib" || d.type === "fibext"){
+    ctx.font = small;
+    const ext = d.type === "fibext";
+    // Retracement measures a→b. Extension projects that leg forward from c,
+    // which is what the third point is for.
+    const base = ext ? d.c.p : d.a.p;
+    const span = ext ? (d.b.p - d.a.p) : (d.b.p - d.a.p);
+    const levels = ext ? FIB_EXT_LEVELS : FIB_LEVELS;
+    const xs = [a.x, b.x].concat(ext && d.c ? [pixelPoint(d.c)?.x ?? a.x] : []);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    levels.forEach(level => {
+      const y = candles.priceToCoordinate(base + span * level);
       if(y == null) return;
-      line(ctx, Math.min(a.x, b.x), y, Math.max(a.x, b.x), y);
-      ctx.fillText(`${(level * 100).toFixed(level === 0 || level === 1 ? 0 : 1)}%`,
-        Math.min(a.x, b.x) + 4, y - 3);
+      line(ctx, x0, y, x1, y);
+      ctx.fillText(`${(level * 100).toFixed(level % 1 === 0 ? 0 : 1)}%`, x0 + 4, y - 3);
     });
   }
 
-  if(active && d.type !== "hline"){
+  if(active){
     ctx.setLineDash([]);
-    [a, b].forEach(p => {
-      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    [a, b, d.c ? pixelPoint(d.c) : null].forEach(pt => {
+      if(!pt) return;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
       ctx.fillStyle = css("--bg"); ctx.fill(); ctx.stroke();
     });
   }
@@ -702,8 +843,13 @@ function redraw(){
   drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawCtx.clearRect(0, 0, rect.width, rect.height);
   drawings.forEach((d, i) => paintDrawing(d, i, drawCtx, rect.width));
-  if(pendingPoint && previewPoint && ["trend","fib"].includes(drawMode)){
-    paintDrawing({type:drawMode, a:pendingPoint, b:previewPoint}, -2, drawCtx, rect.width);
+  // Preview the shape mid-placement. Index -2 never matches selectedDrawing,
+  // so it draws in the unselected style without claiming to be a real shape.
+  if(pendingPoints.length && previewPoint){
+    const pts = pendingPoints.concat([previewPoint]);
+    const ghost = {type:drawMode, a:pts[0], b:pts[1] || previewPoint};
+    if(pts[2]) ghost.c = pts[2];
+    if(shapeOk(ghost)) paintDrawing(ghost, -2, drawCtx, rect.width);
   }
 }
 
@@ -719,17 +865,40 @@ function segmentDistance(p, a, b){
 }
 
 function hitDrawing(p){
+  const near = 6;
+  // Newest first: shapes drawn later sit on top, so they answer the click.
   for(let i = drawings.length - 1; i >= 0; i--){
     const d = drawings[i], a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
     if(!a) continue;
-    if(d.type === "hline" && Math.abs(p.y - a.y) <= 6) return i;
-    if(d.type === "trend" && b && segmentDistance(p, a, b) <= 6) return i;
-    if(d.type === "fib" && b){
-      const left = Math.min(a.x,b.x)-6, right = Math.max(a.x,b.x)+6;
-      if(p.x < left || p.x > right) continue;
-      const hit = FIB_LEVELS.some(level => {
-        const y = candles.priceToCoordinate(d.a.p + (d.b.p-d.a.p)*level);
-        return y != null && Math.abs(p.y-y) <= 6;
+    const t = d.type;
+
+    if(t === "hline" && Math.abs(p.y - a.y) <= near) return i;
+    if(t === "hray" && Math.abs(p.y - a.y) <= near && p.x >= a.x - near) return i;
+    if(t === "vline" && Math.abs(p.x - a.x) <= near) return i;
+    if((t === "mark" || t === "text") &&
+       Math.hypot(p.x - a.x, p.y - a.y) <= 10) return i;
+    if(t === "trend" && b && segmentDistance(p, a, b) <= near) return i;
+
+    if((t === "rect" || t === "range") && b){
+      const x0 = Math.min(a.x,b.x)-near, x1 = Math.max(a.x,b.x)+near;
+      const y0 = Math.min(a.y,b.y)-near, y1 = Math.max(a.y,b.y)+near;
+      // Edges only, so a box does not swallow clicks meant for what it frames.
+      if(p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1){
+        const inner = p.x > x0+2*near && p.x < x1-2*near &&
+                      p.y > y0+2*near && p.y < y1-2*near;
+        if(!inner) return i;
+      }
+    }
+
+    if((t === "fib" || t === "fibext") && b){
+      const ext = t === "fibext";
+      const cx = ext && d.c ? (pixelPoint(d.c)?.x ?? a.x) : a.x;
+      const x0 = Math.min(a.x,b.x,cx)-near, x1 = Math.max(a.x,b.x,cx)+near;
+      if(p.x < x0 || p.x > x1) continue;
+      const base = ext ? d.c.p : d.a.p, span = d.b.p - d.a.p;
+      const hit = (ext ? FIB_EXT_LEVELS : FIB_LEVELS).some(level => {
+        const y = candles.priceToCoordinate(base + span*level);
+        return y != null && Math.abs(p.y-y) <= near;
       });
       if(hit) return i;
     }
@@ -749,15 +918,39 @@ function setDrawMode(mode){
   scheduleDraw();
 }
 
+// Insert the generated tool buttons before undo, so the row reads
+// pan · select · [tools] · undo · redo · clear.
+(function buildToolButtons(){
+  const anchor = document.getElementById("draw-undo");
+  TOOL_KEYS.forEach(key => {
+    const t = TOOLS[key];
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.tool = key;
+    b.setAttribute("aria-pressed", "false");
+    b.title = t.title;
+    b.textContent = t.label;
+    el.drawTools.insertBefore(b, anchor);
+  });
+})();
+
 el.drawTools.addEventListener("click", e => {
   const button = e.target.closest("[data-tool]");
   if(button) setDrawMode(button.dataset.tool);
 });
 
+document.getElementById("draw-undo")
+  .addEventListener("click", () => restoreFrom(undoStack, redoStack));
+document.getElementById("draw-redo")
+  .addEventListener("click", () => restoreFrom(redoStack, undoStack));
+
 el.drawClear.addEventListener("click", () => {
+  if(!drawings.length) return;
+  pushUndo();
   drawings = [];
   selectedDrawing = -1;
   pendingPoint = previewPoint = null;
+  pendingPoints = [];
   saveDrawings();
   scheduleDraw();
 });
@@ -778,22 +971,41 @@ el.drawing.addEventListener("pointerdown", e => {
     scheduleDraw();
     return;
   }
-  if(drawMode === "hline"){
-    drawings.push({type:"hline", a:{t:p.t, p:p.p}});
+  const tool = TOOLS[drawMode];
+  if(!tool) return;
+  const here = {t:p.t, p:p.p};
+
+  if(tool.need === 1){
+    pushUndo();
+    const shape = {type:drawMode, a:here};
+    if(drawMode === "text"){
+      const note = (prompt("Ghi chú:", "") || "").trim().slice(0, 80);
+      if(!note){ undoStack.pop(); return; }
+      shape.text = note;
+    }
+    if(drawMode === "mark"){
+      // Above the click points down at the bar, below points up at it.
+      const mid = candles.coordinateToPrice(el.drawing.clientHeight / 2);
+      shape.dir = mid != null && p.p > +mid ? "down" : "up";
+    }
+    drawings.push(shape);
     saveDrawings(); scheduleDraw();
     return;
   }
-  if(drawMode === "trend" || drawMode === "fib"){
-    if(!pendingPoint){
-      pendingPoint = {t:p.t, p:p.p};
-      previewPoint = pendingPoint;
-    }else{
-      drawings.push({type:drawMode, a:pendingPoint, b:{t:p.t, p:p.p}});
-      pendingPoint = previewPoint = null;
-      saveDrawings();
-    }
-    scheduleDraw();
+
+  pendingPoints.push(here);
+  previewPoint = here;
+  pendingPoint = pendingPoints[0];
+  if(pendingPoints.length >= tool.need){
+    pushUndo();
+    const shape = {type:drawMode, a:pendingPoints[0], b:pendingPoints[1]};
+    if(tool.need >= 3) shape.c = pendingPoints[2];
+    drawings.push(shape);
+    pendingPoints = [];
+    pendingPoint = previewPoint = null;
+    saveDrawings();
   }
+  scheduleDraw();
 });
 
 el.drawing.addEventListener("pointermove", e => {
@@ -804,9 +1016,10 @@ el.drawing.addEventListener("pointermove", e => {
     const moved = JSON.parse(JSON.stringify(dragging.original));
     moved.a.t += dt; moved.a.p += dp;
     if(moved.b){ moved.b.t += dt; moved.b.p += dp; }
+    if(moved.c){ moved.c.t += dt; moved.c.p += dp; }
     drawings[selectedDrawing] = moved;
     scheduleDraw();
-  }else if(pendingPoint){
+  }else if(pendingPoints.length){
     previewPoint = {t:p.t, p:p.p};
     scheduleDraw();
   }else if(drawMode === "select"){
@@ -824,12 +1037,20 @@ el.drawing.addEventListener("pointerup", finishDrag);
 el.drawing.addEventListener("pointercancel", finishDrag);
 
 el.drawing.addEventListener("keydown", e => {
-  if((e.key === "Delete" || e.key === "Backspace") && selectedDrawing >= 0){
+  const mod = e.ctrlKey || e.metaKey;
+  if(mod && e.key.toLowerCase() === "z" && !e.shiftKey){
+    restoreFrom(undoStack, redoStack); e.preventDefault();
+  }else if(mod && (e.key.toLowerCase() === "y" ||
+                   (e.shiftKey && e.key.toLowerCase() === "z"))){
+    restoreFrom(redoStack, undoStack); e.preventDefault();
+  }else if((e.key === "Delete" || e.key === "Backspace") && selectedDrawing >= 0){
+    pushUndo();
     drawings.splice(selectedDrawing, 1);
     selectedDrawing = -1;
     saveDrawings(); scheduleDraw(); e.preventDefault();
   }else if(e.key === "Escape"){
     pendingPoint = previewPoint = null;
+    pendingPoints = [];
     selectedDrawing = -1;
     scheduleDraw();
   }

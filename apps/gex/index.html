@@ -124,6 +124,11 @@ Vì thế nó nói lên điều mà lịch sử giá không nói được.</p>
     <dt>Max pain</dt>
     <dd>Mức giá mà tại kỳ đáo hạn gần nhất, <b>phe mua quyền chọn mất nhiều tiền nhất</b>.
         Không phải dự báo — chỉ là nơi lượng quyền chọn hết giá trị nhiều nhất.</dd>
+    <dt>Vanna &amp; Charm</dt>
+    <dd>Hai cách lượng phòng hộ thay đổi <b>mà giá không cần nhúc nhích</b>.
+        <b>Vanna</b>: khi biến động ngụ ý (IV) đổi. <b>Charm</b>: khi thời gian trôi
+        về phía đáo hạn. Vì thế một phiên yên ắng vẫn có thể sinh lệnh mua bán —
+        đây là lý do giá hay chạy quanh giờ đáo hạn dù không có tin gì.</dd>
   </dl>
   <p class="fine">Đây là trạng thái phòng hộ hiện tại, không phải dự báo giá. Nó cho biết
      thị trường đang <em>dễ</em> hay <em>khó</em> biến động, chứ không nói giá sẽ đi hướng nào.</p>
@@ -217,6 +222,11 @@ function render(d){
   const tiles = [
     {k:"Giá hiện tại", v:fmt(spot), n:"Deribit index"},
     {k:"Net GEX", v:usd(d.net_gex), cls:positive ? "pos" : "neg", n:"mỗi 1% biến động"},
+    // call_gex/put_gex split the net figure above into the two sides that
+    // produced it: a large net can come from a call wall, a thin put book, or
+    // both, and those are different markets to trade.
+    {k:"Call GEX", v:usd(d.call_gex), cls:"pos", n:"gamma từ phía call"},
+    {k:"Put GEX", v:usd(d.put_gex), cls:"neg", n:"gamma từ phía put"},
     {k:"Gamma flip", v:flip != null ? fmt(flip) : "—",
      n:flip != null ? `${((flip/spot - 1) * 100).toFixed(1)}% so với giá` : ""},
     {k:"Max pain", v:fmt(d.max_pain), n:"kỳ hạn gần nhất"},
@@ -226,7 +236,15 @@ function render(d){
      n:"tỉ lệ open interest"},
     {k:"IV at-the-money", v:d.atm_iv != null ? (d.atm_iv * 100).toFixed(1) + "%" : "—",
      n:"biến động ngụ ý"},
-    {k:"Hợp đồng", v:fmt(d.contracts), n:"đang mở"},
+    // Vanna and charm are the two ways a hedge drifts without the price
+    // moving at all -- one with implied volatility, one with the calendar.
+    // Both are computed already; neither was shown.
+    {k:"Vanna", v:usd(d.vanna), cls:d.vanna >= 0 ? "pos" : "neg",
+     n:"phòng hộ đổi khi IV đổi"},
+    {k:"Charm", v:usd(d.charm), cls:d.charm >= 0 ? "pos" : "neg",
+     n:"phòng hộ trôi theo thời gian"},
+    {k:"Hợp đồng", v:fmt(d.contracts),
+     n:d.nearest_expiry ? `đáo hạn gần nhất ${d.nearest_expiry}` : "đang mở"},
   ];
   el("tiles").innerHTML = tiles.map(t =>
     `<div class="tile"><span class="k">${t.k}</span>` +
