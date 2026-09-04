@@ -110,6 +110,20 @@ suspended tickers, and pandas fills gaps with `NaN`, which DuckDB will not cast
 into an integer column. `warehouse._clean` handles the NaN; collectors drop the
 symbol-less rows.
 
+**The two `eq_quote` writers disagree on the unit of `value`.** VCI reports
+accumulated turnover in *millions* of VND; the SSI board writes plain VND into
+the same column. Measured across rows carrying both, the ratio
+`value / (price * volume)` is exactly 1.0 for SSI rows and exactly 0.000001 for
+VCI rows -- a scale difference, not a rounding artefact. Unconverted, every VCI
+row ranks 1e6 too small, which removes all of HOSE/HNX/UPCOM from any money-flow
+ranking while still producing a plausible-looking table. `vn_equity.py` now
+normalises on the way in; `pipeline/transform/repair_value_units.py` was run once
+to append corrected observations for rows written before that fix. Note the
+foreign value columns are *not* affected -- both sources already write those in
+plain VND, confirmed by comparing a VCI row and an SSI row for the same ticker
+and session, where the foreign figures matched exactly while turnover differed
+by 1e6. Do not scale them.
+
 **Two sources write `eq_quote` and they carry different columns.** SSI has depth
 and foreign detail but no share count; Vietcap has the share count. Taking the
 newest row wholesale blanked market cap for the whole market (128 of 1,729

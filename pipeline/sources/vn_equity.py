@@ -59,6 +59,20 @@ def _flatten(columns: Any) -> list[str]:
     return flat
 
 
+def _million_vnd_to_vnd(value: Any) -> float | None:
+    """Normalise VCI turnover to plain VND, the unit `eq_quote.value` holds.
+
+    Two sources write this column and they disagree on scale, so the conversion
+    belongs here rather than in every reader that later ranks by money flow.
+    """
+    if value is None or (isinstance(value, float) and value != value):
+        return None
+    try:
+        return float(value) * 1e6
+    except (TypeError, ValueError):
+        return None
+
+
 def collect_listing(fetched_at: datetime) -> list[dict[str, Any]]:
     from vnstock import Listing
 
@@ -151,8 +165,19 @@ def collect_board(symbols: list[str], fetched_at: datetime) -> list[dict[str, An
                 "high": pick(rec, "match.highest"),
                 "low": pick(rec, "match.lowest"),
                 "volume": pick(rec, "match.accumulated_volume"),
-                "value": pick(rec, "match.accumulated_value"),
+                # VCI quotes turnover in MILLIONS of VND while the SSI board
+                # writes plain VND into the same column. Left unconverted the
+                # two conventions sit side by side and every VCI row ranks 1e6
+                # too small -- which silently drops all of HOSE/HNX/UPCOM out of
+                # any money-flow ranking. Measured ratio was exactly 0.000001
+                # against price x volume. See docs/source-gotchas.md.
+                "value": _million_vnd_to_vnd(pick(rec, "match.accumulated_value")),
                 "listed_share": pick(rec, "listing.listed_share"),
+                # Only `accumulated_value` carries the millions convention. The
+                # foreign columns are already plain VND in both sources --
+                # verified by comparing the same ticker and session across a VCI
+                # row and an SSI row, where the foreign figures matched exactly
+                # while the turnover differed by 1e6. Do not scale these.
                 "foreign_buy_value": pick(rec, "match.foreign_buy_value"),
                 "foreign_sell_value": pick(rec, "match.foreign_sell_value"),
                 "foreign_buy_vol": pick(rec, "match.foreign_buy_volume"),

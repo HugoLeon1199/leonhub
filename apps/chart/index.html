@@ -21,6 +21,7 @@
   --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
   --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
   --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
+  --rail-w:38px;
 }
 :root[data-theme="light"]{
   --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
@@ -123,8 +124,37 @@ body{
 /* ---- Chart ---- */
 .workspace{flex:1;display:flex;min-height:0;overflow:hidden}
 main{flex:1; position:relative; min-height:0;min-width:0}
-#chart{position:absolute; inset:0}
-#drawings{position:absolute; top:0; left:0; width:100%; height:100%; z-index:2;
+/* ---- Drawing rail ----
+   Thirty-four tools will not fit a single horizontal row without either
+   wrapping into the chart's vertical space or scrolling sideways past the
+   point of recognition. Docked left as a column, the rail scrolls in the axis
+   it is long in and leaves the chart its full width. */
+.draw-rail{
+  position:absolute; left:0; top:0; bottom:0; z-index:6;
+  display:flex; flex-direction:column; gap:2px;
+  padding:4px; width:var(--rail-w);
+  background:var(--panel); border-right:1px solid var(--line);
+  overflow-y:auto; overflow-x:hidden; scrollbar-width:thin;
+}
+.draw-rail::-webkit-scrollbar{width:6px}
+.draw-rail::-webkit-scrollbar-thumb{background:var(--line); border-radius:3px}
+.draw-rail button{
+  flex:0 0 auto; width:100%; height:30px; padding:0;
+  display:grid; place-items:center; font-size:14px; line-height:1;
+}
+/* Two text buttons would blow the rail's width out; shrink them to fit it. */
+.draw-rail button[data-tool="pan"], .draw-rail #draw-clear{font-size:10px}
+.draw-rail .draw-count{
+  flex:0 0 auto; margin-top:2px; text-align:center;
+  font-size:10px; color:var(--muted);
+}
+/* The chart and the drawing canvas start where the rail ends, so no tool
+   button ever sits on top of a candle the reader is trying to click. */
+
+#chart{position:absolute; inset:0 0 0 var(--rail-w)}
+/* Canvas starts where the rail ends and shrinks to match. Left at full
+   width it overhangs the pane and every hit test drifts by the rail. */
+#drawings{position:absolute; top:0; left:var(--rail-w); width:calc(100% - var(--rail-w)); height:100%; z-index:2;
   pointer-events:none; touch-action:none; outline:none}
 #drawings.active{pointer-events:auto; cursor:crosshair}
 #drawings.selecting{cursor:default}
@@ -226,18 +256,6 @@ footer b{color:var(--text); font-weight:600}
   <div class="group" role="group" aria-label="Chỉ báo">
     <button id="ind-open" type="button" title="Thêm hoặc bỏ chỉ báo">Chỉ báo <span id="ind-count">0</span></button>
   </div>
-  <div class="group" id="draw-tools" role="group" aria-label="Công cụ vẽ">
-    <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart (Esc)">Pan / Esc</button>
-    <button type="button" data-tool="select" aria-pressed="false" title="Chọn, kéo hoặc nhấn Delete để xóa hình">◇</button>
-    <!-- Tool buttons are generated from TOOLS so a new tool needs one entry,
-         not an entry plus a button someone has to remember to add. -->
-    <button id="draw-undo" type="button" title="Hoàn tác (Ctrl+Z)">↶</button>
-    <button id="draw-redo" type="button" title="Làm lại (Ctrl+Y)">↷</button>
-    <button id="draw-magnet" type="button" aria-pressed="false"
-            title="Nam châm OHLC — giữ Ctrl để đảo tạm">🧲</button>
-    <button id="draw-clear" class="danger" type="button" title="Xóa tất cả hình của coin này">Xóa</button>
-    <span class="draw-count" id="draw-count" title="Số hình đã lưu">0</span>
-  </div>
   <div class="quote">
     <span class="price" id="price">—</span>
     <span class="chg" id="chg"></span>
@@ -264,6 +282,18 @@ footer b{color:var(--text); font-weight:600}
 <div class="workspace">
   <main>
     <div id="chart"></div>
+    <div class="draw-rail" id="draw-tools" role="group" aria-label="Công cụ vẽ">
+      <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart (Esc)">Pan / Esc</button>
+      <button type="button" data-tool="select" aria-pressed="false" title="Chọn, kéo hoặc nhấn Delete để xóa hình">◇</button>
+      <!-- Tool buttons are generated from TOOLS so a new tool needs one entry,
+           not an entry plus a button someone has to remember to add. -->
+      <button id="draw-undo" type="button" title="Hoàn tác (Ctrl+Z)">↶</button>
+      <button id="draw-redo" type="button" title="Làm lại (Ctrl+Y)">↷</button>
+      <button id="draw-magnet" type="button" aria-pressed="false"
+              title="Nam châm OHLC — giữ Ctrl để đảo tạm">🧲</button>
+      <button id="draw-clear" class="danger" type="button" title="Xóa tất cả hình của coin này">Xóa</button>
+      <span class="draw-count" id="draw-count" title="Số hình đã lưu">0</span>
+    </div>
     <canvas id="drawings" tabindex="0" aria-label="Lớp vẽ phân tích kỹ thuật"></canvas>
     <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
   </main>
