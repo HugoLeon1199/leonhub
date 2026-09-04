@@ -59,6 +59,23 @@ body{
 .group button.danger:hover{color:var(--down)}
 .draw-count{min-width:18px; padding:0 4px; color:var(--muted); font-size:11px;
   display:grid; place-items:center; font-variant-numeric:tabular-nums}
+.ind-panel{background:var(--panel); border-bottom:1px solid var(--line);
+  padding:8px 12px; display:flex; flex-direction:column; gap:8px}
+.ind-add{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.ind-add select, .ind-add input{background:var(--panel-2); border:1px solid var(--line);
+  color:var(--text); border-radius:6px; padding:5px 8px; font-size:12px; font-family:inherit}
+.ind-add input{width:78px}
+.ind-add button{background:var(--accent); color:#04150f; border:0; border-radius:6px;
+  padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit}
+.ind-add button.ghost{background:var(--panel-2); color:var(--muted); font-weight:400}
+.ind-list{list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:6px}
+.ind-list li{display:inline-flex; align-items:center; gap:7px; background:var(--panel-2);
+  border:1px solid var(--line); border-radius:999px; padding:3px 6px 3px 10px; font-size:12px}
+.ind-list .dot{width:8px; height:8px; border-radius:50%; flex:none}
+.ind-list .rm{background:none; border:0; color:var(--muted); cursor:pointer;
+  font-size:14px; line-height:1; padding:2px 4px; font-family:inherit}
+.ind-list .rm:hover{color:var(--down)}
+.ind-list .empty{color:var(--muted); border:0; background:none; padding-left:0}
 .live{display:inline-flex; align-items:center; gap:5px}
 .live::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--up);
   box-shadow:0 0 0 3px color-mix(in srgb, var(--up) 18%, transparent)}
@@ -116,7 +133,7 @@ footer b{color:var(--text); font-weight:600}
   <datalist id="coins"></datalist>
   <div class="group" id="tfs" role="group" aria-label="Khung thời gian"></div>
   <div class="group" role="group" aria-label="Chỉ báo">
-    <button id="ma" type="button" aria-pressed="true" title="Hiện hoặc ẩn đường trung bình MA20 và MA50">MA20/50</button>
+    <button id="ind-open" type="button" title="Thêm hoặc bỏ chỉ báo">Chỉ báo <span id="ind-count">0</span></button>
   </div>
   <div class="group" id="draw-tools" role="group" aria-label="Công cụ vẽ">
     <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart">Pan</button>
@@ -132,6 +149,19 @@ footer b{color:var(--text); font-weight:600}
     <span class="price" id="price">—</span>
     <span class="chg" id="chg"></span>
   </div>
+</div>
+
+<!-- Indicator panel. Hidden until asked for, so the default chart stays a
+     chart rather than a control surface. -->
+<div class="ind-panel" id="ind-panel" hidden>
+  <div class="ind-add">
+    <select id="ind-type" aria-label="Loại chỉ báo"></select>
+    <input id="ind-period" type="number" min="1" max="400" step="1" placeholder="chu kỳ"
+           aria-label="Chu kỳ">
+    <button id="ind-add" type="button">Thêm</button>
+    <button id="ind-close" type="button" class="ghost">Đóng</button>
+  </div>
+  <ul class="ind-list" id="ind-list"></ul>
 </div>
 
 <div class="stats" id="stats"></div>
@@ -172,7 +202,6 @@ const el = {
   sym: document.getElementById("sym"),
   coins: document.getElementById("coins"),
   tfs: document.getElementById("tfs"),
-  ma: document.getElementById("ma"),
   drawing: document.getElementById("drawings"),
   drawTools: document.getElementById("draw-tools"),
   drawClear: document.getElementById("draw-clear"),
@@ -254,43 +283,467 @@ const volume = chart.addSeries(LightweightCharts.HistogramSeries, {
 });
 chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.84, bottom:0} });
 
-/* MA20 and MA50 specifically, because those are the two averages
-   signals_build.py crosses to generate a trade. Drawing them here lets a reader
-   see the rule that produced a signal rather than take it on trust — the same
-   reason the signals page prints its rules table. */
-const ma20 = chart.addSeries(LightweightCharts.LineSeries, {
-  color:"#3b82f6", lineWidth:1, priceLineVisible:false, lastValueVisible:false,
-  crosshairMarkerVisible:false,
-});
-const ma50 = chart.addSeries(LightweightCharts.LineSeries, {
-  color:"#f59e0b", lineWidth:1, priceLineVisible:false, lastValueVisible:false,
-  crosshairMarkerVisible:false,
-});
+/* ---------- indicator maths ----------
+   Written out rather than pulled from a library: every formula below is
+   textbook, and a dependency for arithmetic this small would cost more in
+   load time than it saves. Each takes the bar array and returns
+   {time, value} points aligned to it. */
 
-function sma(bars, period){
+function sma(bars, period, key = "close"){
   const out = [];
   let sum = 0;
   for(let i = 0; i < bars.length; i++){
-    sum += bars[i].close;
-    if(i >= period) sum -= bars[i - period].close;
+    sum += bars[i][key];
+    if(i >= period) sum -= bars[i - period][key];
     if(i >= period - 1) out.push({time:bars[i].time, value:sum / period});
   }
   return out;
 }
 
-let showMA = true;
-try{ showMA = localStorage.getItem("leon_chart_ma") !== "0"; }catch(e){}
-el.ma.setAttribute("aria-pressed", String(showMA));
+function emaValues(values, period){
+  // Seeded with the simple average of the first `period` values, which is the
+  // convention charting platforms use; seeding with the first value alone
+  // leaves a visible hook at the left edge.
+  const k = 2 / (period + 1), out = [];
+  let prev = null, sum = 0;
+  for(let i = 0; i < values.length; i++){
+    const v = values[i];
+    if(i < period - 1){ sum += v; out.push(null); continue; }
+    if(prev === null){ sum += v; prev = sum / period; }
+    else prev = v * k + prev * (1 - k);
+    out.push(prev);
+  }
+  return out;
+}
 
-function applyMA(bars){
-  if(showMA){
-    ma20.setData(sma(bars, 20));
-    ma50.setData(sma(bars, 50));
-  }else{
-    ma20.setData([]);
-    ma50.setData([]);
+function ema(bars, period, key = "close"){
+  const vals = emaValues(bars.map(b => b[key]), period);
+  return bars.map((b, i) => vals[i] == null ? null : {time:b.time, value:vals[i]})
+             .filter(Boolean);
+}
+
+function wma(bars, period, key = "close"){
+  const out = [], denom = period * (period + 1) / 2;
+  for(let i = period - 1; i < bars.length; i++){
+    let acc = 0;
+    for(let j = 0; j < period; j++) acc += bars[i - period + 1 + j][key] * (j + 1);
+    out.push({time:bars[i].time, value:acc / denom});
+  }
+  return out;
+}
+
+function hma(bars, period){
+  // Hull: WMA of (2*WMA(n/2) - WMA(n)), smoothed over sqrt(n).
+  const half = Math.max(1, Math.round(period / 2));
+  const sqrt = Math.max(1, Math.round(Math.sqrt(period)));
+  const w1 = wma(bars, half), w2 = wma(bars, period);
+  const byTime = new Map(w1.map(p => [p.time, p.value]));
+  const raw = w2.map(p => {
+    const a = byTime.get(p.time);
+    return a == null ? null : {time:p.time, close:2 * a - p.value};
+  }).filter(Boolean);
+  return wma(raw, sqrt);
+}
+
+function stdev(values){
+  const n = values.length;
+  if(n < 2) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  return Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+}
+
+function rsi(bars, period){
+  // Wilder smoothing, not a plain average: the first value is a simple mean of
+  // the opening window, and every later one decays it. A plain rolling mean
+  // gives a visibly different line and is the usual mistake.
+  const out = [];
+  let gain = 0, loss = 0;
+  for(let i = 1; i < bars.length; i++){
+    const diff = bars[i].close - bars[i - 1].close;
+    const up = Math.max(0, diff), down = Math.max(0, -diff);
+    if(i <= period){
+      gain += up; loss += down;
+      if(i === period){
+        gain /= period; loss /= period;
+        out.push({time:bars[i].time, value:loss === 0 ? 100 : 100 - 100 / (1 + gain / loss)});
+      }
+      continue;
+    }
+    gain = (gain * (period - 1) + up) / period;
+    loss = (loss * (period - 1) + down) / period;
+    out.push({time:bars[i].time, value:loss === 0 ? 100 : 100 - 100 / (1 + gain / loss)});
+  }
+  return out;
+}
+
+function macd(bars, fast, slow, signal){
+  const closes = bars.map(b => b.close);
+  const f = emaValues(closes, fast), s = emaValues(closes, slow);
+  const line = [], lineVals = [];
+  bars.forEach((b, i) => {
+    if(f[i] == null || s[i] == null) return;
+    lineVals.push(f[i] - s[i]);
+    line.push({time:b.time, value:f[i] - s[i]});
+  });
+  const sig = emaValues(lineVals, signal);
+  const signalPts = [], histPts = [];
+  line.forEach((p, i) => {
+    if(sig[i] == null) return;
+    signalPts.push({time:p.time, value:sig[i]});
+    histPts.push({time:p.time, value:p.value - sig[i]});
+  });
+  return {line, signal:signalPts, hist:histPts};
+}
+
+function bollinger(bars, period, mult){
+  const upper = [], mid = [], lower = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1).map(b => b.close);
+    const mean = win.reduce((a, b) => a + b, 0) / period;
+    const sd = stdev(win);
+    const t = bars[i].time;
+    upper.push({time:t, value:mean + mult * sd});
+    mid.push({time:t, value:mean});
+    lower.push({time:t, value:mean - mult * sd});
+  }
+  return {upper, mid, lower};
+}
+
+function trueRanges(bars){
+  const tr = [];
+  for(let i = 0; i < bars.length; i++){
+    const b = bars[i];
+    tr.push(i === 0 ? b.high - b.low : Math.max(
+      b.high - b.low,
+      Math.abs(b.high - bars[i-1].close),
+      Math.abs(b.low - bars[i-1].close)));
+  }
+  return tr;
+}
+
+function atr(bars, period){
+  const tr = trueRanges(bars), out = [];
+  let prev = null;
+  for(let i = 0; i < bars.length; i++){
+    if(i < period - 1) continue;
+    if(prev === null) prev = tr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    else prev = (prev * (period - 1) + tr[i]) / period;
+    out.push({time:bars[i].time, value:prev});
+  }
+  return out;
+}
+
+function stochastic(bars, period, smoothK, smoothD){
+  const raw = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1);
+    const hi = Math.max(...win.map(b => b.high));
+    const lo = Math.min(...win.map(b => b.low));
+    raw.push({time:bars[i].time,
+      close: hi === lo ? 50 : ((bars[i].close - lo) / (hi - lo)) * 100});
+  }
+  const k = sma(raw, smoothK);
+  const d = sma(k.map(p => ({time:p.time, close:p.value})), smoothD);
+  return {k, d};
+}
+
+function vwap(bars){
+  // Session-anchored: the running sum restarts each UTC day, which is what
+  // makes VWAP a level for the session rather than a slow drifting average.
+  const out = [];
+  let pv = 0, vol = 0, day = null;
+  for(const b of bars){
+    const d = Math.floor(b.time / 86400);
+    if(d !== day){ day = d; pv = 0; vol = 0; }
+    const typical = (b.high + b.low + b.close) / 3;
+    pv += typical * (b.volume || 0);
+    vol += b.volume || 0;
+    if(vol > 0) out.push({time:b.time, value:pv / vol});
+  }
+  return out;
+}
+
+function supertrend(bars, period, mult){
+  const a = atr(bars, period);
+  const atrAt = new Map(a.map(p => [p.time, p.value]));
+  const out = [];
+  let trend = 1, prevUpper = null, prevLower = null, prevClose = null;
+  for(const b of bars){
+    const av = atrAt.get(b.time);
+    if(av == null){ prevClose = b.close; continue; }
+    const mid = (b.high + b.low) / 2;
+    let upper = mid + mult * av, lower = mid - mult * av;
+    // Bands only tighten while the trend holds; that ratchet is what keeps the
+    // line from whipsawing on every bar.
+    if(prevUpper != null && prevClose != null)
+      upper = (upper < prevUpper || prevClose > prevUpper) ? upper : prevUpper;
+    if(prevLower != null && prevClose != null)
+      lower = (lower > prevLower || prevClose < prevLower) ? lower : prevLower;
+    if(prevUpper != null){
+      if(trend === 1 && b.close < prevLower) trend = -1;
+      else if(trend === -1 && b.close > prevUpper) trend = 1;
+    }
+    out.push({time:b.time, value:trend === 1 ? lower : upper});
+    prevUpper = upper; prevLower = lower; prevClose = b.close;
+  }
+  return out;
+}
+
+function ichimoku(bars, tenkanLen, kijunLen, senkouLen){
+  const hl = (from, to) => {
+    const win = bars.slice(from, to);
+    if(!win.length) return null;
+    return (Math.max(...win.map(b => b.high)) + Math.min(...win.map(b => b.low))) / 2;
+  };
+  const tenkan = [], kijun = [];
+  for(let i = 0; i < bars.length; i++){
+    if(i >= tenkanLen - 1){
+      const v = hl(i - tenkanLen + 1, i + 1);
+      if(v != null) tenkan.push({time:bars[i].time, value:v});
+    }
+    if(i >= kijunLen - 1){
+      const v = hl(i - kijunLen + 1, i + 1);
+      if(v != null) kijun.push({time:bars[i].time, value:v});
+    }
+  }
+  return {tenkan, kijun};
+}
+
+function obv(bars){
+  const out = [];
+  let acc = 0;
+  for(let i = 1; i < bars.length; i++){
+    const d = bars[i].close - bars[i-1].close;
+    acc += d > 0 ? (bars[i].volume || 0) : d < 0 ? -(bars[i].volume || 0) : 0;
+    out.push({time:bars[i].time, value:acc});
+  }
+  return out;
+}
+
+function mfi(bars, period){
+  const out = [];
+  for(let i = period; i < bars.length; i++){
+    let pos = 0, neg = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      const tp = (bars[j].high + bars[j].low + bars[j].close) / 3;
+      const prev = (bars[j-1].high + bars[j-1].low + bars[j-1].close) / 3;
+      const flow = tp * (bars[j].volume || 0);
+      if(tp > prev) pos += flow; else if(tp < prev) neg += flow;
+    }
+    out.push({time:bars[i].time,
+      value: neg === 0 ? 100 : 100 - 100 / (1 + pos / neg)});
+  }
+  return out;
+}
+
+function cci(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1)
+                    .map(b => (b.high + b.low + b.close) / 3);
+    const mean = win.reduce((a, b) => a + b, 0) / period;
+    const dev = win.reduce((a, b) => a + Math.abs(b - mean), 0) / period;
+    const tp = (bars[i].high + bars[i].low + bars[i].close) / 3;
+    out.push({time:bars[i].time, value: dev === 0 ? 0 : (tp - mean) / (0.015 * dev)});
+  }
+  return out;
+}
+
+function adx(bars, period){
+  const tr = trueRanges(bars), plus = [0], minus = [0];
+  for(let i = 1; i < bars.length; i++){
+    const up = bars[i].high - bars[i-1].high;
+    const dn = bars[i-1].low - bars[i].low;
+    plus.push(up > dn && up > 0 ? up : 0);
+    minus.push(dn > up && dn > 0 ? dn : 0);
+  }
+  const out = [];
+  let trS = 0, pS = 0, mS = 0, adxPrev = null, dxSum = 0, count = 0;
+  for(let i = 1; i < bars.length; i++){
+    if(i <= period){
+      trS += tr[i]; pS += plus[i]; mS += minus[i];
+      if(i < period) continue;
+    }else{
+      trS = trS - trS / period + tr[i];
+      pS  = pS  - pS  / period + plus[i];
+      mS  = mS  - mS  / period + minus[i];
+    }
+    if(trS === 0) continue;
+    const pdi = 100 * pS / trS, mdi = 100 * mS / trS;
+    const dx = (pdi + mdi) === 0 ? 0 : 100 * Math.abs(pdi - mdi) / (pdi + mdi);
+    if(adxPrev === null){
+      dxSum += dx; count++;
+      if(count === period){ adxPrev = dxSum / period; out.push({time:bars[i].time, value:adxPrev}); }
+    }else{
+      adxPrev = (adxPrev * (period - 1) + dx) / period;
+      out.push({time:bars[i].time, value:adxPrev});
+    }
+  }
+  return out;
+}
+
+/* ---------- indicator registry ----------
+   One entry per indicator. `pane` 0 draws over the candles; anything else gets
+   its own strip below. `build` returns the plotted lines, so adding an
+   indicator means adding an entry here and nothing else. */
+const INDICATORS = {
+  sma:    {name:"SMA", pane:0, params:{period:20},
+           build:(b, p) => [{data:sma(b, p.period), color:"#3b82f6"}]},
+  ema:    {name:"EMA", pane:0, params:{period:9},
+           build:(b, p) => [{data:ema(b, p.period), color:"#f59e0b"}]},
+  wma:    {name:"WMA", pane:0, params:{period:20},
+           build:(b, p) => [{data:wma(b, p.period), color:"#8b5cf6"}]},
+  hma:    {name:"HMA", pane:0, params:{period:20},
+           build:(b, p) => [{data:hma(b, p.period), color:"#ec4899"}]},
+  bb:     {name:"Bollinger", pane:0, params:{period:20, mult:2},
+           build:(b, p) => {
+             const r = bollinger(b, p.period, p.mult);
+             return [{data:r.upper, color:"#94a3b8"},
+                     {data:r.mid, color:"#64748b", dashed:true},
+                     {data:r.lower, color:"#94a3b8"}];
+           }},
+  vwap:   {name:"VWAP", pane:0, params:{},
+           build:b => [{data:vwap(b), color:"#eab308", width:2}]},
+  supertrend:{name:"Supertrend", pane:0, params:{period:10, mult:3},
+           build:(b, p) => [{data:supertrend(b, p.period, p.mult), color:"#10b981", width:2}]},
+  ichimoku:{name:"Ichimoku", pane:0, params:{tenkan:9, kijun:26, senkou:52},
+           build:(b, p) => {
+             const r = ichimoku(b, p.tenkan, p.kijun, p.senkou);
+             return [{data:r.tenkan, color:"#22d3ee"}, {data:r.kijun, color:"#f43f5e"}];
+           }},
+  rsi:    {name:"RSI", pane:1, range:[0, 100], guides:[30, 70], params:{period:14},
+           build:(b, p) => [{data:rsi(b, p.period), color:"#a78bfa"}]},
+  macd:   {name:"MACD", pane:1, params:{fast:12, slow:26, signal:9},
+           build:(b, p) => {
+             const r = macd(b, p.fast, p.slow, p.signal);
+             return [{data:r.line, color:"#3b82f6"},
+                     {data:r.signal, color:"#f59e0b"},
+                     {data:r.hist, color:"#64748b", histogram:true}];
+           }},
+  stoch:  {name:"Stochastic", pane:1, range:[0, 100], guides:[20, 80],
+           params:{period:14, smoothK:3, smoothD:3},
+           build:(b, p) => {
+             const r = stochastic(b, p.period, p.smoothK, p.smoothD);
+             return [{data:r.k, color:"#3b82f6"}, {data:r.d, color:"#f59e0b"}];
+           }},
+  atr:    {name:"ATR", pane:1, params:{period:14},
+           build:(b, p) => [{data:atr(b, p.period), color:"#f97316"}]},
+  adx:    {name:"ADX", pane:1, guides:[25], params:{period:14},
+           build:(b, p) => [{data:adx(b, p.period), color:"#14b8a6"}]},
+  cci:    {name:"CCI", pane:1, guides:[-100, 100], params:{period:20},
+           build:(b, p) => [{data:cci(b, p.period), color:"#8b5cf6"}]},
+  mfi:    {name:"MFI", pane:1, range:[0, 100], guides:[20, 80], params:{period:14},
+           build:(b, p) => [{data:mfi(b, p.period), color:"#06b6d4"}]},
+  obv:    {name:"OBV", pane:1, params:{},
+           build:b => [{data:obv(b), color:"#84cc16"}]},
+};
+const INDICATOR_KEYS = Object.keys(INDICATORS);
+
+/* Active instances. Each carries its own id, so the same indicator can be
+   added several times with different periods (EMA 20 + EMA 50 + EMA 200) --
+   which a single on/off toggle per type could never express. */
+let indicators = [];
+let indicatorSeq = 1;
+
+const DEFAULT_INDICATORS = [
+  // MA20 and MA50 stay on by default because those are the two averages
+  // signals_build.py crosses to generate a trade: the chart shows the rule
+  // that produced a signal rather than asking the reader to take it on trust.
+  {type:"sma", params:{period:20}},
+  {type:"sma", params:{period:50}, color:"#f59e0b"},
+];
+
+function loadIndicators(){
+  let stored = null;
+  try{ stored = JSON.parse(localStorage.getItem("leon_chart_inds") || "null"); }catch(e){}
+  const source = Array.isArray(stored) ? stored : DEFAULT_INDICATORS;
+  indicators = source
+    .filter(d => d && INDICATORS[d.type])
+    .map(d => ({
+      id: indicatorSeq++,
+      type: d.type,
+      color: d.color || null,
+      params: Object.assign({}, INDICATORS[d.type].params, d.params || {}),
+    }));
+}
+
+function saveIndicators(){
+  try{
+    localStorage.setItem("leon_chart_inds", JSON.stringify(
+      indicators.map(i => ({type:i.type, params:i.params, color:i.color}))));
+  }catch(e){}
+}
+
+function disposeIndicator(inst){
+  (inst._series || []).forEach(s => { try{ chart.removeSeries(s); }catch(e){} });
+  inst._series = null;
+}
+
+// Indicators sharing a pane index share a price scale, so RSI and MFI can sit
+// together on one strip instead of each claiming its own.
+function paneScaleId(inst, slot){
+  return INDICATORS[inst.type].pane === 0 ? "right" : `ind_${inst.id}`;
+}
+
+function buildIndicator(inst, bars){
+  const def = INDICATORS[inst.type];
+  disposeIndicator(inst);
+  if(!bars.length) return;
+  let plots = [];
+  try{ plots = def.build(bars, inst.params) || []; }catch(e){ return; }
+
+  inst._series = plots.map((plot, slot) => {
+    const scaleId = paneScaleId(inst, slot);
+    const common = {
+      priceScaleId: scaleId,
+      priceLineVisible: false, lastValueVisible: def.pane !== 0,
+      crosshairMarkerVisible: false,
+    };
+    const s = plot.histogram
+      ? chart.addSeries(LightweightCharts.HistogramSeries,
+          Object.assign({color:plot.color}, common))
+      : chart.addSeries(LightweightCharts.LineSeries, Object.assign({
+          color: slot === 0 && inst.color ? inst.color : plot.color,
+          lineWidth: plot.width || 1,
+          lineStyle: plot.dashed ? 2 : 0,
+        }, common));
+    s.setData(plot.data);
+    return s;
+  });
+
+  if(def.pane !== 0 && inst._series.length){
+    // Sub-panes stack in the lower third, above the volume strip.
+    chart.priceScale(paneScaleId(inst, 0)).applyOptions({
+      scaleMargins:{top:0.72, bottom:0.16},
+    });
   }
 }
+
+function applyIndicators(bars){
+  indicators.forEach(inst => buildIndicator(inst, bars));
+}
+
+/* Live tick: recompute and push only the newest point of each plot. setData on
+   every tick would rebuild thousands of points several times a second, and on
+   the 5m chart with history paged in that is visible as stutter. */
+function tickIndicators(){
+  if(!currentBars.length) return;
+  indicators.forEach(inst => {
+    if(!inst._series || !inst._series.length) return;
+    let plots = [];
+    try{ plots = INDICATORS[inst.type].build(currentBars, inst.params) || []; }
+    catch(e){ return; }
+    plots.forEach((plot, i) => {
+      const s = inst._series[i];
+      const last = plot.data && plot.data[plot.data.length - 1];
+      if(s && last) { try{ s.update(last); }catch(e){} }
+    });
+  });
+}
+
+// Kept as the single name the load path and the websocket path both call, so
+// the two can never drift apart the way the old hand-written pair did.
+function applyMA(bars){ applyIndicators(bars); }
 
 /* ---------- data sources ----------
    Binance is fetched from the browser on purpose: it geo-blocks US datacenter
@@ -505,11 +958,11 @@ function openStream(sym, tf, token){
     else currentBars.push(bar);
     if(currentBars.length > MAX_BARS) currentBars.splice(0, currentBars.length - MAX_BARS);
 
-    if(showMA){
-      const m20 = sma(currentBars, 20), m50 = sma(currentBars, 50);
-      if(m20.length) ma20.update(m20[m20.length - 1]);
-      if(m50.length) ma50.update(m50[m50.length - 1]);
-    }
+    // Recompute the last point of every indicator through the same path the
+    // initial load uses. The old code recomputed MA20/50 by hand right here,
+    // which meant two copies of the same arithmetic that had to be kept in
+    // step -- exactly the kind of pair that drifts.
+    tickIndicators();
     renderQuote(currentBars);
     el.upd.textContent = new Date().toLocaleTimeString("vi-VN");
     scheduleDraw();
@@ -1144,11 +1597,98 @@ TIMEFRAMES.forEach(tf => {
   el.tfs.appendChild(b);
 });
 
-el.ma.addEventListener("click", () => {
-  showMA = !showMA;
-  el.ma.setAttribute("aria-pressed", String(showMA));
-  try{ localStorage.setItem("leon_chart_ma", showMA ? "1" : "0"); }catch(e){}
-  applyMA(currentBars);
+/* ---------- indicator panel ---------- */
+const indEl = {
+  open:  document.getElementById("ind-open"),
+  count: document.getElementById("ind-count"),
+  panel: document.getElementById("ind-panel"),
+  type:  document.getElementById("ind-type"),
+  period:document.getElementById("ind-period"),
+  add:   document.getElementById("ind-add"),
+  close: document.getElementById("ind-close"),
+  list:  document.getElementById("ind-list"),
+};
+
+INDICATOR_KEYS.forEach(key => {
+  const o = document.createElement("option");
+  o.value = key;
+  o.textContent = INDICATORS[key].name;
+  indEl.type.appendChild(o);
+});
+
+function indicatorLabel(inst){
+  const def = INDICATORS[inst.type];
+  // Show the parameter that distinguishes two instances of the same type;
+  // "EMA" twice in the list would be unreadable, "EMA 20"/"EMA 200" is not.
+  const p = inst.params.period ?? inst.params.fast ?? inst.params.tenkan;
+  return p != null ? `${def.name} ${p}` : def.name;
+}
+
+function indicatorColor(inst){
+  const def = INDICATORS[inst.type];
+  if(inst.color) return inst.color;
+  try{ return (def.build(currentBars.slice(0, 1), inst.params)[0] || {}).color || "#8b98a5"; }
+  catch(e){ return "#8b98a5"; }
+}
+
+function renderIndicatorList(){
+  indEl.count.textContent = String(indicators.length);
+  if(!indicators.length){
+    indEl.list.innerHTML = '<li class="empty">Chưa có chỉ báo nào</li>';
+    return;
+  }
+  indEl.list.innerHTML = indicators.map(inst =>
+    `<li data-id="${inst.id}">` +
+    `<i class="dot" style="background:${indicatorColor(inst)}"></i>` +
+    `${indicatorLabel(inst)}` +
+    `<button class="rm" type="button" data-id="${inst.id}" ` +
+    `title="Bỏ ${indicatorLabel(inst)}" aria-label="Bỏ ${indicatorLabel(inst)}">×</button></li>`
+  ).join("");
+}
+
+function syncPeriodPlaceholder(){
+  const def = INDICATORS[indEl.type.value];
+  const p = def && (def.params.period ?? def.params.fast ?? def.params.tenkan);
+  indEl.period.placeholder = p != null ? String(p) : "—";
+  indEl.period.disabled = p == null;
+  indEl.period.value = "";
+}
+
+indEl.open.addEventListener("click", () => {
+  indEl.panel.hidden = !indEl.panel.hidden;
+  if(!indEl.panel.hidden){ renderIndicatorList(); syncPeriodPlaceholder(); }
+});
+indEl.close.addEventListener("click", () => { indEl.panel.hidden = true; });
+indEl.type.addEventListener("change", syncPeriodPlaceholder);
+
+indEl.add.addEventListener("click", () => {
+  const type = indEl.type.value;
+  const def = INDICATORS[type];
+  if(!def) return;
+  const params = Object.assign({}, def.params);
+  const raw = parseInt(indEl.period.value, 10);
+  if(Number.isFinite(raw) && raw > 0){
+    if("period" in params) params.period = raw;
+    else if("fast" in params) params.fast = raw;
+    else if("tenkan" in params) params.tenkan = raw;
+  }
+  const inst = {id: indicatorSeq++, type, color:null, params};
+  indicators.push(inst);
+  buildIndicator(inst, currentBars);
+  saveIndicators();
+  renderIndicatorList();
+});
+
+indEl.list.addEventListener("click", e => {
+  const btn = e.target.closest(".rm");
+  if(!btn) return;
+  const id = Number(btn.dataset.id);
+  const i = indicators.findIndex(x => x.id === id);
+  if(i < 0) return;
+  disposeIndicator(indicators[i]);
+  indicators.splice(i, 1);
+  saveIndicators();
+  renderIndicatorList();
 });
 
 function syncUrl(){
@@ -1198,6 +1738,8 @@ setInterval(() => {
 
 loadCoinList();
 loadDrawings();
+loadIndicators();
+renderIndicatorList();
 load();
 </script>
 </body>
