@@ -1320,7 +1320,41 @@ const TOOLS = {
   range: {need:2, label:"⇔",  title:"Đo khoảng — Δgiá, Δ%, số nến"},
   mark:  {need:1, label:"▲",  title:"Đánh dấu — 1 điểm"},
   text:  {need:1, label:"T",  title:"Ghi chú — 1 điểm"},
+  // Multi-point tools. `need` is the vertex count that finishes the shape;
+  // `labels` names each vertex, `ratios` reads the Fibonacci relationship
+  // between legs so a harmonic pattern says whether it actually is one.
+  channel:{need:3, label:"═",  title:"Kênh song song — 3 điểm", color:"#26a69a"},
+  pitchfork:{need:3, label:"⑂", title:"Pitchfork (Andrews) — 3 điểm", color:"#facc15"},
+  triangle:{need:3, label:"◺", title:"Tam giác — 3 điểm", color:"#60a5fa"},
+  ellipse:{need:2, label:"◯", title:"Ellipse — 2 điểm", color:"#60a5fa"},
+  gannfan:{need:2, label:"╳",  title:"Gann Fan — 2 điểm", color:"#8b5cf6"},
+  linreg:{need:2, label:"◫",  title:"Kênh hồi quy tuyến tính — 2 điểm", color:"#22d3ee"},
+  fibfan:{need:2, label:"⋔",  title:"Fibonacci Fan — 2 điểm", color:"#9c27b0"},
+  fibtime:{need:2, label:"⁞", title:"Fibonacci Time Zones — 2 điểm", color:"#9c27b0"},
+  abcd:  {need:4, label:"ABCD", title:"Mẫu hình ABCD — 4 đỉnh",
+          color:"#a78bfa", labels:["A","B","C","D"], ratios:true},
+  xabcd: {need:5, label:"XABCD", title:"Harmonic XABCD — 5 đỉnh",
+          color:"#a78bfa", labels:["X","A","B","C","D"], ratios:true},
+  elliott:{need:6, label:"1-5", title:"Elliott sóng đẩy 1-5 — 6 đỉnh",
+          color:"#22d3ee", labels:["0","1","2","3","4","5"]},
+  elliottabc:{need:4, label:"ABC", title:"Elliott sóng điều chỉnh A-B-C — 4 đỉnh",
+          color:"#f472b6", labels:["0","A","B","C"]},
+  hns:   {need:5, label:"H&S", title:"Vai-Đầu-Vai — 5 đỉnh",
+          color:"#f472b6", labels:["LS","","H","","RS"]},
+  long:  {need:2, label:"⊞",  title:"Vị thế mua — kéo TP/SL", color:"#26a69a"},
+  short: {need:2, label:"⊟",  title:"Vị thế bán — kéo TP/SL", color:"#ef5350"},
 };
+
+// Ratios a harmonic leg is allowed to land on, and the tolerance that counts
+// as "landed". Straight from the standard pattern definitions.
+const HARMONIC_RATIOS = [0.382, 0.5, 0.618, 0.707, 0.786, 0.886, 1, 1.13,
+                         1.272, 1.414, 1.618, 2, 2.24, 2.618, 3.14, 3.618];
+function nearHarmonic(r){
+  return HARMONIC_RATIOS.some(h => Math.abs(r - h) <= 0.03);
+}
+const GANN_ANGLES = [[1,8],[1,4],[1,3],[1,2],[1,1],[2,1],[3,1],[4,1],[8,1]];
+const FIB_FAN_LEVELS = [0.382, 0.5, 0.618];
+const FIB_TIME_STEPS = [1, 2, 3, 5, 8, 13, 21, 34, 55];
 const TOOL_KEYS = Object.keys(TOOLS);
 
 let drawMode = "pan";
@@ -1340,12 +1374,23 @@ function validPoint(p){
   return p && Number.isFinite(+p.t) && Number.isFinite(+p.p);
 }
 
+/* Two storage shapes coexist. Tools of three points or fewer keep the original
+   a/b/c fields, so drawings saved before the polygon tools existed still load.
+   Anything longer stores pts[], because naming a sixth vertex `f` stops being
+   readable. shapePoints() hides the difference from everything downstream. */
+function shapePoints(d){
+  if(Array.isArray(d.pts)) return d.pts;
+  const out = [];
+  [d.a, d.b, d.c].forEach(p => { if(validPoint(p)) out.push(p); });
+  return out;
+}
+
 function shapeOk(d){
   const tool = d && TOOLS[d.type];
-  if(!tool || !validPoint(d.a)) return false;
-  if(tool.need >= 2 && !validPoint(d.b)) return false;
-  if(tool.need >= 3 && !validPoint(d.c)) return false;
-  return true;
+  if(!tool) return false;
+  const pts = shapePoints(d);
+  if(pts.length < tool.need) return false;
+  return pts.every(validPoint);
 }
 
 function loadDrawings(){
@@ -1523,19 +1568,260 @@ function line(ctx, x1, y1, x2, y2){
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
 }
 
+/* Renderers for the multi-point tools. Each receives pixel points, the market
+   points behind them, and a few helpers. Kept in one table so the shape of a
+   tool lives next to how it draws, the way the reference implementation does
+   it -- adding one means adding a registry entry and a function here. */
+const POLY_PAINT = {
+  // Main line through the first two points; the third anchors a parallel copy,
+  // and the band between them is filled.
+  channel(ctx, px, mk, d, u){
+    const [A, B, C] = px;
+    if(!B) return;
+    const slope = B.x === A.x ? 0 : (B.y - A.y) / (B.x - A.x);
+    const at = (anc, x) => anc.y + slope * (x - anc.x);
+    const xs = px.map(p => p.x);
+    const xl = Math.min(...xs), xr = Math.max(...xs);
+    line(ctx, xl, at(A, xl), xr, at(A, xr));
+    if(C){
+      line(ctx, xl, at(C, xl), xr, at(C, xr));
+      ctx.globalAlpha = 0.10;
+      ctx.beginPath();
+      ctx.moveTo(xl, at(A, xl)); ctx.lineTo(xr, at(A, xr));
+      ctx.lineTo(xr, at(C, xr)); ctx.lineTo(xl, at(C, xl));
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    px.forEach(p => u.dot(p, 1.5));
+  },
+
+  // Andrews pitchfork: median from the first point through the midpoint of the
+  // other two, with tines parallel to it through each of them.
+  pitchfork(ctx, px, mk, d, u){
+    const [P, B, C] = px;
+    if(!C) return;
+    const M = {x:(B.x + C.x) / 2, y:(B.y + C.y) / 2};
+    const dx = M.x - P.x, dy = M.y - P.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, ext = 4000;
+    line(ctx, B.x, B.y, C.x, C.y);
+    line(ctx, P.x, P.y, M.x + ux * ext, M.y + uy * ext);
+    [B, C].forEach(p => line(ctx, p.x, p.y, p.x + ux * ext, p.y + uy * ext));
+    ctx.globalAlpha = 0.07;
+    ctx.beginPath();
+    ctx.moveTo(B.x, B.y); ctx.lineTo(B.x + ux*ext, B.y + uy*ext);
+    ctx.lineTo(C.x + ux*ext, C.y + uy*ext); ctx.lineTo(C.x, C.y);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+    px.forEach(p => u.dot(p, 1.5));
+  },
+
+  triangle(ctx, px, mk, d, u){
+    if(px.length < 3) return;
+    ctx.beginPath();
+    ctx.moveTo(px[0].x, px[0].y);
+    px.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.globalAlpha = 0.12; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.stroke();
+  },
+
+  ellipse(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const cx = (A.x + B.x) / 2, cy = (A.y + B.y) / 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, Math.abs(B.x - A.x) / 2, Math.abs(B.y - A.y) / 2, 0, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.10; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.stroke();
+  },
+
+  // Nine rays whose slopes are the classic price/time ratios. The 1x1 line is
+  // the reference; the others fan out from it in both directions.
+  gannfan(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const unitX = B.x - A.x, unitY = B.y - A.y;
+    if(!unitX || !unitY) return;
+    ctx.font = u.small;
+    GANN_ANGLES.forEach(([rise, run]) => {
+      const k = (rise / run);
+      const ex = A.x + unitX * 6, ey = A.y + unitY * 6 * k;
+      line(ctx, A.x, A.y, ex, ey);
+    });
+    u.dot(A, 2); u.dot(B, 2);
+  },
+
+  // Least-squares fit over the bars between the two clicks, with a band at one
+  // standard deviation of the residuals -- the usual regression channel.
+  linreg(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const t0 = Math.min(mk[0].t, mk[1].t), t1 = Math.max(mk[0].t, mk[1].t);
+    const inside = currentBars.filter(bar => bar.time >= t0 && bar.time <= t1);
+    if(inside.length < 3){ line(ctx, A.x, A.y, B.x, B.y); return; }
+    const n = inside.length;
+    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+    inside.forEach((bar, i) => {
+      sx += i; sy += bar.close; sxy += i * bar.close; sxx += i * i;
+    });
+    const denom = n * sxx - sx * sx;
+    if(!denom){ line(ctx, A.x, A.y, B.x, B.y); return; }
+    const slope = (n * sxy - sx * sy) / denom;
+    const intercept = (sy - slope * sx) / n;
+    const resid = inside.map((bar, i) => bar.close - (intercept + slope * i));
+    const sd = Math.sqrt(resid.reduce((acc, r) => acc + r * r, 0) / n);
+    const ptAt = (i, off) => {
+      const x = timeToX(inside[i].time);
+      const y = candles.priceToCoordinate(intercept + slope * i + off);
+      return (x == null || y == null) ? null : {x, y};
+    };
+    [0, sd, -sd].forEach((off, idx) => {
+      const p0 = ptAt(0, off), p1 = ptAt(n - 1, off);
+      if(!p0 || !p1) return;
+      ctx.save();
+      if(idx) ctx.setLineDash([4, 3]);
+      line(ctx, p0.x, p0.y, p1.x, p1.y);
+      ctx.restore();
+    });
+  },
+
+  // Rays from the first point through the Fibonacci fractions of the move.
+  fibfan(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    ctx.font = u.small;
+    FIB_FAN_LEVELS.forEach(level => {
+      const y = A.y + (B.y - A.y) * level;
+      const dx = (B.x - A.x) * 4, dy = (y - A.y) * 4;
+      line(ctx, A.x, A.y, A.x + dx, A.y + dy);
+      ctx.fillText(`${(level * 100).toFixed(1)}%`, B.x + 3, y);
+    });
+    line(ctx, A.x, A.y, B.x, B.y);
+  },
+
+  // Vertical lines at Fibonacci multiples of the span between the two clicks.
+  fibtime(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const step = mk[1].t - mk[0].t;
+    if(!step) return;
+    ctx.font = u.small;
+    FIB_TIME_STEPS.forEach(mult => {
+      const x = timeToX(mk[0].t + step * mult);
+      if(x == null || x < -50 || x > u.w + 50) return;
+      line(ctx, x, 0, x, u.h);
+      ctx.fillText(String(mult), x + 3, 12);
+    });
+  },
+
+  // Labelled polylines. Harmonic patterns additionally print each leg's
+  // retracement and mark it when it lands on a recognised ratio.
+  polyline(ctx, px, mk, d, u){
+    const tool = TOOLS[d.type];
+    ctx.beginPath();
+    ctx.moveTo(px[0].x, px[0].y);
+    px.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    ctx.font = u.small;
+    px.forEach((p, i) => {
+      u.dot(p, 2.5);
+      const label = tool.labels && tool.labels[i];
+      if(label) ctx.fillText(label, p.x + 5, p.y - 5);
+    });
+    if(tool.ratios && mk.length >= 3){
+      for(let i = 2; i < mk.length; i++){
+        const prev = Math.abs(mk[i-1].p - mk[i-2].p);
+        if(!prev) continue;
+        const ratio = Math.abs(mk[i].p - mk[i-1].p) / prev;
+        const mx = (px[i].x + px[i-1].x) / 2, my = (px[i].y + px[i-1].y) / 2;
+        ctx.save();
+        ctx.fillStyle = nearHarmonic(ratio) ? css("--up") : css("--muted");
+        ctx.fillText(ratio.toFixed(3), mx + 4, my);
+        ctx.restore();
+      }
+    }
+    if(d.type === "hns" && px.length >= 5){
+      // Neckline through the two troughs, extended right: the level whose
+      // break is what the pattern is watched for.
+      const l = px[1], r = px[3];
+      if(l && r && l.x !== r.x){
+        const slope = (r.y - l.y) / (r.x - l.x);
+        ctx.save(); ctx.setLineDash([5, 4]);
+        line(ctx, l.x, l.y, u.w, l.y + slope * (u.w - l.x));
+        ctx.restore();
+      }
+    }
+  },
+
+  // Entry with a target above and a stop below (inverted for a short), drawn
+  // as two tinted boxes so the risk and reward are compared by area.
+  position(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const isLong = d.type === "long";
+    const entryY = candles.priceToCoordinate(d.entry);
+    const tpY = candles.priceToCoordinate(d.tp);
+    const slY = candles.priceToCoordinate(d.sl);
+    if(entryY == null || tpY == null || slY == null) return;
+    const x0 = Math.min(A.x, B.x), x1 = Math.max(A.x, B.x);
+    const box = (yA, yB, colour) => {
+      ctx.save();
+      ctx.fillStyle = colour; ctx.globalAlpha = 0.14;
+      ctx.fillRect(x0, Math.min(yA, yB), x1 - x0, Math.abs(yB - yA));
+      ctx.restore();
+    };
+    box(entryY, tpY, css("--up"));
+    box(entryY, slY, css("--down"));
+    ctx.save(); ctx.setLineDash([]);
+    ctx.strokeStyle = css("--muted");
+    line(ctx, x0, entryY, x1, entryY);
+    ctx.restore();
+    const risk = Math.abs(d.entry - d.sl);
+    const reward = Math.abs(d.tp - d.entry);
+    ctx.font = u.small;
+    ctx.fillText(`${isLong ? "Mua" : "Bán"} · R:R ${risk ? (reward/risk).toFixed(2) : "—"}`,
+      x0 + 4, Math.min(tpY, slY) - 4);
+  },
+};
+POLY_PAINT.abcd = POLY_PAINT.polyline;
+POLY_PAINT.xabcd = POLY_PAINT.polyline;
+POLY_PAINT.elliott = POLY_PAINT.polyline;
+POLY_PAINT.elliottabc = POLY_PAINT.polyline;
+POLY_PAINT.hns = POLY_PAINT.polyline;
+POLY_PAINT.long = POLY_PAINT.position;
+POLY_PAINT.short = POLY_PAINT.position;
+
 function paintDrawing(d, index, ctx, w, h){
   const tool = TOOLS[d.type];
   if(!tool) return;
-  const a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
-  if(!a || (tool.need >= 2 && !b)) return;
+  const market = shapePoints(d);
+  const px = market.map(pixelPoint);
+  if(!px.length || px.some(p => !p)) return;
+  const a = px[0], b = px[1] || null;
   const active = index === selectedDrawing;
-  ctx.strokeStyle = active ? css("--accent") : css("--warn");
+  // Tools that carry their own colour keep it, so a pitchfork and a channel
+  // stay distinguishable when several are on the chart at once.
+  const base = tool.color || css("--warn");
+  ctx.strokeStyle = active ? css("--accent") : base;
   ctx.fillStyle = ctx.strokeStyle;
   ctx.lineWidth = active ? 2 : 1.35;
   ctx.setLineDash(active ? [] : [5, 3]);
 
   const price = v => nf(v, v < 1 ? 6 : 2);
   const small = "10px -apple-system,Segoe UI,sans-serif";
+  const dot = (p, r = 2) => { ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill(); };
+
+  if(POLY_PAINT[d.type]){
+    POLY_PAINT[d.type](ctx, px, market, d, {w, h, price, small, dot, base, active});
+    ctx.setLineDash([]);
+    if(active) px.forEach(p => {
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
+      ctx.fillStyle = css("--bg"); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = ctx.strokeStyle;
+    });
+    return;
+  }
 
   if(d.type === "hline"){
     line(ctx, 0, a.y, w, a.y);
@@ -1636,9 +1922,22 @@ function redraw(){
   // so it draws in the unselected style without claiming to be a real shape.
   if(pendingPoints.length && previewPoint){
     const pts = pendingPoints.concat([previewPoint]);
-    const ghost = {type:drawMode, a:pts[0], b:pts[1] || previewPoint};
-    if(pts[2]) ghost.c = pts[2];
-    if(shapeOk(ghost)) paintDrawing(ghost, -2, drawCtx, rect.width, rect.height);
+    const tool = TOOLS[drawMode];
+    const ghost = tool && tool.need > 3
+      ? {type:drawMode, pts}
+      : {type:drawMode, a:pts[0], b:pts[1] || previewPoint};
+    if(tool && tool.need === 3 && pts[2]) ghost.c = pts[2];
+    if(drawMode === "long" || drawMode === "short"){
+      ghost.entry = pts[0].p;
+      ghost.tp = (pts[1] || previewPoint).p;
+      ghost.sl = ghost.entry - (ghost.tp - ghost.entry);
+    }
+    // Partial polylines are legitimate to preview even though shapeOk would
+    // reject them for having too few vertices.
+    const previewOk = tool && tool.need > 3
+      ? pts.length >= 2 && pts.every(validPoint)
+      : shapeOk(ghost);
+    if(previewOk) paintDrawing(ghost, -2, drawCtx, rect.width, rect.height);
   }
 }
 
@@ -1657,9 +1956,36 @@ function hitDrawing(p){
   const near = 6;
   // Newest first: shapes drawn later sit on top, so they answer the click.
   for(let i = drawings.length - 1; i >= 0; i--){
-    const d = drawings[i], a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
-    if(!a) continue;
+    const d = drawings[i];
     const t = d.type;
+
+    // Multi-point shapes are hit through their outline: close enough to any
+    // segment between consecutive vertices, or to a vertex itself. Exact
+    // per-tool geometry (a pitchfork's tines, a fan's rays) is not worth the
+    // code -- the reader is aiming at the shape, not at one of its rays.
+    if(POLY_PAINT[t]){
+      const pts = shapePoints(d).map(pixelPoint);
+      if(pts.some(q => !q)) continue;
+      if(pts.some(q => Math.hypot(p.x - q.x, p.y - q.y) <= near + 2)) return i;
+      let hit = false;
+      for(let k = 1; k < pts.length && !hit; k++){
+        if(segmentDistance(p, pts[k-1], pts[k]) <= near) hit = true;
+      }
+      // Position tools are boxes, so anywhere inside counts.
+      if(!hit && (t === "long" || t === "short")){
+        const ys = [d.entry, d.tp, d.sl].map(v => candles.priceToCoordinate(v));
+        if(ys.every(y => y != null)){
+          const xs = pts.map(q => q.x);
+          if(p.x >= Math.min(...xs) - near && p.x <= Math.max(...xs) + near &&
+             p.y >= Math.min(...ys) - near && p.y <= Math.max(...ys) + near) hit = true;
+        }
+      }
+      if(hit) return i;
+      continue;
+    }
+
+    const a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
+    if(!a) continue;
 
     if(t === "hline" && Math.abs(p.y - a.y) <= near) return i;
     if(t === "hray" && Math.abs(p.y - a.y) <= near && p.x >= a.x - near) return i;
@@ -1815,8 +2141,17 @@ el.drawing.addEventListener("pointerdown", e => {
   pendingPoint = pendingPoints[0];
   if(pendingPoints.length >= tool.need){
     pushUndo();
-    const shape = {type:drawMode, a:pendingPoints[0], b:pendingPoints[1]};
-    if(tool.need >= 3) shape.c = pendingPoints[2];
+    const shape = tool.need > 3
+      ? {type:drawMode, pts:pendingPoints.slice(0, tool.need)}
+      : {type:drawMode, a:pendingPoints[0], b:pendingPoints[1]};
+    if(tool.need === 3) shape.c = pendingPoints[2];
+    if(drawMode === "long" || drawMode === "short"){
+      // Entry is where the reader clicked first; the second click sets the
+      // target, and the stop mirrors it so the box opens at 1:1 and can be
+      // dragged from there.
+      const entry = pendingPoints[0].p, target = pendingPoints[1].p;
+      shape.entry = entry; shape.tp = target; shape.sl = entry - (target - entry);
+    }
     drawings.push(shape);
     pendingPoints = [];
     pendingPoint = previewPoint = null;
@@ -1834,9 +2169,16 @@ el.drawing.addEventListener("pointermove", e => {
       moved[dragging.handle] = {t:p.t, p:p.p};
     }else{
       const dt = p.t - dragging.start.t, dp = p.p - dragging.start.p;
-      moved.a.t += dt; moved.a.p += dp;
-      if(moved.b){ moved.b.t += dt; moved.b.p += dp; }
-      if(moved.c){ moved.c.t += dt; moved.c.p += dp; }
+      if(Array.isArray(moved.pts)){
+        moved.pts.forEach(q => { q.t += dt; q.p += dp; });
+      }else{
+        moved.a.t += dt; moved.a.p += dp;
+        if(moved.b){ moved.b.t += dt; moved.b.p += dp; }
+        if(moved.c){ moved.c.t += dt; moved.c.p += dp; }
+      }
+      // Position tools carry prices outside the point list; they have to move
+      // with it or the box detaches from its own handles.
+      if(moved.entry != null){ moved.entry += dp; moved.tp += dp; moved.sl += dp; }
     }
     if(!dragging.dirty){
       pushUndo(dragging.snapshot);
