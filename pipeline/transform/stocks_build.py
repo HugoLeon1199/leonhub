@@ -303,21 +303,33 @@ ORDER BY series, fetched_at DESC
 
 # Latest three-level order book from SSI. Compact keys keep stocks.json small:
 # b1/b1v are bid-1 price/volume, a1/a1v ask-1, and likewise for levels 2-3.
+# A book must come from one instant. Taking the latest row per field would mix
+# an in-session snapshot's levels 2-3 with a post-close level 1, since SSI stops
+# serving the deeper levels after 14:45 -- see docs/source-gotchas.md. Pick the
+# newest snapshot per symbol that actually carried depth, then read every level
+# from that one snapshot.
 BOARD_DEPTH_SQL = """
-WITH latest AS (
-    SELECT DISTINCT ON (series)
+WITH board AS (
+    SELECT
         split_part(series, '.', 3) AS symbol,
         split_part(series, '.', 4) AS field,
-        value
+        value, as_of, fetched_at
     FROM metric_ts
     WHERE series LIKE 'vn.board.%'
       AND split_part(series, '.', 4) IN (
         'bid1','bid1_vol','bid2','bid2_vol','bid3','bid3_vol',
         'ask1','ask1_vol','ask2','ask2_vol','ask3','ask3_vol'
       )
-    ORDER BY series, as_of DESC, fetched_at DESC
+),
+newest AS (
+    SELECT DISTINCT ON (symbol) symbol, as_of, fetched_at
+    FROM board
+    ORDER BY symbol, as_of DESC, fetched_at DESC
 )
-SELECT symbol, field, value FROM latest
+SELECT b.symbol, b.field, b.value
+FROM board b
+JOIN newest n
+  ON b.symbol = n.symbol AND b.as_of = n.as_of AND b.fetched_at = n.fetched_at
 """
 
 DEPTH_KEYS = {

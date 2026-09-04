@@ -1,0 +1,61 @@
+name: VN intraday depth
+
+# The daily job runs at 16:30 ICT, well after the 14:45 close, and by then SSI
+# serves only level 1 of the book -- levels 2 and 3 come back null for every
+# ticker, so the ticker page's depth panel can never show more than one row.
+# See "SSI iBoard keeps only level 1 after the close" in docs/source-gotchas.md.
+#
+# This takes one snapshot inside the afternoon session, when all three levels
+# are live. It is deliberately a single run rather than a polling loop: the
+# panel is labelled a snapshot, not a real-time feed, and every run writes to
+# the warehouse that only one job may hold at a time.
+
+on:
+  schedule:
+    - cron: "30 6 * * 1-5"   # 13:30 ICT, inside the 13:00-14:45 session
+  workflow_dispatch:
+
+# Shared with daily-vn, daily-bds, daily-us and flows -- see daily-vn.yml.
+concurrency:
+  group: warehouse-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  depth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore warehouse
+        uses: actions/cache/restore@v4
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+          restore-keys: warehouse-
+
+      # BOARD_DEPTH_SQL reads every level from a single snapshot per symbol, so
+      # this run and the 16:30 one never blend into one book: whichever is newer
+      # supplies the whole book, and the published depth is internally
+      # consistent even though the two runs see different market states.
+      - name: Snapshot SSI board with depth
+        run: python -m pipeline.sources.ssi_board --with-depth
+        continue-on-error: true
+
+      - name: Save warehouse
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}

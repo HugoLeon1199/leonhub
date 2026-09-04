@@ -254,7 +254,12 @@ fetch("../../data/stocks.json", {cache:"no-cache"})
   });
 
 function buildFacets(){
-  const exchanges = [...new Set(ROWS.map(r => r.e).filter(Boolean))].sort();
+  // Delisted tickers carry no price and no fundamentals. They stay selectable
+  // -- the row is a real historical record -- but sort last so the filter reads
+  // as three live exchanges plus an archive, not four peers.
+  const DELISTED = "Đã hủy niêm yết";
+  const exchanges = [...new Set(ROWS.map(r => r.e).filter(Boolean))]
+    .sort((a, b) => (a === DELISTED) - (b === DELISTED) || a.localeCompare(b, "vi"));
   exchanges.forEach(v => el("ex").add(new Option(v, v)));
   const industries = [...new Set(ROWS.map(r => r.i).filter(Boolean))].sort((a,b) => a.localeCompare(b,"vi"));
   industries.forEach(v => el("ind").add(new Option(v, v)));
