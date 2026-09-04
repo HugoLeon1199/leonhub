@@ -277,34 +277,31 @@ def collect(symbol: str = "BTC", dry_run: bool = False) -> dict[str, Any]:
     if dry_run:
         return surface
 
-    rows = [
-        {
-            "series": f"gex.{symbol.lower()}.{key}",
-            "as_of": started,
-            "value": float(surface[key]),
-            "source": "deribit",
-            "fetched_at": started,
-            "meta": None,
-        }
-        for key in ("net_gex", "net_gex_0dte", "call_gex", "put_gex",
-                    "gamma_flip", "max_pain", "vanna", "charm", "atm_iv", "spot")
-        if isinstance(surface.get(key), (int, float))
-    ]
+    # Store the complete computed surface as one append-only observation. The
+    # previous implementation wrote ten scalar series that no build ever read,
+    # then published JSON directly from this source module. Keeping the full
+    # payload in meta lets gex_build reproduce the artifact and preserves the
+    # point-in-time history without a special-purpose table.
+    rows = [{
+        "series": f"gex.{symbol.lower()}.surface",
+        "as_of": started,
+        "value": float(surface["net_gex"]),
+        "source": "deribit",
+        "fetched_at": started,
+        "meta": json.dumps(surface, ensure_ascii=False),
+    }]
 
     con = wh.connect()
     try:
-        wh.append(con, "metric_ts", rows)
+        rows_new = wh.append(con, "metric_ts", rows)
         wh.log_run(
             con, run_id, f"deribit_gex:{symbol}", started, "ok",
-            rows_in=len(rows), rows_new=len(rows),
+            rows_in=len(rows), rows_new=rows_new,
             detail={k: v for k, v in surface.items() if not isinstance(v, list)},
         )
     finally:
         con.close()
 
-    from pipeline.publish.emit import write_json
-    path = write_json(f"gex_{symbol.lower()}.json", surface)
-    surface["path"] = str(path)
     return surface
 
 

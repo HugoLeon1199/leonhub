@@ -52,6 +52,21 @@ h1{font-size:19px; margin:0; font-weight:700; letter-spacing:-.2px}
 section{margin-bottom:26px}
 h2{font-size:14px; margin:0 0 3px; font-weight:600}
 .cap{font-size:12px; color:var(--muted); margin:0 0 10px; max-width:78ch}
+
+/* Collapsed by default: a reader who already knows what gamma flip means should
+   not have to scroll past the definition every visit, but one who does not
+   should never have to leave the page to find it. */
+.explain{margin:0 0 18px; font-size:12.5px}
+.explain > summary{cursor:pointer; color:var(--muted); font-size:12px;
+  padding:5px 0; user-select:none}
+.explain > summary:hover{color:var(--text)}
+.explain dl{margin:6px 0 0; padding:12px 14px; background:var(--panel);
+  border:1px solid var(--line); border-radius:9px; max-width:82ch}
+.explain dt{font-weight:600; color:var(--text); margin-top:10px}
+.explain dt:first-child{margin-top:0}
+.explain dd{margin:2px 0 0; color:var(--muted); line-height:1.5}
+.explain .fine{margin:10px 0 0; padding:0 14px; color:var(--muted);
+  font-size:12px; max-width:82ch}
 .card{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:12px 14px 8px}
 .legend{display:flex; gap:14px; font-size:11.5px; color:var(--muted); margin:0 0 6px; flex-wrap:wrap}
 .legend span{display:inline-flex; align-items:center; gap:5px}
@@ -90,9 +105,34 @@ footer b{color:var(--text); font-weight:600}
   <h1>Gamma Exposure</h1>
   <div class="group" id="syms" role="group" aria-label="Tài sản"></div>
 </div>
-<p class="sub">Nhà tạo lập bán quyền chọn phải phòng hộ lượng gamma họ nhận, và dòng phòng hộ đó là cơ học:
-khi gamma dương họ mua khi giá giảm và bán khi giá tăng, làm dịu biến động; khi gamma âm họ làm ngược lại,
-khuếch đại biến động. Vị trí và dấu của gamma vì thế nói lên điều mà lịch sử giá không nói được.</p>
+<p class="sub">Trang này trả lời một câu: <b>các nhà tạo lập quyền chọn đang buộc phải mua hay bán khi giá động đậy?</b>
+Họ bán quyền chọn rồi phải phòng hộ, và dòng phòng hộ đó là cơ học — không phải lựa chọn.
+Vì thế nó nói lên điều mà lịch sử giá không nói được.</p>
+
+<details class="explain">
+  <summary>Bốn khái niệm, giải thích ngắn</summary>
+  <dl>
+    <dt>Gamma dương</dt>
+    <dd>Nhà tạo lập phải <b>bán khi giá lên, mua khi giá xuống</b> — họ đi ngược đám đông,
+        nên giá bị <b>ghìm lại</b>. Biên độ thường hẹp, thị trường lình xình.</dd>
+    <dt>Gamma âm</dt>
+    <dd>Ngược lại: phải <b>mua khi giá lên, bán khi giá xuống</b> — họ đẩy theo đà,
+        nên biến động bị <b>khuếch đại</b>. Dễ có phiên chạy mạnh một chiều.</dd>
+    <dt>Gamma flip</dt>
+    <dd>Mức giá ranh giới giữa hai chế độ trên. Giá <b>trên</b> mức này thường là vùng bị ghìm;
+        <b>thủng xuống dưới</b> thì biến động thường tăng lên. Đây là con số đáng theo dõi nhất.</dd>
+    <dt>Max pain</dt>
+    <dd>Mức giá mà tại kỳ đáo hạn gần nhất, <b>phe mua quyền chọn mất nhiều tiền nhất</b>.
+        Không phải dự báo — chỉ là nơi lượng quyền chọn hết giá trị nhiều nhất.</dd>
+    <dt>Vanna &amp; Charm</dt>
+    <dd>Hai cách lượng phòng hộ thay đổi <b>mà giá không cần nhúc nhích</b>.
+        <b>Vanna</b>: khi biến động ngụ ý (IV) đổi. <b>Charm</b>: khi thời gian trôi
+        về phía đáo hạn. Vì thế một phiên yên ắng vẫn có thể sinh lệnh mua bán —
+        đây là lý do giá hay chạy quanh giờ đáo hạn dù không có tin gì.</dd>
+  </dl>
+  <p class="fine">Đây là trạng thái phòng hộ hiện tại, không phải dự báo giá. Nó cho biết
+     thị trường đang <em>dễ</em> hay <em>khó</em> biến động, chứ không nói giá sẽ đi hướng nào.</p>
+</details>
 
 <div id="verdict"></div>
 <div class="tiles" id="tiles"></div>
@@ -172,14 +212,21 @@ function render(d){
     (flip != null
       ? `Giá hiện tại ${fmt(spot)} đang <b>${aboveFlip ? "nằm trên" : "nằm dưới"}</b> mức gamma flip ` +
         `${fmt(flip)} — ${aboveFlip
-          ? "vùng phòng hộ ngược chiều, thường đi kèm biên độ hẹp hơn."
-          : "vùng phòng hộ thuận chiều, thường đi kèm biên độ rộng hơn."}`
+          ? "nhà tạo lập đang đi ngược đám đông, giá có xu hướng bị ghìm trong biên độ hẹp. " +
+            "Nếu thủng xuống dưới mức này, biến động thường tăng lên."
+          : "nhà tạo lập đang đẩy theo đà, biến động có xu hướng rộng hơn. " +
+            "Nếu lấy lại được mức này, biến động thường dịu lại."}`
       : "Không tìm thấy mức gamma flip trong dải giá hợp lý.") +
     `</p></div>`;
 
   const tiles = [
     {k:"Giá hiện tại", v:fmt(spot), n:"Deribit index"},
     {k:"Net GEX", v:usd(d.net_gex), cls:positive ? "pos" : "neg", n:"mỗi 1% biến động"},
+    // call_gex/put_gex split the net figure above into the two sides that
+    // produced it: a large net can come from a call wall, a thin put book, or
+    // both, and those are different markets to trade.
+    {k:"Call GEX", v:usd(d.call_gex), cls:"pos", n:"gamma từ phía call"},
+    {k:"Put GEX", v:usd(d.put_gex), cls:"neg", n:"gamma từ phía put"},
     {k:"Gamma flip", v:flip != null ? fmt(flip) : "—",
      n:flip != null ? `${((flip/spot - 1) * 100).toFixed(1)}% so với giá` : ""},
     {k:"Max pain", v:fmt(d.max_pain), n:"kỳ hạn gần nhất"},
@@ -189,7 +236,15 @@ function render(d){
      n:"tỉ lệ open interest"},
     {k:"IV at-the-money", v:d.atm_iv != null ? (d.atm_iv * 100).toFixed(1) + "%" : "—",
      n:"biến động ngụ ý"},
-    {k:"Hợp đồng", v:fmt(d.contracts), n:"đang mở"},
+    // Vanna and charm are the two ways a hedge drifts without the price
+    // moving at all -- one with implied volatility, one with the calendar.
+    // Both are computed already; neither was shown.
+    {k:"Vanna", v:usd(d.vanna), cls:d.vanna >= 0 ? "pos" : "neg",
+     n:"phòng hộ đổi khi IV đổi"},
+    {k:"Charm", v:usd(d.charm), cls:d.charm >= 0 ? "pos" : "neg",
+     n:"phòng hộ trôi theo thời gian"},
+    {k:"Hợp đồng", v:fmt(d.contracts),
+     n:d.nearest_expiry ? `đáo hạn gần nhất ${d.nearest_expiry}` : "đang mở"},
   ];
   el("tiles").innerHTML = tiles.map(t =>
     `<div class="tile"><span class="k">${t.k}</span>` +

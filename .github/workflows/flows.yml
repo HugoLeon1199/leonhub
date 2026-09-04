@@ -8,8 +8,9 @@ on:
     - cron: "0 2 * * 2-6"   # 09:00 ICT Tue-Sat, after the previous US session
   workflow_dispatch:
 
+# Shared with daily-vn and daily-bds -- see the comment in daily-vn.yml.
 concurrency:
-  group: flows
+  group: warehouse-writer
   cancel-in-progress: false
 
 permissions:
@@ -42,6 +43,9 @@ jobs:
 
       - name: Build flows.json
         run: python -m pipeline.transform.flows_build
+
+      - name: Validate before publishing
+        run: python -m pipeline.core.validate flows.json
 
       - name: Save warehouse
         uses: actions/cache/save@v4

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from typing import Any
 
 from pipeline.core import warehouse as wh
@@ -101,22 +102,52 @@ SANE_RANGE = {
 # newest row wholesale would blank out market cap for every ticker the moment an
 # SSI collection ran last -- which is exactly what happened (128 of 1,729 kept a
 # share count). Coalescing per column keeps each field's most recent real value.
-LATEST_QUOTE_SQL = """
+#
+# Restricted to one global session date used to read as "the price board", not
+# "every ticker's own last trade" -- and most UPCOM names do not trade every
+# session. That silently dropped price for 873 of 1,751 tickers (half of
+# HOSE/HNX/UPCOM combined, and the large majority of UPCOM), even though 849 of
+# those still carried fundamentals: real, listed companies simply missing from
+# every screen that sorts or filters on price. A ten-session window is wide
+# enough to catch a thinly traded name's last real print without reaching back
+# so far the number stops meaning "current" -- and each symbol still contributes
+# only its own newest quote in the window, via the per-column arg_max below.
+# `as_of` in the result is that quote's own session date, published as `pd` so
+# the UI can show a reader exactly how stale a given row's price is.
+QUOTE_WINDOW_SESSIONS = 10
+
+LATEST_QUOTE_SQL = f"""
 SELECT
     symbol,
-    max(as_of)                                                  AS as_of,
-    arg_max(price, fetched_at)     FILTER (WHERE price IS NOT NULL)     AS price,
-    arg_max(ref_price, fetched_at) FILTER (WHERE ref_price IS NOT NULL) AS ref_price,
-    arg_max(volume, fetched_at)    FILTER (WHERE volume IS NOT NULL)    AS volume,
-    arg_max(value, fetched_at)     FILTER (WHERE value IS NOT NULL)     AS value,
-    arg_max(foreign_buy_value, fetched_at)
+    arg_max(as_of, row(as_of, fetched_at))
+        FILTER (WHERE price IS NOT NULL AND price > 0)           AS as_of,
+    arg_max(price, row(as_of, fetched_at))
+        FILTER (WHERE price IS NOT NULL AND price > 0)           AS price,
+    arg_max(ref_price, row(as_of, fetched_at))
+        FILTER (WHERE ref_price IS NOT NULL)                     AS ref_price,
+    arg_max(open_price, row(as_of, fetched_at))
+        FILTER (WHERE open_price IS NOT NULL AND open_price > 0) AS open_price,
+    arg_max(high, row(as_of, fetched_at))
+        FILTER (WHERE high IS NOT NULL AND high > 0)             AS high,
+    arg_max(low, row(as_of, fetched_at))
+        FILTER (WHERE low IS NOT NULL AND low > 0)               AS low,
+    arg_max(volume, row(as_of, fetched_at))
+        FILTER (WHERE volume IS NOT NULL)                        AS volume,
+    arg_max(value, row(as_of, fetched_at))
+        FILTER (WHERE value IS NOT NULL)                         AS value,
+    arg_max(foreign_buy_value, row(as_of, fetched_at))
         FILTER (WHERE foreign_buy_value IS NOT NULL)            AS foreign_buy_value,
-    arg_max(foreign_sell_value, fetched_at)
+    arg_max(foreign_sell_value, row(as_of, fetched_at))
         FILTER (WHERE foreign_sell_value IS NOT NULL)           AS foreign_sell_value,
-    arg_max(exchange, fetched_at)  FILTER (WHERE exchange IS NOT NULL)  AS exchange,
+    arg_max(exchange, row(as_of, fetched_at))
+        FILTER (WHERE exchange IS NOT NULL)                      AS exchange,
     max(fetched_at)                                             AS fetched_at
 FROM eq_quote
-WHERE as_of = (SELECT max(as_of) FROM eq_quote)
+WHERE as_of >= (
+    SELECT min(d) FROM (
+        SELECT DISTINCT as_of AS d FROM eq_quote ORDER BY d DESC LIMIT {QUOTE_WINDOW_SESSIONS}
+    )
+)
 GROUP BY symbol
 """
 
@@ -139,21 +170,27 @@ ORDER BY symbol, fetched_at DESC
 # Rolling foreign net over the last N trading dates present in the warehouse.
 FOREIGN_FLOW_SQL = """
 WITH daily AS (
-    SELECT DISTINCT ON (symbol, as_of)
-        symbol, as_of,
-        coalesce(foreign_buy_value, 0) - coalesce(foreign_sell_value, 0) AS net
+    SELECT symbol, as_of,
+        coalesce(arg_max(foreign_buy_value, fetched_at)
+            FILTER (WHERE foreign_buy_value IS NOT NULL), 0)
+        - coalesce(arg_max(foreign_sell_value, fetched_at)
+            FILTER (WHERE foreign_sell_value IS NOT NULL), 0) AS net
     FROM eq_quote
-    ORDER BY symbol, as_of, fetched_at DESC
+    GROUP BY symbol, as_of
+    HAVING count(*) FILTER (
+        WHERE foreign_buy_value IS NOT NULL OR foreign_sell_value IS NOT NULL
+    ) > 0
 ),
 ranked AS (
     SELECT symbol, as_of, net,
-           dense_rank() OVER (ORDER BY as_of DESC) AS day_rank
+           row_number() OVER (PARTITION BY symbol ORDER BY as_of DESC) AS day_rank
     FROM daily
 )
 SELECT symbol,
        sum(net) FILTER (WHERE day_rank = 1)  AS net_1d,
        sum(net) FILTER (WHERE day_rank <= 5) AS net_5d,
-       sum(net) FILTER (WHERE day_rank <= 20) AS net_20d
+       sum(net) FILTER (WHERE day_rank <= 20) AS net_20d,
+       count(*) AS observed_days
 FROM ranked
 GROUP BY symbol
 """
@@ -201,6 +238,7 @@ SELECT
     r.symbol,
     count(*)                                    AS days,
     max(r.price) FILTER (WHERE r.back = 1)      AS last_price,
+    max(r.as_of) FILTER (WHERE r.back = 1)      AS last_price_date,
     max(r.price) FILTER (WHERE r.back = 22)     AS price_1m,
     max(r.price) FILTER (WHERE r.back = 64)     AS price_3m,
     max(r.price) FILTER (WHERE r.back = 127)    AS price_6m,
@@ -263,6 +301,32 @@ WHERE series LIKE 'vn.board.%.foreign_room'
 ORDER BY series, fetched_at DESC
 """
 
+# Latest three-level order book from SSI. Compact keys keep stocks.json small:
+# b1/b1v are bid-1 price/volume, a1/a1v ask-1, and likewise for levels 2-3.
+BOARD_DEPTH_SQL = """
+WITH latest AS (
+    SELECT DISTINCT ON (series)
+        split_part(series, '.', 3) AS symbol,
+        split_part(series, '.', 4) AS field,
+        value
+    FROM metric_ts
+    WHERE series LIKE 'vn.board.%'
+      AND split_part(series, '.', 4) IN (
+        'bid1','bid1_vol','bid2','bid2_vol','bid3','bid3_vol',
+        'ask1','ask1_vol','ask2','ask2_vol','ask3','ask3_vol'
+      )
+    ORDER BY series, as_of DESC, fetched_at DESC
+)
+SELECT symbol, field, value FROM latest
+"""
+
+DEPTH_KEYS = {
+    **{f"bid{i}": f"b{i}" for i in (1, 2, 3)},
+    **{f"bid{i}_vol": f"b{i}v" for i in (1, 2, 3)},
+    **{f"ask{i}": f"a{i}" for i in (1, 2, 3)},
+    **{f"ask{i}_vol": f"a{i}v" for i in (1, 2, 3)},
+}
+
 
 # The two price sources spell exchanges differently — SSI writes "hose"/"upcom",
 # Vietcap "HSX"/"UPCOM" — and a row's value depends on which collector last
@@ -295,6 +359,11 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         listings = {r["symbol"]: r for r in _rows(con, LATEST_LISTING_SQL)}
         flows = {r["symbol"]: r for r in _rows(con, FOREIGN_FLOW_SQL)}
         rooms = {r["symbol"]: r["value"] for r in _rows(con, FOREIGN_ROOM_SQL)}
+        depth: dict[str, dict[str, float]] = {}
+        for item in _rows(con, BOARD_DEPTH_SQL):
+            key = DEPTH_KEYS.get(item["field"])
+            if key and item["value"] is not None:
+                depth.setdefault(item["symbol"], {})[key] = item["value"]
         shares = {r["symbol"]: r["listed_share"] for r in _rows(con, SHARE_COUNT_SQL)}
         history = {r["symbol"]: r for r in _rows(con, PRICE_HISTORY_SQL)}
         trading_days, session_date = con.execute(
@@ -316,8 +385,34 @@ def build(dry_run: bool = False) -> dict[str, Any]:
     out: list[dict[str, Any]] = []
     for symbol, listing in sorted(listings.items()):
         quote = quotes.get(symbol) or {}
+        hist = history.get(symbol) or {}
         price = quote.get("price")
         ref = quote.get("ref_price")
+        price_date = quote.get("as_of")
+
+        # No trade on the latest session reports price as 0, not null. That is
+        # correct as a statement about today, but naively dropping it dropped
+        # 850 of 1,751 tickers -- almost entirely UPCOM/HNX names the warehouse
+        # has exactly one observation for, so PRICE_HISTORY_SQL's >=30-day
+        # requirement never sees them either: these are not thinly traded
+        # stocks, they are ones this pipeline has not watched trade at all yet.
+        # Fall back in two steps, and mark which happened so the UI never
+        # states a stand-in as a live quote:
+        #   1. a genuine last trade, if PRICE_HISTORY_SQL has one (>=30 days of
+        #      the symbol actually trading somewhere in its window);
+        #   2. else the exchange's own reference price for the session --
+        #      administratively set, not market-discovered, but the only
+        #      figure that exists for a ticker with a single snapshot on
+        #      record. Never treated as a % change against itself.
+        is_reference_only = False
+        if not price:
+            if hist.get("last_price"):
+                price = hist["last_price"]
+                price_date = hist.get("last_price_date")
+            elif ref:
+                price = ref
+                is_reference_only = True
+            ref = None  # ref_price pairs with the session that quoted it, not a carried-forward price
 
         row: dict[str, Any] = {
             "s": symbol,
@@ -329,12 +424,29 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             row["p"] = round(price, 1)
             if ref:
                 row["ch"] = round((price - ref) / ref * 100, 2)
+            if is_reference_only:
+                # Not a traded price at all -- state the rule, don't let it
+                # read like a quote. Short key: "reference, not a trade".
+                row["pr"] = 1
+            elif price_date and session_date and price_date < session_date:
+                # Publish the session a real trade is from only when it lags
+                # the market's latest session -- the common case needs no
+                # flag, and a reader should never mistake an old print for a
+                # live price.
+                row["pd"] = str(price_date)
         if quote.get("volume"):
             row["v"] = int(quote["volume"])
+        for source, key in (("open_price", "o"), ("high", "h"), ("low", "l")):
+            if quote.get(source):
+                row[key] = round(quote[source], 1)
+        for key, value in (depth.get(symbol) or {}).items():
+            row[key] = int(value) if key.endswith("v") else round(value, 1)
         share_count = shares.get(symbol)
         if price and share_count:
             # Market cap in billion VND, matching the fundamental panel's unit.
             row["mc"] = round(price * share_count / 1e9, 1)
+        if share_count:
+            row["sh"] = int(share_count)
 
         # Room as a share of the float, not the raw count: "362 million shares"
         # means nothing without knowing the company's size, while "24% of the
@@ -360,6 +472,9 @@ def build(dry_run: bool = False) -> dict[str, Any]:
                 # low. More useful than the two prices, which need mental
                 # arithmetic before they say anything.
                 row["pos52"] = round((last - low) / (high - low) * 100)
+                row["h52"] = round(high, 1)
+                row["l52"] = round(low, 1)
+            row["days"] = int(hist.get("days") or 0)
 
             # Today's move in standard deviations of this ticker's own daily
             # returns. A 3% day is noise for a small cap and an event for VCB;
@@ -377,7 +492,11 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             for src, dst, needed in (
                 ("net_1d", "f1", 1), ("net_5d", "f5", 5), ("net_20d", "f20", 20)
             ):
-                if flow.get(src) and trading_days >= needed:
+                # Do not turn missing foreign-flow history into zeros. The
+                # warehouse has years of prices but may only have one SSI/
+                # Vietcap foreign snapshot; 5d/20d appear only after that many
+                # actual observations have accumulated for this ticker.
+                if flow.get(src) and (flow.get("observed_days") or 0) >= needed:
                     row[dst] = round(flow[src] / 1e9, 2)  # billion VND
 
         for key, item in (fundamentals.get(symbol) or {}).items():
@@ -397,7 +516,10 @@ def build(dry_run: bool = False) -> dict[str, Any]:
                 continue
             row[key] = round(value, 2)
             # A percentile against two quarters of history is noise, not signal.
-            if key in PERCENTILE_KEYS and item["n"] >= 8:
+            # An all-zero dividend history has no meaningful percentile: zero
+            # ranks at 100% only because every observation ties it, which the
+            # UI would misleadingly describe as an unusually high yield.
+            if key in PERCENTILE_KEYS and item["n"] >= 8 and not (key == "dy" and value == 0):
                 row[f"{key}_p"] = round(item["pct"] * 100)
 
         out.append(row)
@@ -409,6 +531,7 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         "with_foreign_flow": sum(1 for r in out if "f1" in r),
         "with_industry": sum(1 for r in out if r.get("i")),
         "with_momentum": sum(1 for r in out if "m3" in r),
+        "with_depth": sum(1 for r in out if "b1" in r or "a1" in r),
         "trading_days_held": trading_days,
     }
 
@@ -432,6 +555,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build stocks.json from the warehouse")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print(json.dumps(build(args.dry_run), ensure_ascii=False, indent=2, default=str))
 

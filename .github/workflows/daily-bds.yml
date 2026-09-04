@@ -18,8 +18,11 @@ on:
         description: "Pages per district/category/type (blank = exhaust)"
         default: ""
 
+# Shared with daily-vn and flows -- see the comment in daily-vn.yml. This one
+# matters most: a multi-hour crawl is the run most likely to be overlapped and
+# clobbered by a shorter job saving the cache first.
 concurrency:
-  group: bds-crawl
+  group: warehouse-writer
   cancel-in-progress: false
 
 permissions:

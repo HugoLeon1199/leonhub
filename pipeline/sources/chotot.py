@@ -200,27 +200,41 @@ def collect(
     run_id = uuid.uuid4().hex[:12]
     started = wh.utcnow()
     fetched_at = started
-    rows: list[dict[str, Any]] = []
     stats: dict[str, Any] = {"regions": {}, "sale": 0, "rent": 0}
 
-    for region in regions:
+    def crawl_region(region: int) -> tuple[list[dict[str, Any]], dict[str, int]]:
         districts = discover_districts(client, region) or [None]
-        region_rows = 0
+        out: list[dict[str, Any]] = []
+        counts = {"sale": 0, "rent": 0}
         for area in districts:
             for category in CATEGORIES:
                 for listing_type in (SALE, RENT):
                     for ad in iter_listings(
                         client, region, area, category, listing_type, max_pages
                     ):
-                        rows.append(to_row(ad, listing_type, fetched_at))
-                        region_rows += 1
-                        stats["sale" if listing_type == SALE else "rent"] += 1
-        stats["regions"][str(region)] = region_rows
-        log.info("region %s: %d observations", region, region_rows)
+                        out.append(to_row(ad, listing_type, fetched_at))
+                        counts["sale" if listing_type == SALE else "rent"] += 1
+        return out, counts
 
-    stats["rows_in"] = len(rows)
+    def add_counts(counts: dict[str, int]) -> None:
+        # Merge only after a province completed. If it failed halfway through,
+        # none of its buffered rows were committed, so counting those rows in
+        # the run report would claim observations the warehouse does not hold.
+        stats["sale"] += counts["sale"]
+        stats["rent"] += counts["rent"]
 
+    # A dry run reports on the whole crawl at once, so it is the one path that
+    # still accumulates. It writes nothing, so there is nothing to lose.
     if dry_run:
+        rows: list[dict[str, Any]] = []
+        for region in regions:
+            region_rows, counts = crawl_region(region)
+            rows.extend(region_rows)
+            add_counts(counts)
+            stats["regions"][str(region)] = len(region_rows)
+            log.info("region %s: %d observations", region, len(region_rows))
+
+        stats["rows_in"] = len(rows)
         by_district: dict[str, int] = {}
         for r in rows:
             key = f"{r['region']} / {r['district']}"
@@ -233,13 +247,54 @@ def collect(
         stats["by_district"] = dict(sorted(by_district.items(), key=lambda kv: -kv[1])[:20])
         return stats
 
+    # Real estate history cannot be backfilled: a listing that is gone tomorrow
+    # is gone for good. So each province is flushed as soon as it finishes and
+    # its failure is contained, rather than holding a whole national crawl in
+    # memory and writing once at the end -- where one bad province, or the job
+    # timeout on a crawl whose length is unbounded, discards every province
+    # already paid for.
+    # The write handle is taken per flush, not held across the crawl. A national
+    # pass runs for hours, and DuckDB allows one writer -- holding it throughout
+    # would park every other collector well past connect()'s 300s wait. Opening
+    # per province costs milliseconds against a province that costs minutes.
+    total_in = 0
+    total_new = 0
+    failures = 0
+
+    for region in regions:
+        try:
+            region_rows, counts = crawl_region(region)
+        except Exception as exc:  # noqa: BLE001 - one province must not end the crawl
+            failures += 1
+            stats["regions"][str(region)] = {"error": str(exc)[:200]}
+            log.warning("region %s failed, continuing: %s", region, exc)
+            continue
+
+        con = wh.connect()
+        try:
+            inserted = wh.append(con, "re_listing", region_rows)
+        finally:
+            con.close()
+
+        total_in += len(region_rows)
+        total_new += inserted
+        add_counts(counts)
+        stats["regions"][str(region)] = {"rows": len(region_rows), "new": inserted}
+        log.info(
+            "region %s: %d observations, %d new (committed)",
+            region, len(region_rows), inserted,
+        )
+
+    stats["rows_in"] = total_in
+    stats["rows_new"] = total_new
+    stats["regions_failed"] = failures
+
     con = wh.connect()
     try:
-        inserted = wh.append(con, "re_listing", rows)
-        stats["rows_new"] = inserted
         wh.log_run(
-            con, run_id, "chotot", started, "ok",
-            rows_in=len(rows), rows_new=inserted, detail=stats,
+            con, run_id, "chotot", started,
+            "partial" if failures else "ok",
+            rows_in=total_in, rows_new=total_new, detail=stats,
         )
     finally:
         con.close()

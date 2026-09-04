@@ -62,6 +62,7 @@ def build(dry_run: bool = False) -> dict[str, Any]:
     con = wh.connect_reader()
     try:
         etf = _series(con, "etf.%.net_flow")
+        issuer_series = _series(con, "etf.%.flow.%")
     finally:
         con.close()
 
@@ -75,6 +76,7 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             "d": series["d"],
             "v": values,
             "cum": _cumulative(values),
+            "issuers": {},
         }
         # Rolling sums are what a reader actually reasons with: one day's flow
         # is noise, a month of it is a position.
@@ -85,6 +87,21 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             "sum_5d": round(sum(values[-5:]), 1),
             "sum_20d": round(sum(values[-20:]), 1),
         }
+
+    # Keep each issuer's actual observation dates: different funds occasionally
+    # report a dash, so forcing all arrays onto the net-flow calendar would turn
+    # "not reported" into a fabricated zero.
+    for name, series in issuer_series.items():
+        parts = name.split(".")
+        if len(parts) < 4:
+            continue
+        asset, issuer = parts[1], parts[3].strip()
+        if not issuer or issuer == "total" or asset not in payload["etf"]:
+            continue
+        payload["etf"][asset]["issuers"][issuer.upper()] = series
+
+    for asset, series in payload["etf"].items():
+        stats[asset]["issuers"] = len(series["issuers"])
 
     payload["stats"] = stats
 

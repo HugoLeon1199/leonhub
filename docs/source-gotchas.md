@@ -22,6 +22,14 @@ CI. `core/http.py` enforces this via `BROWSER_ONLY_HOSTS` and refuses when
 400 — reads like a broken endpoint rather than a refused client. `core/http.py`
 sets a UA without that token.
 
+**The Vietcap company dossier is a family of endpoints, not one response.**
+`sources/vci_company.py` joins details, shareholder, relationship, events,
+statement metrics and all three statement sections. The public responses expose
+processed data, but not Turtle's private exporter, valuation model or licence;
+store Vietcap as the source and never describe this collector as copied Turtle
+backend code. A market-wide pass is thousands of requests, so it belongs in the
+monthly single-writer workflow rather than the daily quote refresh.
+
 **Vietcap's chart endpoint stops answering after a sustained backfill.** Not a
 429 or 403: silence, while their fundamentals endpoint on another host keeps
 serving. Price history comes from VPS instead (`histdatafeed.vps.com.vn`,
@@ -30,6 +38,12 @@ session's close where DNSE lagged a day and disagreed on the prior one.
 
 **SSI iBoard pins CORS to `iboard.ssi.com.vn`** and refuses three exchange calls
 made back to back. Pipeline-side only, with a few seconds between calls.
+
+**Yahoo Finance's chart endpoint has no CORS header.** US OHLCV is collected
+pipeline-side into `data/us.json`; browser code must not call the endpoint
+directly. The endpoint is a delayed chart feed, not a licensed fundamental
+database: label it as delayed OHLCV, publish the timestamp, and never infer
+P/E, earnings or a fair value from fields it does not return.
 
 **vnstock rate-limits far below what it advertises and signals the breach by
 raising `SystemExit`.** Measured unauthenticated: cut off after ~12 `ratio()`
@@ -59,6 +73,12 @@ Every query sets `st=s` or `st=u` explicitly.
 and the BTC and ETH tables use different header shapes. Reconcile any parser
 change against the source's own Total column; all 650 days currently match.
 
+**The public NEWS artifact is a presentation document, not a stable flat feed.**
+The current schema keeps 542 canonical links in `allArticles`, while richer
+copies of those links (with `excerpt`) are nested under front-page/sector
+objects. `news_link.py` walks and de-duplicates the whole document by URL so a
+schema rearrangement does not silently throw away the text used for matching.
+
 ## Zero-fill and null-fill
 
 **Several sources zero-fill where they mean "not applicable".** ROIC is 0.0 for
@@ -67,6 +87,19 @@ bank-only ratios are 0.0 for every non-financial. Published raw these state
 "this bank earns no return on capital" and "Vinamilk pays no dividend".
 `stocks_build.py` drops them; dividend yield falls back to the last quarter that
 reported one.
+
+**VCI statement field IDs only have meaning with their metrics metadata.**
+Persist `field`, bilingual label, hierarchy level, section, period type and
+public date together. Do not map rows by display position: bank, securities,
+insurance and ordinary-company forms have different applicable lines, while
+the API can fill irrelevant form cells with zero.
+
+**VCI's bank CIR carries the accounting sign of operating costs.** The source
+ratio is negative even though cost/income is conventionally displayed as a
+positive percentage. `ticker_details_build.py` takes its absolute value and
+drops a whole annual/quarterly cadence when every observation is a source
+placeholder zero; it does not erase isolated zero observations in a populated
+series.
 
 **Margins are ratios to revenue**, so a company with almost none produces valid
 nonsense (PTC: 75,592% net margin). `SANE_RANGE` suppresses rather than clamps —
@@ -80,9 +113,27 @@ symbol-less rows.
 **Two sources write `eq_quote` and they carry different columns.** SSI has depth
 and foreign detail but no share count; Vietcap has the share count. Taking the
 newest row wholesale blanked market cap for the whole market (128 of 1,729
-tickers kept one). The read is field-wise latest-non-null within the newest
-trading date, with share count carried forward separately since it only changes
-on a corporate action.
+tickers kept one). The read is field-wise latest-non-null across the ten newest
+market sessions, ordered by `(as_of, fetched_at)`, because zero on the newest
+board is often "no trade", especially on UPCOM. A carried older trade publishes
+its own date; a reference-price fallback is explicitly marked as not traded.
+Share count is carried forward separately since it only changes on a corporate
+action.
+
+**Price history has no historical foreign flow.** Do not coalesce those nulls
+to zero before a 5/20-day sum: it makes one real observation appear to be 20
+days of unchanged flow. `stocks_build.py` publishes a horizon only after that
+ticker has the corresponding number of actual foreign-flow observations.
+
+**SSI iBoard keeps only level 1 after the close.** The daily job runs at ~15:03
+ICT, eighteen minutes after the 14:45 session end, and at that point
+`best2Bid`/`best3Bid` and their offer counterparts come back null for every
+ticker -- only the final level-1 quote survives. The collector already requests
+all three levels and `DEPTH_KEYS` maps all three, so nothing is dropped in code:
+the warehouse simply has one level because that is what the source served. A
+page that renders levels 2-3 unconditionally will show two blank rows on every
+ticker. Either run the depth pass inside the session or render only the levels
+present.
 
 **SSI reports negative foreign room** where ownership already exceeds the cap.
 Real, but it means "no room and over the limit", not a negative percentage.

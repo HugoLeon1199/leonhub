@@ -1,0 +1,65 @@
+name: Ticker news links
+
+on:
+  workflow_run:
+    workflows: ["VN daily data"]
+    types: [completed]
+  workflow_dispatch:
+
+# news_link shares the same DuckDB/cache as VN, BDS and ETF collectors.
+concurrency:
+  group: warehouse-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  link-news:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore warehouse
+        uses: actions/cache/restore@v4
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+          restore-keys: warehouse-
+
+      - name: Link public news to listed companies
+        run: python -m pipeline.sources.news_link --qa-sample 20
+
+      - name: Build and validate ticker news
+        run: |
+          python -m pipeline.transform.news_build
+          python -m pipeline.core.validate news_ticker.json
+
+      - name: Save warehouse
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+
+      - name: Commit published data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/news_ticker.json
+          if git diff --staged --quiet; then
+            echo "No ticker-news change."
+          else
+            git commit -m "data: ticker news refresh $(date -u +%Y-%m-%d)"
+            git push
+          fi

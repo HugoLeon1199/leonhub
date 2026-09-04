@@ -162,16 +162,17 @@ def collect_board(symbols: list[str], fetched_at: datetime) -> list[dict[str, An
     return rows
 
 
-def _already_collected(con: Any = None) -> set[str]:
-    """Tickers whose fundamentals the warehouse already holds.
+def _already_collected(con: Any = None, period: str | None = None) -> set[str]:
+    """Tickers whose fundamentals cover the required completed quarter.
 
     Reuses the caller's connection when given one: DuckDB permits a single
     writer, so opening a second handle while a run holds the write connection
     fails outright.
     """
+    period = period or wh.latest_completed_quarter()
     if con is not None:
         return {r[0] for r in con.execute(
-            "SELECT DISTINCT symbol FROM eq_fundamental"
+            "SELECT DISTINCT symbol FROM eq_fundamental WHERE period = ?", [period]
         ).fetchall()}
 
     if not wh.DB_PATH.exists():
@@ -180,7 +181,7 @@ def _already_collected(con: Any = None) -> set[str]:
     probe = wh.connect(read_only=True)
     try:
         return {r[0] for r in probe.execute(
-            "SELECT DISTINCT symbol FROM eq_fundamental"
+            "SELECT DISTINCT symbol FROM eq_fundamental WHERE period = ?", [period]
         ).fetchall()}
     finally:
         probe.close()
@@ -213,10 +214,11 @@ def collect_fundamentals(
     targets = symbols[:limit] if limit else symbols
 
     if skip_existing:
-        have = _already_collected(con)
+        required_period = wh.latest_completed_quarter(fetched_at)
+        have = _already_collected(con, required_period)
         if have:
             targets = [s for s in targets if s not in have]
-            log.info("skipping %d tickers already collected", len(have))
+            log.info("skipping %d tickers already collected for %s", len(have), required_period)
 
     consecutive_failures = 0
 

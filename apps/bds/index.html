@@ -5,355 +5,165 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
 <title>Bất động sản — LEON Hub</title>
-<meta name="description" content="Giá rao bất động sản theo quận/huyện: trung vị giá/m², khoảng phân bố, lợi suất cho thuê và số mẫu. Dữ liệu tổng hợp từ tin rao công khai.">
-
+<meta name="description" content="Bản đồ và bộ lọc giá rao bất động sản Việt Nam: trung vị giá/m², lợi suất, độ phân tán, thời gian rao và lịch sử quan sát.">
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
-
 <style>
-:root{
-  --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
-  --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
-  --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
-}
-:root[data-theme="light"]{
-  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
-  --text:#141b22; --muted:#5d6b7a; --accent:#0c8a63;
-  --up:#0c8a63; --down:#c2402f; --warn:#8a6412;
-}
-*{box-sizing:border-box}
-html,body{height:100%}
-body{
-  margin:0; background:var(--bg); color:var(--text); overflow:hidden;
-  font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
-  display:flex; flex-direction:column;
-}
-.bar{
-  flex:0 0 auto; background:var(--panel); border-bottom:1px solid var(--line);
-  padding:8px 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-}
-input,select{
-  background:var(--panel-2); border:1px solid var(--line); color:var(--text);
-  border-radius:7px; padding:6px 9px; font:inherit; font-size:13px;
-}
-input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px}
-#q{width:160px}
-.rng{display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted)}
-.rng input{width:64px; font-variant-numeric:tabular-nums}
-.spacer{flex:1}
-.count{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
-.btn{
-  appearance:none; border:1px solid var(--line); background:var(--panel-2); color:var(--muted);
-  border-radius:7px; padding:6px 11px; font:inherit; font-size:12.5px; cursor:pointer;
-}
-.btn:hover{color:var(--text)}
-
-.notice{
-  flex:0 0 auto; padding:6px 12px; background:var(--panel-2); border-bottom:1px solid var(--line);
-  font-size:11.5px; color:var(--muted);
-}
-.notice b{color:var(--warn)}
-
-.wrap{flex:1; overflow:auto; min-height:0}
-table{border-collapse:separate; border-spacing:0; width:100%; font-size:13px}
-th,td{padding:7px 10px; white-space:nowrap; border-bottom:1px solid var(--line)}
-th{
-  position:sticky; top:0; z-index:2; background:var(--panel); text-align:right;
-  font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted);
-  font-weight:600; cursor:pointer; user-select:none;
-}
-th:first-child,td:first-child,th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){text-align:left}
-th[aria-sort]{color:var(--accent)}
-th[aria-sort="descending"] .dir::after{content:" ↓"}
-th[aria-sort="ascending"] .dir::after{content:" ↑"}
-td{text-align:right; font-variant-numeric:tabular-nums}
-tbody tr:hover td{background:var(--panel-2)}
-.dist{font-weight:600}
-.dim{color:var(--muted)}
-
-/* The spread between p25 and p75 says how uniform a district is: a wide bar
-   means the median hides very different streets. */
-.spread{display:inline-flex; align-items:center; gap:6px}
-.spread .bar{position:relative; width:56px; height:5px; background:var(--line); border-radius:3px}
-.spread .bar i{position:absolute; top:0; bottom:0; background:var(--accent); opacity:.75; border-radius:3px}
-
-.n-low{color:var(--warn)}
-.msg{padding:36px 20px; text-align:center; color:var(--muted)}
-.msg strong{display:block; color:var(--text); margin-bottom:6px; font-size:15px}
-.msg code{background:var(--panel-2); padding:2px 6px; border-radius:4px; font-size:12px}
-footer{
-  flex:0 0 auto; padding:5px 12px; background:var(--panel); border-top:1px solid var(--line);
-  font-size:11px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap;
-}
-footer b{color:var(--text); font-weight:600}
+:root{--bg:#0d1117;--panel:#151b23;--panel2:#1c242e;--line:#293441;--text:#e7edf3;--muted:#8b98a8;--accent:#32d0a0;--accent2:#47a6ff;--up:#32d0a0;--down:#f0645a;--warn:#e0aa45;--shadow:0 14px 40px #0005}
+:root[data-theme="light"]{--bg:#f4f7f9;--panel:#fff;--panel2:#edf2f5;--line:#d5dee6;--text:#151d25;--muted:#647383;--accent:#087e5a;--accent2:#176fbc;--up:#087e5a;--down:#bd3f34;--warn:#8a6412;--shadow:0 14px 40px #18324720}
+*{box-sizing:border-box}html,body{min-height:100%}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,-apple-system,"Segoe UI",sans-serif}button,input,select{font:inherit;color:inherit}.top{position:sticky;top:0;z-index:20;min-height:48px;padding:7px 14px;background:color-mix(in srgb,var(--panel) 94%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}.brand{font-weight:750;letter-spacing:-.02em}.brand b{color:var(--accent)}.top .meta{color:var(--muted);font-size:12px}.spacer{flex:1}.btn,.seg button{border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:6px 10px;cursor:pointer}.btn:hover,.seg button:hover{border-color:var(--accent);color:var(--text)}.seg{display:flex}.seg button{border-radius:0;margin-left:-1px;color:var(--muted)}.seg button:first-child{border-radius:8px 0 0 8px;margin:0}.seg button:last-child{border-radius:0 8px 8px 0}.seg button.on{background:color-mix(in srgb,var(--accent) 18%,var(--panel2));color:var(--accent);border-color:var(--accent)}
+.notice{padding:7px 14px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--warn) 8%,var(--panel));font-size:11.5px;color:var(--muted)}.notice b{color:var(--warn)}main{max-width:1480px;margin:auto;padding:14px;display:grid;gap:14px}.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}.card-head{padding:11px 13px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}.card-head h2{font-size:14px;margin:0}.sub{font-size:11.5px;color:var(--muted)}.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}.kpi{padding:11px 12px}.kpi small{color:var(--muted);display:block;font-size:10px;text-transform:uppercase;letter-spacing:.07em}.kpi strong{display:block;font-size:20px;margin-top:3px;font-variant-numeric:tabular-nums}.kpi span{color:var(--muted);font-size:11px}.hero{display:grid;grid-template-columns:minmax(360px,.9fr) minmax(440px,1.25fr);gap:14px}.map-layout{display:grid;grid-template-columns:minmax(260px,1fr) 220px;min-height:560px}.map-box{position:relative;padding:12px;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 48% 45%,color-mix(in srgb,var(--accent2) 8%,transparent),transparent 60%)}#map{height:520px;width:100%;overflow:visible}.province-shape{cursor:pointer;transition:opacity .12s,filter .12s}.province-shape:hover{opacity:.78;filter:brightness(1.15)}.province-shape.selected{stroke:var(--text)!important;stroke-width:5!important}.legend{position:absolute;left:12px;bottom:10px;font-size:10px;color:var(--muted);background:color-mix(in srgb,var(--panel) 85%,transparent);padding:6px 8px;border-radius:7px;border:1px solid var(--line)}.ramp{width:110px;height:6px;border-radius:5px;background:linear-gradient(90deg,#28c58c,#d7b943,#ef5b52);margin:3px 0}.tooltip{position:fixed;z-index:50;pointer-events:none;display:none;background:#0a1017ed;border:1px solid #3a4858;color:#edf4fa;padding:7px 9px;border-radius:7px;box-shadow:var(--shadow);font-size:11px}.profile{border-left:1px solid var(--line);padding:13px;overflow:auto}.profile h3{margin:0 0 3px;font-size:16px}.profile .merged{color:var(--muted);font-size:11px;margin-bottom:12px}.metric{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);padding:7px 0}.metric span{color:var(--muted)}.metric b{font-variant-numeric:tabular-nums}.rank{margin-top:12px}.rank h4{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}.rank-row{display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:11.5px;cursor:pointer}.rank-row:hover{color:var(--accent)}.nodata{color:var(--muted);padding:20px 0;text-align:center}
+.trend-controls{padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line)}.trend-controls select{max-width:250px}.field,select,input{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 8px;min-width:0}select:focus,input:focus{outline:2px solid var(--accent);outline-offset:-1px}.chips{display:flex;gap:5px;flex-wrap:wrap}.chip{border:1px solid var(--line);border-radius:20px;padding:3px 8px;font-size:11px;display:flex;gap:6px;align-items:center}.chip i{width:7px;height:7px;border-radius:50%;display:inline-block}.chip button{border:0;background:none;color:var(--muted);padding:0;cursor:pointer}.chart-wrap{height:325px;position:relative;padding:10px}#trend{width:100%;height:100%;display:block}.empty-chart{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:var(--muted);pointer-events:none;padding:30px}.empty-chart b{color:var(--text);font-size:15px}.method{padding:8px 12px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted)}
+.filters{padding:11px 13px;display:grid;grid-template-columns:1.5fr repeat(7,minmax(90px,1fr));gap:8px;align-items:end}.filter label{display:block;color:var(--muted);font-size:10px;margin:0 0 3px}.filter input,.filter select{width:100%}.table-wrap{overflow:auto;max-height:650px;border-top:1px solid var(--line)}table{border-collapse:separate;border-spacing:0;width:100%;font-size:12px}th,td{padding:7px 9px;white-space:nowrap;border-bottom:1px solid var(--line)}th{position:sticky;top:0;z-index:2;background:var(--panel);color:var(--muted);font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;text-align:right;cursor:pointer}th:first-child,td:first-child,th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3),th:nth-child(4),td:nth-child(4){text-align:left}td{text-align:right;font-variant-numeric:tabular-nums}tbody tr{cursor:pointer}tbody tr:hover td{background:var(--panel2)}.district{font-weight:650}.dim{color:var(--muted)}.badge{display:inline-block;border-radius:20px;padding:2px 7px;font-size:10.5px}.cheap{color:var(--up);background:color-mix(in srgb,var(--up) 13%,transparent)}.fair{color:var(--warn);background:color-mix(in srgb,var(--warn) 13%,transparent)}.rich{color:var(--down);background:color-mix(in srgb,var(--down) 13%,transparent)}.spread{display:inline-flex;gap:5px;align-items:center}.spread-bar{width:42px;height:5px;border-radius:4px;background:var(--line);overflow:hidden}.spread-bar i{display:block;height:100%;background:var(--accent)}.table-foot{padding:8px 12px;color:var(--muted);font-size:11px;display:flex;gap:12px;flex-wrap:wrap}.drawer{position:fixed;z-index:40;right:0;top:0;bottom:0;width:min(430px,95vw);background:var(--panel);border-left:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(105%);transition:transform .2s;overflow:auto}.drawer.open{transform:none}.drawer-head{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--line);padding:13px;display:flex;align-items:center;gap:10px;z-index:2}.drawer-head h2{font-size:16px;margin:0}.drawer-body{padding:14px}.close{margin-left:auto}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.detail{padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}.detail small{display:block;color:var(--muted);font-size:10px}.detail b{font-size:15px}.explain{margin-top:12px;padding:11px;border-left:3px solid var(--accent);background:var(--panel2);font-size:12px}.source{margin-top:13px;color:var(--muted);font-size:11px}.source a{color:var(--accent)}
+@media(max-width:1050px){.kpis{grid-template-columns:repeat(3,1fr)}.hero{grid-template-columns:1fr}.filters{grid-template-columns:repeat(4,1fr)}}@media(max-width:680px){.top{align-items:flex-start;flex-wrap:wrap}.top .spacer{display:none}.top .seg{width:100%;overflow:auto}.kpis{grid-template-columns:1fr 1fr}.map-layout{grid-template-columns:1fr}.profile{border:0;border-top:1px solid var(--line)}#map{height:430px}.filters{grid-template-columns:1fr 1fr}.hero{display:block}.hero>.card{margin-bottom:14px}.card-head{align-items:flex-start}.hide-mobile{display:none}}
 </style>
 </head>
 <body>
-
-<div class="bar">
-  <input id="q" type="search" placeholder="Tìm quận / tỉnh…" aria-label="Tìm quận hoặc tỉnh" autocomplete="off">
-  <select id="reg" aria-label="Tỉnh/Thành"><option value="">Tất cả tỉnh/thành</option></select>
-  <select id="cat" aria-label="Loại hình"><option value="">Tất cả loại hình</option></select>
-  <span class="rng">Giá/m² <input id="pMin" type="number" placeholder="từ" aria-label="Giá từ"><input id="pMax" type="number" placeholder="đến" aria-label="Giá đến"></span>
-  <span class="rng">Lợi suất ≥ <input id="yMin" type="number" step="0.1" placeholder="%" aria-label="Lợi suất tối thiểu"></span>
-  <span class="rng">Mẫu ≥ <input id="nMin" type="number" placeholder="n" aria-label="Số mẫu tối thiểu"></span>
+<header class="top">
+  <span class="brand"><b>LEON</b> · Bất động sản</span>
+  <span class="meta" id="updated">Đang tải…</span>
   <span class="spacer"></span>
-  <span class="count" id="count">—</span>
-  <button class="btn" id="csv" type="button">Tải CSV</button>
-  <button class="btn" id="reset" type="button">Xóa lọc</button>
-</div>
-
-<div class="notice">
-  <b>Lưu ý:</b> đây là <b>giá rao</b> từ tin đăng công khai, không phải giá giao dịch thực tế.
-  Mỗi dòng là trung vị (median) sau khi loại tin trùng và cắt 5% đầu–cuối; chỉ hiển thị ô có từ 20 mẫu trở lên.
-</div>
-
-<div class="wrap">
-  <table>
-    <thead><tr id="head"></tr></thead>
-    <tbody id="body"></tbody>
-  </table>
-  <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
-</div>
-
-<footer>
-  <span>Nguồn: <b>tin rao Chợ Tốt</b>, tổng hợp bởi pipeline LEON</span>
-  <span>Cập nhật: <b id="upd">—</b></span>
-  <span id="cover"></span>
-  <span>Số liệu tham khảo, không phải khuyến nghị đầu tư.</span>
-</footer>
-
+  <div class="seg" id="catSeg" aria-label="Loại hình bản đồ">
+    <button data-cat="dat" class="on">Giá đất</button><button data-cat="nha-rieng">Nhà riêng</button><button data-cat="chung-cu">Chung cư</button><button data-cat="van-phong">Mặt bằng</button>
+  </div>
+</header>
+<div class="notice"><b>Giá rao, không phải giá giao dịch.</b> Xuất từ 5 mẫu để giữ độ phủ; mặc định lọc ≥20. Ô 5–19 mẫu chỉ mang tính thăm dò. CAGR cần ≥6 snapshot trong ≥180 ngày.</div>
+<main>
+  <section class="kpis" id="kpis"></section>
+  <section class="hero">
+    <article class="card">
+      <div class="card-head"><h2>🗺️ Hồ sơ tỉnh/thành (34)</h2><span class="sub">Nhóm theo địa giới sau sáp nhập 2025 · click bản đồ để lọc</span></div>
+      <div class="map-layout">
+        <div class="map-box"><svg id="map" viewBox="0 0 600 900" role="img" aria-label="Bản đồ 34 tỉnh thành Việt Nam"></svg><div class="legend"><span>Rẻ hơn</span><div class="ramp"></div><span>Đắt hơn · xám = chưa đủ mẫu</span></div></div>
+        <aside class="profile" id="profile"><div class="nodata">Chọn một tỉnh trên bản đồ</div></aside>
+      </div>
+    </article>
+    <article class="card">
+      <div class="card-head"><h2>📈 Xu hướng giá theo thời gian</h2><span class="sub">So sánh tối đa 5 quận/huyện · lịch sử do LEON tự tích lũy</span></div>
+      <div class="trend-controls"><select id="trendPick" aria-label="Chọn chuỗi so sánh"><option value="">Chọn quận/huyện…</option></select><button class="btn" id="addTrend">+ Thêm</button><button class="btn" id="clearTrend">Xóa</button><div class="chips" id="chips"></div></div>
+      <div class="chart-wrap"><svg id="trend" viewBox="0 0 760 300" preserveAspectRatio="none" role="img" aria-label="Biểu đồ xu hướng giá"></svg><div class="empty-chart" id="trendEmpty"></div></div>
+      <div class="method" id="historyMethod">Đang kiểm tra độ dài lịch sử…</div>
+    </article>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>📊 Bộ lọc giá rao theo quận/huyện</h2><span class="sub" id="resultCount">—</span><span class="spacer"></span><button class="btn" id="csv">Tải CSV</button><button class="btn" id="reset">Xóa lọc</button></div>
+    <div class="filters">
+      <div class="filter"><label>Tìm quận / tỉnh</label><input id="q" type="search" placeholder="Ví dụ: Cầu Giấy…"></div>
+      <div class="filter"><label>Tỉnh sau sáp nhập</label><select id="province"><option value="">Tất cả</option></select></div>
+      <div class="filter"><label>Tỉnh nguồn</label><select id="region"><option value="">Tất cả</option></select></div>
+      <div class="filter"><label>Loại hình</label><select id="category"><option value="">Tất cả</option></select></div>
+      <div class="filter"><label>Giá từ (tr/m²)</label><input id="pMin" type="number" min="0" step="1"></div>
+      <div class="filter"><label>Giá đến</label><input id="pMax" type="number" min="0" step="1"></div>
+      <div class="filter"><label>CAGR tối thiểu (%)</label><input id="gMin" type="number" step="1" placeholder="chờ lịch sử"></div>
+      <div class="filter"><label>Lợi suất tối thiểu (%)</label><input id="yMin" type="number" min="0" step=".1"></div>
+      <div class="filter"><label>Mẫu bán tối thiểu</label><input id="nMin" type="number" min="20" step="5" placeholder="20"></div>
+    </div>
+    <div class="table-wrap"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table></div>
+    <div class="table-foot"><span id="coverage"></span><span>Nguồn: <b>Chợ Tốt/Nhà Tốt</b></span><span>Bản đồ: MIT · hoccungduy/vietnam-map-34-provinces</span><span>Số liệu tham khảo, không phải khuyến nghị.</span></div>
+  </section>
+</main>
+<div class="tooltip" id="tooltip"></div>
+<aside class="drawer" id="drawer"><div class="drawer-head"><h2 id="drawerTitle">Chi tiết</h2><button class="btn close" id="drawerClose">✕</button></div><div class="drawer-body" id="drawerBody"></div></aside>
 <script>
 "use strict";
-
-const COLS = [
-  {k:"d",  t:"Quận / Huyện", kind:"dist"},
-  {k:"r",  t:"Tỉnh / Thành", kind:"text"},
-  {k:"i",  t:"Loại hình",    kind:"text"},
-  {k:"p",  t:"Giá/m² (tr)",  kind:"num", d:1},
-  {k:"_sp",t:"Khoảng 25–75%",kind:"spread",
-   hint:"Nửa số tin nằm trong khoảng này. Dải rộng nghĩa là trong quận có nhiều mặt bằng giá rất khác nhau."},
-  {k:"sz", t:"DT trung vị",  kind:"num", d:0, hint:"m²"},
-  {k:"y",  t:"Lợi suất %",   kind:"num", d:2,
-   hint:"Trung vị giá thuê/m²/tháng × 12 ÷ trung vị giá bán/m², cùng quận và cùng loại hình. " +
-        "Con số thấp (1–2%) với nhà mặt đất nội đô là đúng thực tế: giá bán được định theo kỳ vọng " +
-        "tăng giá chứ không theo dòng tiền cho thuê. Chưa trừ thuế, phí quản lý và thời gian trống."},
-  {k:"_v", t:"Giá dựa vào",  kind:"verdict",
-   hint:"So sánh lợi suất cho thuê của ô này với trung vị của tất cả các ô cùng loại hình. " +
-        "Lợi suất cao nghĩa là giá bán đang được dòng tiền thuê nâng đỡ; lợi suất thấp nghĩa là " +
-        "giá đang phản ánh kỳ vọng tăng giá, nên nhạy cảm hơn khi tâm lý thị trường đảo chiều."},
-  {k:"n",  t:"Mẫu bán",      kind:"n", hint:"Số tin rao bán sau khi loại trùng"},
-  {k:"yn", t:"Mẫu thuê",     kind:"n"},
+const $=id=>document.getElementById(id), fmt=(v,d=1)=>v==null||!isFinite(v)?"—":Number(v).toLocaleString("vi-VN",{maximumFractionDigits:d,minimumFractionDigits:d});
+const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/^(tinh|thanh pho|tp)[ -]+/,"").trim();
+const COLORS=["#38d39f","#47a6ff","#d7b943","#d66ee8","#f0645a"];
+const CAT_LABEL={dat:"Đất", "nha-rieng":"Nhà ở", "chung-cu":"Căn hộ/Chung cư", "van-phong":"Văn phòng, Mặt bằng kinh doanh"};
+let DATA={rows:[],provinces:[],history:[]}, MAP=null, mapCat="dat", selectedProvince="", sortKey="p", sortDir=-1, trendKeys=[];
+const COLS=[
+  ["d","Quận / Huyện","text"],["rs","Tỉnh mới","text"],["r","Tỉnh nguồn","text"],["i","Loại","text"],
+  ["p","Giá tr/m²","num"],["g","CAGR %/năm","num"],["y","Lợi suất %","num"],["v","Định giá tương đối","text"],
+  ["_spread","P25–P75","num"],["tp","Giá tin trung vị (tỷ)","num"],["dom","Ngày rao trung vị","num"],["n","Mẫu bán","num"]
 ];
 
-const el = id => document.getElementById(id);
-let ROWS = [], META = {}, sortKey = "p", sortDir = -1, maxSpread = 1;
+Promise.all([
+  fetch("../../data/bds.json",{cache:"no-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}),
+  fetch("../../data/vn-map.json",{cache:"force-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()})
+]).then(([data,map])=>{DATA=Array.isArray(data)?{rows:data,provinces:[],history:[]}:data;MAP=map;init()}).catch(err=>{
+  $("updated").textContent="Không tải được dữ liệu";$("tbody").innerHTML=`<tr><td colspan="12">Chạy pipeline BĐS rồi mở bằng HTTP server (${String(err)})</td></tr>`;
+});
 
-fetch("../../data/bds.json", {cache:"no-cache"})
-  .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
-  .then(payload => {
-    // Accept both the wrapped form and the older bare array.
-    const rows = Array.isArray(payload) ? payload : payload.rows;
-    META = Array.isArray(payload) ? {} : payload;
-    ROWS = rows;
-    maxSpread = Math.max(...rows.map(r => (r.p75 ?? 0) - (r.p25 ?? 0)), 1);
-    computeYieldMedians();
-    el("msg").hidden = true;
-    buildFacets();
-    buildHead();
-    readUrl();
-    render();
-    const updated = rows.map(r => r.u).filter(Boolean).sort().pop();
-    el("upd").textContent = updated ? new Date(updated).toLocaleDateString("vi-VN") : "—";
-    const districts = new Set(rows.map(r => r.r + "/" + r.d)).size;
-    el("cover").textContent =
-      `${districts} quận/huyện · ${rows.length} dòng` +
-      (META.listings ? ` · ${META.listings.toLocaleString("vi-VN")} tin rao` : "");
-  })
-  .catch(() => {
-    el("msg").innerHTML =
-      "<strong>Chưa có dữ liệu</strong>" +
-      "Chạy <code>python -m pipeline.sources.chotot</code> rồi " +
-      "<code>python -m pipeline.transform.bds_aggregate</code>.";
-  });
-
-function buildFacets(){
-  [...new Set(ROWS.map(r => r.r).filter(Boolean))]
-    .sort((a,b) => a.localeCompare(b,"vi"))
-    .forEach(v => el("reg").add(new Option(v, v)));
-  [...new Set(ROWS.map(r => r.i).filter(Boolean))]
-    .sort((a,b) => a.localeCompare(b,"vi"))
-    .forEach(v => el("cat").add(new Option(v, v)));
+function init(){
+  buildKpis();buildFacets();buildHead();buildMap();setDefaultProvince();buildTrendPicker();renderTable();renderTrend();
+  const upd=DATA.updated_at?new Date(DATA.updated_at):null;
+  $("updated").textContent=upd?`Cập nhật ${upd.toLocaleDateString("vi-VN")} · ${DATA.snapshot_days||1} ngày snapshot`:"—";
+  $("historyMethod").textContent=`Kho có ${(DATA.raw_observations||0).toLocaleString("vi-VN")} quan sát / ${(DATA.unique_listings||0).toLocaleString("vi-VN")} tin duy nhất, từ ${dateText(DATA.history_from)} đến ${dateText(DATA.history_to)}. ${DATA.snapshot_days<6?"Đang tích lũy lịch sử; chưa đủ điều kiện tính CAGR.":"CAGR cần tối thiểu "+DATA.cagr_min_days+" ngày."}`;
+  $("coverage").textContent=`${new Set(DATA.rows.map(r=>r.r+"/"+r.d)).size} quận/huyện · ${DATA.rows.length} dòng · ${(DATA.listings||0).toLocaleString("vi-VN")} mẫu sau lọc`;
 }
-
+function dateText(v){return v?new Date(v).toLocaleDateString("vi-VN"):"—"}
+function buildKpis(){
+  const rows=DATA.rows, districts=new Set(rows.map(r=>r.r+"/"+r.d)).size, prov=DATA.provinces.filter(p=>p.rows).length;
+  const dom=median(rows.map(r=>r.dom)), yieldRows=rows.filter(r=>isFinite(r.y));
+  const cards=[["Quận/huyện đủ mẫu",districts,`ngưỡng ≥${DATA.min_samples||20} tin`],["Tỉnh mới có dữ liệu",`${prov}/34`,"xám = chưa đủ mẫu"],["Quan sát thô",(DATA.raw_observations||0).toLocaleString("vi-VN"),`${(DATA.unique_listings||0).toLocaleString("vi-VN")} tin duy nhất`],["Ngày rao trung vị",fmt(dom,0),"từ ngày đăng đến snapshot"],["Ô có lợi suất",`${yieldRows.length}/${rows.length}`,"bán và thuê cùng phân khúc"]];
+  $("kpis").innerHTML=cards.map(c=>`<div class="card kpi"><small>${c[0]}</small><strong>${c[1]}</strong><span>${c[2]}</span></div>`).join("");
+}
+function median(a){a=a.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null}
+function addOptions(id,values){values.filter(Boolean).sort((a,b)=>a.localeCompare(b,"vi")).forEach(v=>$(id).add(new Option(v,v)))}
+function buildFacets(){addOptions("province",DATA.provinces.map(p=>p.name));addOptions("region",[...new Set(DATA.rows.map(r=>r.r))]);addOptions("category",[...new Set(DATA.rows.map(r=>r.i))])}
 function buildHead(){
-  COLS.forEach(col => {
-    const th = document.createElement("th");
-    th.innerHTML = col.t + '<span class="dir"></span>';
-    if(col.hint) th.title = col.hint;
-    th.addEventListener("click", () => {
-      // Both synthetic columns sort by the number they are derived from.
-      const key = col.k === "_sp" ? "p75" : col.k === "_v" ? "y" : col.k;
-      if(sortKey === key) sortDir = -sortDir;
-      else { sortKey = key; sortDir = col.kind === "text" || col.kind === "dist" ? 1 : -1; }
-      render();
-    });
-    el("head").appendChild(th);
-  });
+  $("thead").innerHTML=COLS.map(([k,t])=>`<th data-key="${k}">${t}</th>`).join("");
+  $("thead").querySelectorAll("th").forEach(th=>th.onclick=()=>{const k=th.dataset.key==="_spread"?"p75":th.dataset.key;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=COLS.find(c=>c[0]===th.dataset.key)?.[2]==="text"?1:-1}renderTable()});
+}
+function currentRows(){
+  const q=$("q").value.trim().toLowerCase(), pm=num("pMin"),px=num("pMax"),gm=num("gMin"),ym=num("yMin"),nm=num("nMin");
+  return DATA.rows.filter(r=>(!q||`${r.d} ${r.r} ${r.rs}`.toLowerCase().includes(q))&&(!$("province").value||r.rs===$("province").value)&&(!$("region").value||r.r===$("region").value)&&(!$("category").value||r.i===$("category").value)&&(pm==null||r.p>=pm)&&(px==null||r.p<=px)&&(gm==null||(r.g!=null&&r.g>=gm))&&(ym==null||(r.y!=null&&r.y>=ym))&&(nm==null||r.n>=nm)).sort((a,b)=>cmp(a[sortKey],b[sortKey])*sortDir);
+}
+function num(id){const v=parseFloat($(id).value);return isFinite(v)?v:null}function cmp(a,b){if(a==null)return 1;if(b==null)return-1;return typeof a==="string"?a.localeCompare(b,"vi"):a-b}
+function renderTable(){
+  const rows=currentRows();$("resultCount").textContent=`${rows.length}/${DATA.rows.length} dòng`;
+  $("tbody").innerHTML=rows.length?rows.map(r=>`<tr data-slug="${r.slug}" data-cat="${r.cs}">
+    <td class="district">${esc(r.d)}</td><td>${esc(r.rs)}</td><td class="dim">${esc(r.r)}</td><td>${esc(r.i)}</td>
+    <td>${fmt(r.p)}</td><td>${r.g==null?'<span class="dim">chờ dữ liệu</span>':signed(r.g)+'%'}</td><td>${fmt(r.y,2)}</td><td>${verdict(r.v)}</td>
+    <td><span class="spread"><span>${fmt(r.p25)}–${fmt(r.p75)}</span><span class="spread-bar"><i style="width:${Math.min(100,Math.max(5,(r.p75-r.p25)/Math.max(r.p,1)*70))}%"></i></span></span></td>
+    <td>${fmt(r.tp,2)}</td><td>${fmt(r.dom,0)}</td><td>${r.n.toLocaleString("vi-VN")}</td></tr>`).join(""):'<tr><td colspan="12" class="nodata">Không có ô nào khớp bộ lọc</td></tr>';
+  $("tbody").querySelectorAll("tr[data-slug]").forEach(tr=>tr.onclick=()=>openDistrict(tr.dataset.slug,tr.dataset.cat));
+}
+function verdict(v){return v==="cheap"?'<span class="badge cheap">Thuê đỡ giá</span>':v==="rich"?'<span class="badge rich">Kỳ vọng cao</span>':v==="fair"?'<span class="badge fair">Cân bằng</span>':'<span class="dim">—</span>'}function signed(v){return `${v>0?"+":""}${fmt(v,1)}`}function esc(v){const d=document.createElement("div");d.textContent=v??"";return d.innerHTML}
+
+function oldMap(){const m={};DATA.provinces.forEach(p=>p.from.forEach(n=>m[norm(n)]=p.name));return m}
+function provinceValue(name){const p=DATA.provinces.find(x=>x.name===name),c=p?.cats?.[mapCat];return c?.p??null}
+function colorScale(v,values){if(v==null)return getCss("--panel2");const s=[...values].sort((a,b)=>a-b),lo=s[Math.floor(s.length*.1)]??0,hi=s[Math.floor(s.length*.9)]??1,t=Math.max(0,Math.min(1,(v-lo)/Math.max(.01,hi-lo))),h=150-(147*t);return `hsl(${h} 63% ${43+t*10}%)`}
+function getCss(k){return getComputedStyle(document.documentElement).getPropertyValue(k).trim()}
+function allPoints(g){const out=[];(function walk(v){if(Array.isArray(v)&&typeof v[0]==="number")out.push(v);else if(Array.isArray(v))v.forEach(walk)})(g.coordinates);return out}
+function rings(g){return g.type==="Polygon"?g.coordinates:g.coordinates.flat()}
+function buildMap(){
+  const lookup=oldMap(), features=MAP.features, points=features.flatMap(f=>allPoints(f.g)),xs=points.map(p=>p[0]),ys=points.map(p=>p[1]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),pad=14;
+  const sx=(600-pad*2)/(maxX-minX),sy=(900-pad*2)/(maxY-minY),scale=Math.min(sx,sy),ox=(600-(maxX-minX)*scale)/2,oy=(900-(maxY-minY)*scale)/2;
+  const xy=p=>[ox+(p[0]-minX)*scale,900-(oy+(p[1]-minY)*scale)];
+  const values=DATA.provinces.map(p=>p.cats?.[mapCat]?.p).filter(v=>v!=null),svg=$("map");svg.innerHTML="";
+  features.forEach(f=>{const name=lookup[norm(f.n)]||f.n,value=provinceValue(name),path=document.createElementNS("http://www.w3.org/2000/svg","path");let d="";rings(f.g).forEach(r=>{r.forEach((p,i)=>{const [x,y]=xy(p);d+=(i?"L":"M")+x.toFixed(1)+","+y.toFixed(1)});d+="Z"});path.setAttribute("d",d);path.setAttribute("fill",colorScale(value,values));path.setAttribute("stroke",colorScale(value,values));path.setAttribute("stroke-width","2");path.setAttribute("fill-rule","evenodd");path.dataset.province=name;path.classList.add("province-shape");if(name===selectedProvince)path.classList.add("selected");path.onmousemove=e=>showTip(e,name,value);path.onmouseleave=hideTip;path.onclick=()=>selectProvince(name,true);svg.appendChild(path)});
+}
+function showTip(e,name,value){const p=DATA.provinces.find(x=>x.name===name),tip=$("tooltip");tip.innerHTML=`<b>${esc(name)}</b><br>${CAT_LABEL[mapCat]}: ${value==null?"chưa đủ mẫu":fmt(value)+" tr/m²"}<br>${p?.districts||0} quận/huyện · ${(p?.n||0).toLocaleString("vi-VN")} mẫu`;tip.style.display="block";tip.style.left=Math.min(innerWidth-190,e.clientX+12)+"px";tip.style.top=Math.min(innerHeight-80,e.clientY+12)+"px"}function hideTip(){$("tooltip").style.display="none"}
+function setDefaultProvince(){const candidates=DATA.provinces.filter(p=>p.cats?.[mapCat]).sort((a,b)=>(b.cats[mapCat]?.n||0)-(a.cats[mapCat]?.n||0));if(candidates[0])selectProvince(candidates[0].name,false)}
+function selectProvince(name,filter){selectedProvince=name;if(filter)$("province").value=name;buildMap();renderProfile();if(filter){renderTable();document.querySelector(".filters").scrollIntoView({behavior:"smooth",block:"start"})}}
+function renderProfile(){
+  const p=DATA.provinces.find(x=>x.name===selectedProvince),c=p?.cats?.[mapCat],rows=DATA.rows.filter(r=>r.rs===selectedProvince&&r.cs===mapCat).sort((a,b)=>b.p-a.p);
+  if(!p){$("profile").innerHTML='<div class="nodata">Chọn một tỉnh trên bản đồ</div>';return}
+  $("profile").innerHTML=`<h3>${esc(p.name)}</h3><div class="merged">${p.from.length>1?"Hợp nhất: "+p.from.join(" · "):"Giữ nguyên địa giới cấp tỉnh"}</div>${c?`<div class="metric"><span>${CAT_LABEL[mapCat]}</span><b>${fmt(c.p)} tr/m²</b></div><div class="metric"><span>Lợi suất trung vị</span><b>${fmt(c.y,2)}%</b></div><div class="metric"><span>Quận/huyện đủ mẫu</span><b>${c.d}</b></div><div class="metric"><span>Mẫu sau lọc</span><b>${c.n.toLocaleString("vi-VN")}</b></div><div class="rank"><h4>Khu vực giá cao nhất</h4>${rows.slice(0,6).map(r=>`<div class="rank-row" data-s="${r.slug}"><span>${esc(r.d)} <i class="dim">${esc(r.r)}</i></span><b>${fmt(r.p)}</b></div>`).join("")}</div>`:'<div class="nodata">Chưa có ô đủ 20 mẫu cho loại hình này</div>'}`;
+  $("profile").querySelectorAll("[data-s]").forEach(e=>e.onclick=()=>openDistrict(e.dataset.s,mapCat));
 }
 
-function filters(){
-  const num = id => { const v = parseFloat(el(id).value); return isFinite(v) ? v : null; };
-  return {
-    q: el("q").value.trim().toLowerCase(),
-    reg: el("reg").value,
-    cat: el("cat").value,
-    pMin: num("pMin"), pMax: num("pMax"),
-    yMin: num("yMin"), nMin: num("nMin"),
-  };
+function buildTrendPicker(){DATA.rows.slice().sort((a,b)=>a.d.localeCompare(b.d,"vi")).forEach(r=>$("trendPick").add(new Option(`${r.d} · ${r.r} · ${r.i}`,`${r.slug}__${r.cs}`)));const usable=DATA.rows.filter(r=>r.cs===mapCat).sort((a,b)=>b.n-a.n).slice(0,3);trendKeys=usable.map(r=>`${r.slug}__${r.cs}`);renderChips()}
+function renderChips(){$("chips").innerHTML=trendKeys.map((k,i)=>{const r=rowByKey(k);return r?`<span class="chip"><i style="background:${COLORS[i]}"></i>${esc(r.d)} · ${esc(r.i)} <button data-k="${k}">×</button></span>`:""}).join("");$("chips").querySelectorAll("button").forEach(b=>b.onclick=()=>{trendKeys=trendKeys.filter(k=>k!==b.dataset.k);renderChips();renderTrend()})}
+function rowByKey(k){return DATA.rows.find(r=>`${r.slug}__${r.cs}`===k)}
+function renderTrend(){
+  const svg=$("trend"),series=trendKeys.map(k=>({k,row:rowByKey(k),points:DATA.history.filter(p=>p.k===k).sort((a,b)=>a.d.localeCompare(b.d))})).filter(s=>s.row);svg.innerHTML="";
+  const dates=[...new Set(series.flatMap(s=>s.points.map(p=>p.d)))].sort(),values=series.flatMap(s=>s.points.map(p=>p.p));
+  if(dates.length<2){$("trendEmpty").innerHTML=`<b>${dates.length?"Đã có snapshot đầu tiên":"Chưa có điểm lịch sử"}</b><span>Cần ít nhất 2 ngày crawl để vẽ đường xu hướng.<br>Hiện vẫn có thể so sánh mức giá bằng bảng và bản đồ.</span>`;$("trendEmpty").hidden=false;return}$("trendEmpty").hidden=true;
+  const W=760,H=300,L=54,R=16,T=17,B=32,min=Math.min(...values)*.94,max=Math.max(...values)*1.06,x=i=>L+i*(W-L-R)/Math.max(1,dates.length-1),y=v=>T+(max-v)*(H-T-B)/Math.max(.01,max-min);
+  for(let i=0;i<5;i++){const yy=T+i*(H-T-B)/4,v=max-i*(max-min)/4;line(L,yy,W-R,yy,getCss("--line"));text(6,yy+4,fmt(v),getCss("--muted"))}
+  dates.forEach((d,i)=>{if(i===0||i===dates.length-1||i===Math.floor(dates.length/2))text(x(i)-18,H-8,new Date(d+"T00:00:00").toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"}),getCss("--muted"))});
+  series.forEach((s,si)=>{const by=Object.fromEntries(s.points.map(p=>[p.d,p])),pts=dates.map((d,i)=>by[d]?[x(i),y(by[d].p)]:null).filter(Boolean);if(!pts.length)return;const path=document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttribute("d",pts.map((p,i)=>(i?"L":"M")+p.join(",")).join(" "));path.setAttribute("fill","none");path.setAttribute("stroke",COLORS[si]);path.setAttribute("stroke-width","2.5");path.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(path);pts.forEach(p=>circle(p[0],p[1],COLORS[si]))});
+  function line(x1,y1,x2,y2,c){const e=document.createElementNS("http://www.w3.org/2000/svg","line");Object.entries({x1,y1,x2,y2,stroke:c}).forEach(([k,v])=>e.setAttribute(k,v));e.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(e)}function text(x,y,s,c){const e=document.createElementNS("http://www.w3.org/2000/svg","text");e.setAttribute("x",x);e.setAttribute("y",y);e.setAttribute("fill",c);e.setAttribute("font-size","10");e.textContent=s;svg.appendChild(e)}function circle(cx,cy,c){const e=document.createElementNS("http://www.w3.org/2000/svg","circle");Object.entries({cx,cy,r:3,fill:c}).forEach(([k,v])=>e.setAttribute(k,v));svg.appendChild(e)}
 }
+function openDistrict(slug,cat){const r=DATA.rows.find(x=>x.slug===slug&&x.cs===cat);if(!r)return;$("drawerTitle").textContent=`${r.d} · ${r.i}`;const history=DATA.history.filter(p=>p.k===`${r.slug}__${r.cs}`).sort((a,b)=>a.d.localeCompare(b.d));$("drawerBody").innerHTML=`<div class="sub">${esc(r.r)} → tỉnh mới ${esc(r.rs)} · cập nhật ${dateText(r.u)}</div><div class="detail-grid" style="margin-top:12px"><div class="detail"><small>Giá/m² trung vị</small><b>${fmt(r.p)} triệu</b></div><div class="detail"><small>Nửa số tin</small><b>${fmt(r.p25)}–${fmt(r.p75)}</b></div><div class="detail"><small>Giá tin trung vị</small><b>${fmt(r.tp,2)} tỷ</b></div><div class="detail"><small>Diện tích trung vị</small><b>${fmt(r.sz,0)} m²</b></div><div class="detail"><small>Lợi suất gộp</small><b>${fmt(r.y,2)}%</b></div><div class="detail"><small>Ngày rao trung vị</small><b>${fmt(r.dom,0)} ngày</b></div><div class="detail"><small>Mẫu bán</small><b>${r.n}</b></div><div class="detail"><small>Mẫu thuê</small><b>${r.yn??"—"}</b></div></div><div class="explain"><b>${r.v==="cheap"?"Dòng tiền thuê đang đỡ giá":r.v==="rich"?"Giá phản ánh kỳ vọng tăng giá":r.v==="fair"?"Tương đối cân bằng với cùng phân khúc":"Chưa đủ cặp bán–thuê để định vị"}</b><br>Định vị này chỉ so lợi suất của khu vực với trung vị cùng loại hình; không phải định giá căn nhà cụ thể.</div><div class="source">Lịch sử: ${history.length} snapshot · CAGR: ${r.g==null?`chưa đủ ${DATA.cagr_min_days||180} ngày`:signed(r.g)+"%/năm"}.<br>Nguồn là tin rao công khai; chưa trừ thuế, phí, thời gian trống và thương lượng.</div>`;$("drawer").classList.add("open")}
 
-function passes(r, f){
-  if(f.q){
-    const hay = `${r.d ?? ""} ${r.r ?? ""}`.toLowerCase();
-    if(!hay.includes(f.q)) return false;
-  }
-  if(f.reg && r.r !== f.reg) return false;
-  if(f.cat && r.i !== f.cat) return false;
-  if(f.pMin != null && !(r.p >= f.pMin)) return false;
-  if(f.pMax != null && !(r.p <= f.pMax)) return false;
-  if(f.yMin != null && !(r.y >= f.yMin)) return false;
-  if(f.nMin != null && !(r.n >= f.nMin)) return false;
-  return true;
-}
-
-const fmt = (v, d) => v == null || !isFinite(v)
-  ? '<span class="dim">—</span>'
-  : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
-
-/* Median yield per property type. Apartments and street houses sit in
-   different yield regimes entirely, so judging a district against the whole
-   table would just re-label every house as "expensive". */
-let yieldMedian = {};
-
-function computeYieldMedians(){
-  const byType = {};
-  ROWS.forEach(r => {
-    if(typeof r.y !== "number") return;
-    (byType[r.i] ||= []).push(r.y);
-  });
-  yieldMedian = {};
-  Object.entries(byType).forEach(([type, values]) => {
-    if(values.length < 5) return;   // too few peers to call a middle
-    values.sort((a, b) => a - b);
-    yieldMedian[type] = values[Math.floor(values.length / 2)];
-  });
-}
-
-function verdict(row){
-  const mid = yieldMedian[row.i];
-  if(typeof row.y !== "number" || mid == null) return null;
-  const ratio = row.y / mid;
-  if(ratio >= 1.15) return {label:"Dòng tiền thuê", cls:"up"};
-  if(ratio <= 0.85) return {label:"Kỳ vọng tăng giá", cls:"down"};
-  return {label:"Cân bằng", cls:"dim"};
-}
-
-function cell(row, col){
-  if(col.kind === "verdict"){
-    const v = verdict(row);
-    if(!v) return '<span class="dim">—</span>';
-    const mid = yieldMedian[row.i];
-    return `<span class="${v.cls}" title="Lợi suất ${row.y.toFixed(2)}% so với trung vị ` +
-           `${mid.toFixed(2)}% của cùng loại hình">${v.label}</span>`;
-  }
-  if(col.kind === "spread"){
-    const lo = row.p25, hi = row.p75;
-    if(lo == null || hi == null) return '<span class="dim">—</span>';
-    const width = Math.max(4, (hi - lo) / maxSpread * 100);
-    return `<span class="spread" title="25% số tin dưới ${lo.toFixed(1)}, 75% dưới ${hi.toFixed(1)} triệu/m²">` +
-           `<span class="dim">${lo.toFixed(0)}</span>` +
-           `<span class="bar"><i style="left:0;width:${width}%"></i></span>` +
-           `<span class="dim">${hi.toFixed(0)}</span></span>`;
-  }
-  const v = row[col.k];
-  switch(col.kind){
-    case "dist": return `<span class="dist">${v ?? ""}</span>`;
-    case "text": return v ? `<span class="dim">${v}</span>` : '<span class="dim">—</span>';
-    case "n":
-      if(v == null) return '<span class="dim">—</span>';
-      // Flag cells that only just clear the publishing threshold.
-      return `<span class="${v < 30 ? "n-low" : "dim"}" title="${v} tin sau khi loại trùng">${v}</span>`;
-    default: return fmt(v, col.d ?? 2);
-  }
-}
-
-function render(){
-  const f = filters();
-  const rows = ROWS.filter(r => passes(r, f));
-
-  rows.sort((a, b) => {
-    const x = a[sortKey], y = b[sortKey];
-    if(x == null && y == null) return 0;
-    if(x == null) return 1;
-    if(y == null) return -1;
-    if(typeof x === "string") return x.localeCompare(y, "vi") * sortDir;
-    return (x - y) * sortDir;
-  });
-
-  el("count").textContent = `${rows.length} / ${ROWS.length} dòng`;
-  [...el("head").children].forEach((th, i) => {
-    const key = COLS[i].k === "_sp" ? "p75" : COLS[i].k === "_v" ? "y" : COLS[i].k;
-    if(key === sortKey) th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
-    else th.removeAttribute("aria-sort");
-  });
-
-  el("body").innerHTML = rows
-    .map(r => "<tr>" + COLS.map(c => `<td>${cell(r, c)}</td>`).join("") + "</tr>")
-    .join("");
-
-  window.__filtered = rows;
-}
-
-function syncUrl(){
-  const p = new URLSearchParams();
-  Object.entries(filters()).forEach(([k, v]) => { if(v) p.set(k, v); });
-  history.replaceState(null, "", p.toString() ? "?" + p.toString() : location.pathname);
-}
-
-function readUrl(){
-  const p = new URLSearchParams(location.search);
-  ["q","reg","cat","pMin","pMax","yMin","nMin"].forEach(k => {
-    if(p.get(k)) el(k).value = p.get(k);
-  });
-}
-
-["q","reg","cat","pMin","pMax","yMin","nMin"].forEach(id => {
-  el(id).addEventListener("input", () => { syncUrl(); render(); });
-});
-
-el("reset").addEventListener("click", () => {
-  ["q","reg","cat","pMin","pMax","yMin","nMin"].forEach(id => el(id).value = "");
-  syncUrl();
-  render();
-});
-
-el("csv").addEventListener("click", () => {
-  const rows = window.__filtered || [];
-  const cols = ["d","r","i","p","p25","p75","sz","y","n","yn","u"];
-  const head = ["Quận/Huyện","Tỉnh/Thành","Loại hình","Giá/m² (tr)","P25","P75",
-                "DT trung vị","Lợi suất %","Mẫu bán","Mẫu thuê","Cập nhật"].join(",");
-  const body = rows.map(r => cols.map(k => {
-    const v = r[k];
-    if(v == null) return "";
-    return typeof v === "string" && v.includes(",") ? `"${v}"` : v;
-  }).join(",")).join("\n");
-  const blob = new Blob(["﻿" + head + "\n" + body], {type:"text/csv;charset=utf-8"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `leon-bds-${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
+document.querySelectorAll("#catSeg button").forEach(b=>b.onclick=()=>{mapCat=b.dataset.cat;document.querySelectorAll("#catSeg button").forEach(x=>x.classList.toggle("on",x===b));buildMap();if(selectedProvince)renderProfile()});
+["q","province","region","category","pMin","pMax","gMin","yMin","nMin"].forEach(id=>$(id).addEventListener(id==="q"?"input":"change",()=>{if(id==="province"&&$(id).value){selectedProvince=$(id).value;buildMap();renderProfile()}renderTable()}));
+$("addTrend").onclick=()=>{const k=$("trendPick").value;if(k&&!trendKeys.includes(k)&&trendKeys.length<5){trendKeys.push(k);renderChips();renderTrend()}};$("clearTrend").onclick=()=>{trendKeys=[];renderChips();renderTrend()};
+$("reset").onclick=()=>{["q","province","region","category","pMin","pMax","gMin","yMin"].forEach(id=>$(id).value="");$("nMin").value="";selectedProvince="";buildMap();renderProfile();renderTable()};
+$("csv").onclick=()=>{const rows=currentRows(),heads=COLS.filter(c=>c[0]!=="_spread").map(c=>c[1]),keys=COLS.filter(c=>c[0]!=="_spread").map(c=>c[0]),csv=[heads,...rows.map(r=>keys.map(k=>r[k]??""))].map(row=>row.map(v=>`"${String(v).replaceAll('"','""')}"`).join(",")).join("\r\n"),a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv"}));a.download="leon-bds.csv";a.click();URL.revokeObjectURL(a.href)};
+$("drawerClose").onclick=()=>$("drawer").classList.remove("open");addEventListener("keydown",e=>{if(e.key==="Escape")$("drawer").classList.remove("open")});
 </script>
 </body>
 </html>

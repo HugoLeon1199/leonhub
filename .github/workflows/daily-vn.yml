@@ -17,8 +17,14 @@ on:
         type: boolean
         default: false
 
+# Shared with daily-bds and flows, not a workflow-local name: all three read
+# and write the same warehouse-* cache entry, and GitHub concurrency groups
+# only serialize jobs within the same group. A workflow-local group let a BDS
+# crawl and a VN daily run overlap and race to save the cache last, silently
+# dropping whichever run's appends lost. GEX is on its own gex-warehouse-
+# namespace (see gex.yml) and does not need to join this group.
 concurrency:
-  group: vn-daily
+  group: warehouse-writer
   cancel-in-progress: false
 
 permissions:
@@ -69,10 +75,13 @@ jobs:
 
       - name: Collect quarterly fundamentals
         if: inputs.fundamentals || github.event_name == 'schedule'
-        run: python -m pipeline.sources.vci_direct --delay 0.3
+        run: python -m pipeline.sources.vci_direct --skip-existing --delay 0.3
 
       - name: Build stocks.json
         run: python -m pipeline.transform.stocks_build
+
+      - name: Build lazy per-ticker ratio history
+        run: python -m pipeline.transform.ticker_details_build
 
       # Runs after the history backfill: signals are evaluated bar by bar over
       # the point-in-time warehouse, so they need the prices to be in first.
@@ -80,7 +89,7 @@ jobs:
         run: python -m pipeline.transform.signals_build
 
       - name: Validate before publishing
-        run: python -m pipeline.core.validate stocks.json
+        run: python -m pipeline.core.validate stocks.json signals.json ticker/manifest.json
 
       - name: Save warehouse
         uses: actions/cache/save@v4

@@ -21,9 +21,9 @@ choice:
   fitted after the fact.
 - **Published JSON is a view, never the store.** Rebuilding a file is always
   safe, and a bad build can be rebuilt rather than recovered.
-- **Aggregates hide themselves when thin.** A district median resting on eight
-  listings is an anecdote; it is withheld, and `n` travels with every cell that
-  is published.
+- **Aggregates expose their confidence.** BĐS publishes from five observations
+  for geographic coverage, but labels 5–19 as exploratory and defaults the UI
+  to the safer ≥20 view. `n` travels with every cell.
 
 ## Layout
 
@@ -33,10 +33,17 @@ apps/           One self-contained page per tab
   brief/        Daily cross-asset summary
   chart/        Crypto candles + perp context
   stocks/       VN equity screener
-  bds/          Real-estate price table
+  ticker/       Per-ticker valuation, flows, signals, depth and news
+  bds/          34-province map, trends, profiles and price screener
   signals/      Rules-based signals with a published track record
   gex/          Options gamma exposure
   flows/        ETF and institutional flows
+  positioning/  Crypto funding/basis + VN breadth
+  training/     Candle replay, paper orders, SL/TP and saved sessions
+  quant/        No-look-ahead backtest, parameter sweep and exports
+  us/           Curated US delayed-OHLCV dashboard
+  wealth/       Local-only assets, debts, cash flow, goals and journal
+  wiki/, blog/  Educational reference and reproducible research notes
 pipeline/
   core/         http.py, warehouse.py, validate.py
   sources/      One module per external source
@@ -57,6 +64,9 @@ python -m pipeline.sources.vn_equity --what board
 # 2. Quarterly fundamentals back to 2018 (~7 min for 1,722 tickers)
 python -m pipeline.sources.vci_direct
 
+# 2b. SSI three-level order book + remaining foreign room
+python -m pipeline.sources.ssi_board --with-depth
+
 # 3. Real-estate listings — start this early, history cannot be backfilled
 python -m pipeline.sources.chotot --discover-regions
 python -m pipeline.sources.chotot --regions 12000,13000 --max-pages 2
@@ -68,9 +78,12 @@ python -m pipeline.sources.etf_flows
 python -m pipeline.transform.stocks_build
 python -m pipeline.transform.bds_aggregate
 python -m pipeline.transform.flows_build
+python -m pipeline.sources.news_link --qa-sample 20
+python -m pipeline.transform.news_build
+python -m pipeline.sources.us_equity
 python -m pipeline.core.validate
 
-# 5. Serve locally
+# 6. Serve locally
 python -m http.server 8000
 # then open http://localhost:8000/hub/
 ```
@@ -92,16 +105,21 @@ will refuse rather than publish from a partial read.
 | Real estate | Chotot public gateway | free | Asking prices with GPS, ward, and a dedupe key |
 | ETF flows | Farside | free | Daily spot BTC/ETH creations and redemptions by issuer |
 | Options | Deribit | free | Full chain in one request; gamma surface validated against a live third-party GEX feed |
+| US delayed OHLCV | Yahoo Finance chart | free, pipeline-side | Curated 40-symbol universe; no fundamental/valuation fields |
+| Administrative map | vietnam-map-34-provinces | MIT | Former province geometry grouped to the post-2025 34-province structure |
 
 ## Current coverage
 
 | Artifact | Contents |
 |---|---|
-| `stocks.json` | 1,751 tickers; 1,719 with fundamentals, 1,735 with an ICB industry, 870 with momentum, 1,311 with foreign room |
-| `bds.json` | 102 districts across 48 provinces, from 47,343 listings |
-| `flows.json` | 679 days of BTC and 541 of ETH ETF flow, daily and cumulative |
-| `gex_btc.json`, `gex_eth.json` | Gamma surface, flip and max pain from the live option chain |
-| `signals.json` | 214 closed trades with their full result history |
+| `stocks.json` | 1,751 tickers; 1,725 priced; 1,719 with fundamentals; 1,735 with industry; 870 with momentum; 1,522 with foreign room; 1,292 with SSI depth |
+| `bds.json` | 345 district/type series, 176 districts and 21/34 merged provinces; 192 high-confidence series at the default ≥20 filter; 47,343 raw observations / 31,614 unique listings |
+| `flows.json` | 512 days each of BTC/ETH ETF flow, daily, cumulative and split across 12 BTC / 10 ETH issuers |
+| `gex_btc.json`, `gex_eth.json` | Gamma surface, flip and max pain from 1,004 BTC / 850 ETH option contracts |
+| `signals.json` | 220 closed trades with their full result history |
+| `ticker/*.json` | 1,719 lazy dossiers; 1,697 include statement payloads |
+| `us.json` | 40 liquid US equities/ETFs with one year of delayed daily close history |
+| `news_ticker.json` | 7 audited rule-based links across 5 tickers; no AI ticker guessing |
 
 The warehouse holds 1.44M quarterly fundamental observations (2018-Q1 to
 2026-Q2) and 264 trading days of daily prices across 879 tickers.
@@ -112,7 +130,7 @@ The warehouse holds 1.44M quarterly fundamental observations (2018-Q1 to
 |---|---|---|
 | GitHub Actions | VN equities, real estate | Free and unlimited on public repos; runs while the workstation is off |
 | Local workstation | Heavy crawls, backfills, backtests | Not geo-blocked; more cores |
-| Browser | Binance candles and depth | Sidesteps the geo-block and costs nothing to serve |
+| Browser | Binance candles and perp context | Sidesteps the geo-block and costs nothing to serve |
 
 ## Disclaimers
 

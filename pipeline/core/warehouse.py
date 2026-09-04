@@ -99,6 +99,98 @@ CREATE TABLE IF NOT EXISTS eq_listing (
     PRIMARY KEY (symbol, fetched_at)
 );
 
+-- Rich company dossier from Vietcap. Kept separately from eq_listing because
+-- profile/governance changes are slow-moving and expensive to collect.
+CREATE TABLE IF NOT EXISTS eq_company (
+    symbol             VARCHAR     NOT NULL,
+    organ_name         VARCHAR,
+    short_name         VARCHAR,
+    profile            VARCHAR,
+    sector             VARCHAR,
+    company_type       VARCHAR,
+    listing_date       DATE,
+    state_percent      DOUBLE,
+    foreign_percent    DOUBLE,
+    rating             VARCHAR,
+    target_price       DOUBLE,
+    rating_as_of       DATE,
+    source             VARCHAR     NOT NULL,
+    fetched_at         TIMESTAMPTZ NOT NULL,
+    meta               JSON,
+    PRIMARY KEY (symbol, fetched_at)
+);
+
+-- Vietcap exposes officers and major owners through one shareholder endpoint.
+-- Retaining owner_type and position lets the publisher make both views without
+-- issuing or storing the same response twice.
+CREATE TABLE IF NOT EXISTS eq_owner (
+    symbol             VARCHAR     NOT NULL,
+    owner_name         VARCHAR     NOT NULL,
+    position_name      VARCHAR,
+    owner_type         VARCHAR,
+    quantity           BIGINT,
+    percentage         DOUBLE,
+    update_date        DATE,
+    fetched_at         TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (symbol, owner_name, position_name, fetched_at)
+);
+
+CREATE TABLE IF NOT EXISTS eq_relationship (
+    symbol             VARCHAR     NOT NULL,
+    related_code       VARCHAR,
+    related_name       VARCHAR     NOT NULL,
+    relation_type      VARCHAR     NOT NULL, -- subsidiary | affiliate
+    ownership_percent  DOUBLE,
+    fetched_at         TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (symbol, related_name, relation_type, fetched_at)
+);
+
+CREATE TABLE IF NOT EXISTS eq_event (
+    symbol             VARCHAR     NOT NULL,
+    event_id           VARCHAR     NOT NULL,
+    event_code         VARCHAR,
+    title              VARCHAR,
+    description        VARCHAR,
+    public_date        DATE,
+    record_date        DATE,
+    exright_date       DATE,
+    fetched_at         TIMESTAMPTZ NOT NULL,
+    meta               JSON,
+    PRIMARY KEY (symbol, event_id, fetched_at)
+);
+
+-- Normalized long-form statement panel. Source field codes and bilingual
+-- labels are retained: different company types use different forms, and a
+-- guessed cross-industry mapping would be worse than an explicit raw label.
+CREATE TABLE IF NOT EXISTS eq_statement (
+    symbol             VARCHAR     NOT NULL,
+    period             VARCHAR     NOT NULL, -- 2025 or 2026-Q2
+    period_type        VARCHAR     NOT NULL, -- year | quarter
+    statement          VARCHAR     NOT NULL, -- income | balance | cashflow
+    field              VARCHAR     NOT NULL,
+    label_vi           VARCHAR,
+    label_en           VARCHAR,
+    level              INTEGER,
+    value              DOUBLE,
+    public_date        DATE,
+    fetched_at         TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (symbol, period, statement, field, fetched_at)
+);
+
+-- Deterministic links from the public news digest to listed companies. The
+-- match method is stored with every row so a reader can audit name/alias/code
+-- matches instead of trusting an opaque classifier.
+CREATE TABLE IF NOT EXISTS news_link (
+    symbol       VARCHAR     NOT NULL,
+    url          VARCHAR     NOT NULL,
+    title        VARCHAR     NOT NULL,
+    source       VARCHAR,
+    published_at TIMESTAMPTZ,
+    matched_by   VARCHAR     NOT NULL,
+    fetched_at   TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (symbol, url, fetched_at)
+);
+
 -- Generic timeseries for macro / flows / derivatives, so new sources need no DDL.
 CREATE TABLE IF NOT EXISTS metric_ts (
     series      VARCHAR     NOT NULL,   -- 'etf.btc.net_flow', 'defi.stablecoin.supply'
@@ -127,6 +219,20 @@ CREATE TABLE IF NOT EXISTS run_log (
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def latest_completed_quarter(at: datetime | None = None) -> str:
+    """Quarter a fundamentals refresh should already cover.
+
+    During a calendar quarter the latest completed reporting period is the
+    previous one. Sources can publish it late; in that gap ``--skip-existing``
+    intentionally retries instead of treating an older quarter as current.
+    """
+    at = at or utcnow()
+    current = (at.month - 1) // 3 + 1
+    if current == 1:
+        return f"{at.year - 1}-Q4"
+    return f"{at.year}-Q{current - 1}"
 
 
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:

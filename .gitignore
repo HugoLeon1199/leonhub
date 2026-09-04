@@ -17,7 +17,13 @@ Thumbs.db
 # Scratch output from local runs
 *.tmp
 .tmp_*
+.tmp-*/
 regions.json
+
+# Pre-build snapshot of each published artifact, kept by emit.write_json()
+# purely so validate.py can compare a fresh build against what it is about to
+# replace. Local handoff between build and validate steps, not the contract.
+data/.prev/
 
 # vnstock drops this into the project directory on use. It is not ours: it tells
 # an AI assistant to install packages and post the user's API key to

@@ -296,7 +296,12 @@ def build(dry_run: bool = False, limit: int | None = None) -> dict[str, Any]:
                 "entry": round(t.entry, 1), "exit": round(t.exit, 1),
                 "r": round(t.r_multiple, 2), "why": t.reason,
             }
-            for t in closed[:200]
+            # Every closed trade, not a recent slice. Truncating to 200 while
+            # `stats` counted all 214 put two numbers that disagree on the same
+            # screen -- the equity curve ended at a different total R than the
+            # tile above it -- and made the page's own caption ("toàn bộ lệnh,
+            # không lọc bỏ lệnh thua") untrue. The full list costs ~2.5 KB.
+            for t in closed
         ],
     }
 

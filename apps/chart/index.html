@@ -10,8 +10,11 @@
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
 
 <!-- Lightweight Charts is not on cdnjs; jsDelivr is the other CSP-allowed host.
-     Pinned, because a silent major bump would break the series API. -->
-<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+     Pinned, because a silent major bump would break the series API.
+     v5 supplies real indicator panes and the unified series API. Drawings stay
+     in a lightweight registry-backed canvas because they need editable handles;
+     their stored coordinates are market time/price, never screen pixels. -->
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
 :root{
@@ -43,16 +46,60 @@ body{
   text-transform:uppercase;
 }
 .sym-input:focus{outline:2px solid var(--accent); outline-offset:-1px}
-.group{display:flex; gap:2px; background:var(--panel-2); padding:2px; border-radius:8px}
+.bar-action{appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
+  border-radius:7px;padding:6px 9px;cursor:pointer;font:12px inherit}
+.bar-action:hover,.bar-action[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+.group{display:flex; gap:2px; background:var(--panel-2); padding:2px; border-radius:8px;
+  flex:0 0 auto}
 .group button{
   appearance:none; border:0; background:transparent; color:var(--muted);
   font:inherit; font-size:12.5px; padding:5px 10px; border-radius:6px; cursor:pointer;
 }
 .group button:hover{color:var(--text)}
 .group button[aria-pressed="true"]{background:var(--accent); color:#04150f; font-weight:600}
+.group button:disabled{opacity:.35; cursor:not-allowed}
+.group .tf-more{appearance:none;border:0;background:transparent;color:var(--muted);font:12px inherit;
+  padding:4px 7px;border-radius:6px;cursor:pointer;max-width:66px}
+.group .tf-more.active{background:var(--accent);color:#04150f;font-weight:600}
 :root[data-theme="light"] .group button[aria-pressed="true"]{color:#fff}
+:root[data-theme="light"] .group .tf-more.active{color:#fff}
+.group button.danger:hover{color:var(--down)}
+.draw-count{min-width:18px; padding:0 4px; color:var(--muted); font-size:11px;
+  display:grid; place-items:center; font-variant-numeric:tabular-nums}
+.ind-panel{background:var(--panel); border-bottom:1px solid var(--line);
+  padding:8px 12px; display:flex; flex-direction:column; gap:8px}
+.ind-panel[hidden]{display:none}
+.ind-add{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.ind-add select, .ind-add input{background:var(--panel-2); border:1px solid var(--line);
+  color:var(--text); border-radius:6px; padding:5px 8px; font-size:12px; font-family:inherit}
+.ind-params{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.ind-param{display:inline-flex; gap:4px; align-items:center; color:var(--muted); font-size:11px}
+.ind-param input{width:72px}
+.ind-color{display:inline-flex; align-items:center; gap:4px; color:var(--muted); font-size:11px}
+.ind-color input{width:34px; height:28px; padding:2px; cursor:pointer}
+.ind-add button{background:var(--accent); color:#04150f; border:0; border-radius:6px;
+  padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit}
+.ind-add button.ghost{background:var(--panel-2); color:var(--muted); font-weight:400}
+.ind-add button:disabled{opacity:.45; cursor:not-allowed}
+.ind-status{min-height:18px; color:var(--muted); font-size:11px}
+.ind-status.error{color:var(--down)}
+.ind-list{list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:6px}
+.ind-list li{display:inline-flex; align-items:center; gap:7px; background:var(--panel-2);
+  border:1px solid var(--line); border-radius:999px; padding:3px 6px 3px 10px; font-size:12px}
+.ind-list li.off{opacity:.55}
+.ind-list .dot{width:8px; height:8px; border-radius:50%; flex:none}
+.ind-list button{background:none; border:0; color:var(--muted); cursor:pointer;
+  font-size:14px; line-height:1; padding:2px 4px; font-family:inherit}
+.ind-list .toggle:hover{color:var(--text)}
+.ind-list .rm:hover{color:var(--down)}
+.ind-list .empty{color:var(--muted); border:0; background:none; padding-left:0}
+.live{display:inline-flex; align-items:center; gap:5px}
+.live::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--up);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--up) 18%, transparent)}
+.live[hidden]{display:none}
 
-.quote{display:flex; align-items:baseline; gap:10px; margin-left:auto; padding-right:4px}
+.quote{display:flex; align-items:baseline; gap:10px; margin-left:auto; padding-right:4px;
+  flex:0 0 auto}
 .price{font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.4px}
 .chg{font-size:13px; font-weight:600; font-variant-numeric:tabular-nums}
 .up{color:var(--up)} .down{color:var(--down)}
@@ -74,8 +121,32 @@ body{
 .stat .v{font-size:13.5px; font-weight:600; font-variant-numeric:tabular-nums}
 
 /* ---- Chart ---- */
-main{flex:1; position:relative; min-height:0}
+.workspace{flex:1;display:flex;min-height:0;overflow:hidden}
+main{flex:1; position:relative; min-height:0;min-width:0}
 #chart{position:absolute; inset:0}
+#drawings{position:absolute; top:0; left:0; width:100%; height:100%; z-index:2;
+  pointer-events:none; touch-action:none; outline:none}
+#drawings.active{pointer-events:auto; cursor:crosshair}
+#drawings.selecting{cursor:default}
+#drawings[hidden]{display:none}
+.market-side{width:278px;flex:0 0 278px;background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0}.market-side[hidden]{display:none}
+.side-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:6px;border-bottom:1px solid var(--line)}
+.side-tabs button{border:0;border-radius:5px;background:transparent;color:var(--muted);padding:6px 3px;
+  cursor:pointer;font:11px inherit}.side-tabs button[aria-pressed="true"]{background:var(--panel-2);color:var(--accent)}
+.side-pane{flex:1;overflow:auto;min-height:0;padding:5px}.side-pane[hidden]{display:none}
+.watch-row{display:grid;grid-template-columns:1fr auto auto;gap:7px;align-items:center;padding:8px 6px;
+  border-bottom:1px solid var(--line);cursor:pointer}.watch-row:hover{background:var(--panel-2)}
+.watch-row b{font-size:12px}.watch-row span{font-variant-numeric:tabular-nums;font-size:11px}.watch-rm{border:0;background:none;color:var(--muted);cursor:pointer;padding:2px}.watch-rm:hover{color:var(--down)}
+.side-summary{display:flex;justify-content:space-between;padding:7px 6px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--line)}
+.book-row{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:3px 6px;font-size:11px;
+  font-variant-numeric:tabular-nums}.book-row i{position:absolute;inset:1px auto 1px 0;opacity:.11;pointer-events:none}
+.book-row.ask i{background:var(--down)}.book-row.bid i{background:var(--up)}.book-row.ask span:first-of-type{color:var(--down)}.book-row.bid span:first-of-type{color:var(--up)}.book-row span:last-child{text-align:right}
+.tape-row{display:grid;grid-template-columns:64px 1fr 1fr;gap:6px;padding:5px 6px;border-bottom:1px solid var(--line);
+  font-size:10.5px;font-variant-numeric:tabular-nums}.tape-row span:nth-child(n+2){text-align:right}.tape-row.buy{color:var(--up)}.tape-row.sell{color:var(--down)}
+.level-card{padding:8px 7px;border-bottom:1px solid var(--line)}.level-head{display:flex;justify-content:space-between;gap:8px;font-size:11px}.level-head b{font-variant-numeric:tabular-nums}.level-head small{color:var(--muted)}.level-bar{display:flex;height:4px;margin:6px 0;border-radius:2px;overflow:hidden;background:var(--line)}.level-bar i:nth-child(1){background:var(--down)}.level-bar i:nth-child(2){background:#a78bfa}.level-bar i:nth-child(3){background:var(--warn)}.level-bar i:nth-child(4){background:var(--up)}.level-stats{display:flex;justify-content:space-between;color:var(--muted);font-size:9px}
+.side-empty{padding:22px 8px;text-align:center;color:var(--muted);font-size:11px}
+.side-closed .market-side{display:none}
 .msg{
   position:absolute; inset:0; display:grid; place-content:center; text-align:center;
   gap:8px; color:var(--muted); background:var(--bg); padding:24px; z-index:3;
@@ -84,34 +155,146 @@ main{flex:1; position:relative; min-height:0}
 .msg small{font-size:12.5px; max-width:46ch}
 .msg[hidden]{display:none!important}
 
+/* ---- Right-click menu ---- */
+.context-menu{
+  position:fixed; z-index:30; width:min(292px,calc(100vw - 16px));
+  max-height:calc(100vh - 16px); overflow:auto; padding:7px;
+  border:1px solid var(--line); border-radius:8px; background:var(--panel);
+  box-shadow:0 18px 48px rgba(0,0,0,.38); color:var(--text);
+}
+.context-menu[hidden]{display:none}
+.context-menu button{
+  width:100%; display:flex; align-items:center; gap:9px; border:0; border-radius:5px;
+  padding:8px 9px; background:transparent; color:var(--text); text-align:left;
+  font:12.5px/1.25 inherit; cursor:pointer;
+}
+.context-menu button:hover,.context-menu button:focus-visible{background:var(--panel-2); outline:none}
+.context-menu button:disabled{opacity:.38; cursor:not-allowed; background:transparent}
+.context-menu .ctx-icon{width:16px; flex:none; color:var(--muted); text-align:center}
+.context-menu .ctx-label{flex:1; min-width:0}
+.context-menu .ctx-value{color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums}
+.context-menu .ctx-check{width:14px; color:var(--muted); text-align:center}
+.context-menu .danger{color:var(--down)}
+.context-menu .ctx-sep{height:1px; margin:5px 4px; background:var(--line)}
+
+.chart-toast{
+  position:fixed; left:50%; bottom:38px; z-index:40; transform:translateX(-50%);
+  max-width:min(440px,calc(100vw - 24px)); padding:8px 12px; border-radius:7px;
+  background:var(--panel-2); border:1px solid var(--line); box-shadow:0 10px 28px rgba(0,0,0,.3);
+  color:var(--text); font-size:12px; text-align:center;
+}
+.chart-toast[hidden]{display:none}
+
+.alert-dialog{
+  width:min(520px,calc(100vw - 24px)); max-height:min(620px,calc(100vh - 24px));
+  padding:0; border:1px solid var(--line); border-radius:10px; background:var(--panel);
+  color:var(--text); box-shadow:0 24px 80px rgba(0,0,0,.5);
+}
+.alert-dialog::backdrop{background:rgba(2,6,12,.66)}
+.alert-head{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line)}
+.alert-head strong{flex:1}
+.alert-head button,.alert-row button{
+  border:1px solid var(--line); border-radius:6px; background:var(--panel-2); color:var(--text);
+  padding:5px 9px; cursor:pointer; font:12px inherit;
+}
+.alert-list{padding:8px 16px 14px; max-height:440px; overflow:auto}
+.alert-empty{padding:22px 0; color:var(--muted); text-align:center}
+.alert-row{display:grid; grid-template-columns:minmax(110px,1fr) auto auto; gap:8px; align-items:center;
+  padding:9px 0; border-bottom:1px solid var(--line)}
+.alert-row:last-child{border-bottom:0}
+.alert-price{font-weight:700; font-variant-numeric:tabular-nums}
+.alert-state{display:block; margin-top:2px; color:var(--muted); font-size:11px; font-weight:400}
+.alert-row button.danger{color:var(--down)}
+
 footer{
   flex:0 0 auto; padding:5px 12px; background:var(--panel); border-top:1px solid var(--line);
   font-size:11px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap;
 }
 footer b{color:var(--text); font-weight:600}
+@media(max-width:820px){.market-side{position:absolute;right:0;top:0;bottom:0;z-index:12;box-shadow:-12px 0 30px #0008;width:min(300px,88vw);flex-basis:min(300px,88vw)}.workspace{position:relative}.side-closed .market-side{display:none}}
 </style>
 </head>
 <body>
 
 <div class="bar">
-  <input id="sym" class="sym-input" value="BTC" maxlength="12" aria-label="Mã coin"
+  <input id="sym" class="sym-input" value="BTC" maxlength="12" list="coins" aria-label="Mã coin"
          autocomplete="off" spellcheck="false">
+  <datalist id="coins"></datalist>
+  <button id="watch-add" class="bar-action" type="button" aria-pressed="false" title="Thêm/bỏ mã khỏi watchlist">☆</button>
+  <button id="side-toggle" class="bar-action" type="button" aria-pressed="true" title="Ẩn/hiện bảng thị trường">Bảng</button>
   <div class="group" id="tfs" role="group" aria-label="Khung thời gian"></div>
+  <div class="group" role="group" aria-label="Chỉ báo">
+    <button id="ind-open" type="button" title="Thêm hoặc bỏ chỉ báo">Chỉ báo <span id="ind-count">0</span></button>
+  </div>
+  <div class="group" id="draw-tools" role="group" aria-label="Công cụ vẽ">
+    <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart (Esc)">Pan / Esc</button>
+    <button type="button" data-tool="select" aria-pressed="false" title="Chọn, kéo hoặc nhấn Delete để xóa hình">◇</button>
+    <!-- Tool buttons are generated from TOOLS so a new tool needs one entry,
+         not an entry plus a button someone has to remember to add. -->
+    <button id="draw-undo" type="button" title="Hoàn tác (Ctrl+Z)">↶</button>
+    <button id="draw-redo" type="button" title="Làm lại (Ctrl+Y)">↷</button>
+    <button id="draw-magnet" type="button" aria-pressed="false"
+            title="Nam châm OHLC — giữ Ctrl để đảo tạm">🧲</button>
+    <button id="draw-clear" class="danger" type="button" title="Xóa tất cả hình của coin này">Xóa</button>
+    <span class="draw-count" id="draw-count" title="Số hình đã lưu">0</span>
+  </div>
   <div class="quote">
     <span class="price" id="price">—</span>
     <span class="chg" id="chg"></span>
   </div>
 </div>
 
+<!-- Indicator panel. Hidden until asked for, so the default chart stays a
+     chart rather than a control surface. -->
+<div class="ind-panel" id="ind-panel" hidden>
+  <div class="ind-add">
+    <select id="ind-type" aria-label="Loại chỉ báo"></select>
+    <div id="ind-params" class="ind-params"></div>
+    <label class="ind-color">Màu <input id="ind-color" type="color" value="#3b82f6"></label>
+    <button id="ind-add" type="button">Thêm</button>
+    <button id="ind-reset" type="button" class="ghost">MA mặc định</button>
+    <button id="ind-close" type="button" class="ghost">Đóng</button>
+  </div>
+  <div id="ind-status" class="ind-status" aria-live="polite"></div>
+  <ul class="ind-list" id="ind-list"></ul>
+</div>
+
 <div class="stats" id="stats"></div>
 
-<main>
-  <div id="chart"></div>
-  <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
-</main>
+<div class="workspace">
+  <main>
+    <div id="chart"></div>
+    <canvas id="drawings" tabindex="0" aria-label="Lớp vẽ phân tích kỹ thuật"></canvas>
+    <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
+  </main>
+  <aside class="market-side" id="market-side" aria-label="Watchlist và vi cấu trúc">
+    <div class="side-tabs">
+      <button type="button" data-side="watch" aria-pressed="true">Watchlist</button>
+      <button type="button" data-side="book" aria-pressed="false">Sổ lệnh</button>
+      <button type="button" data-side="tape" aria-pressed="false">Big Tape</button>
+      <button type="button" data-side="levels" aria-pressed="false">Levels</button>
+    </div>
+    <div class="side-pane" id="side-watch"></div>
+    <div class="side-pane" id="side-book" hidden></div>
+    <div class="side-pane" id="side-tape" hidden></div>
+    <div class="side-pane" id="side-levels" hidden></div>
+  </aside>
+</div>
+
+<div id="chart-menu" class="context-menu" role="menu" aria-label="Tùy chọn biểu đồ" hidden></div>
+<div id="chart-toast" class="chart-toast" role="status" aria-live="polite" hidden></div>
+
+<dialog id="alert-dialog" class="alert-dialog" aria-labelledby="alert-title">
+  <div class="alert-head">
+    <strong id="alert-title">Cảnh báo giá</strong>
+    <button id="alert-close" type="button">Đóng</button>
+  </div>
+  <div id="alert-list" class="alert-list"></div>
+</dialog>
 
 <footer>
   <span>Nguồn: <b id="src">Binance</b></span>
+  <span class="live" id="live" hidden>Trực tiếp</span>
   <span>Cập nhật: <b id="upd">—</b></span>
   <span>Dữ liệu tham khảo, không phải khuyến nghị đầu tư.</span>
 </footer>
@@ -119,59 +302,1601 @@ footer b{color:var(--text); font-weight:600}
 <script>
 "use strict";
 
-const TIMEFRAMES = ["5m","15m","1h","4h","1d"];
+// All intervals are supported by both Binance and Hyperliquid. Keep the most
+// common eight visible and put the rest in a compact overflow control.
+const TIMEFRAMES = ["1m","3m","5m","15m","30m","1h","2h","4h","8h","12h","1d","3d","1w","1M"];
+const PRIMARY_TIMEFRAMES = ["1m","5m","15m","30m","1h","4h","1d","1w"];
+const INTERVAL_MINUTES = {"1m":1,"3m":3,"5m":5,"15m":15,"30m":30,"1h":60,"2h":120,"4h":240,"8h":480,"12h":720,"1d":1440,"3d":4320,"1w":10080,"1M":43200};
 const LIMIT = 500;
+// How many bars may accumulate once older pages are pulled in. Separate from
+// LIMIT on purpose: LIMIT is the size of one fetch, this is the ceiling on the
+// series. Trimming the series back to LIMIT after a websocket tick -- which is
+// what used to happen -- threw away every page the reader had just scrolled
+// back to load.
+const MAX_BARS = 5000;
+const COIN_CACHE_KEY = "leon_binance_coins_v1";
+const COIN_CACHE_MS = 24 * 60 * 60 * 1000;
+const FALLBACK_COINS = [
+  "BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK",
+  "SUI","TON","DOT","BCH","LTC","UNI","NEAR","APT","FIL","ARB",
+  "OP","AAVE","ATOM","ETC","ICP","INJ","RENDER","FET","PEPE","SHIB",
+];
 
 const el = {
+  main: document.querySelector("main"),
   sym: document.getElementById("sym"),
+  watchAdd: document.getElementById("watch-add"),
+  sideToggle: document.getElementById("side-toggle"),
+  marketSide: document.getElementById("market-side"),
+  sideWatch: document.getElementById("side-watch"),
+  sideBook: document.getElementById("side-book"),
+  sideTape: document.getElementById("side-tape"),
+  sideLevels: document.getElementById("side-levels"),
+  coins: document.getElementById("coins"),
   tfs: document.getElementById("tfs"),
+  drawing: document.getElementById("drawings"),
+  drawTools: document.getElementById("draw-tools"),
+  drawClear: document.getElementById("draw-clear"),
+  drawCount: document.getElementById("draw-count"),
+  drawUndo: document.getElementById("draw-undo"),
+  drawRedo: document.getElementById("draw-redo"),
+  drawMagnet: document.getElementById("draw-magnet"),
   price: document.getElementById("price"),
   chg: document.getElementById("chg"),
   stats: document.getElementById("stats"),
   msg: document.getElementById("msg"),
   src: document.getElementById("src"),
   upd: document.getElementById("upd"),
+  live: document.getElementById("live"),
+  menu: document.getElementById("chart-menu"),
+  toast: document.getElementById("chart-toast"),
+  alertDialog: document.getElementById("alert-dialog"),
+  alertList: document.getElementById("alert-list"),
 };
 
 const params = new URLSearchParams(location.search);
-let symbol = (params.get("sym") || "BTC").toUpperCase();
-let timeframe = TIMEFRAMES.includes(params.get("tf")) ? params.get("tf") : "1h";
+let savedSymbol = "", savedTimeframe = "";
+try{ savedSymbol=localStorage.getItem("leon_chart_symbol")||""; savedTimeframe=localStorage.getItem("leon_chart_tf")||""; }catch(e){}
+let symbol = (params.get("sym") || savedSymbol || "BTC").toUpperCase();
+let timeframe = TIMEFRAMES.includes(params.get("tf")) ? params.get("tf") :
+  (TIMEFRAMES.includes(savedTimeframe) ? savedTimeframe : "1h");
 el.sym.value = symbol;
+
+const MARKET_CONTEXT = "leon_market_context_v1";
+let contextChannel;
+try{ contextChannel = new BroadcastChannel(MARKET_CONTEXT); }catch(e){}
+
+function storedBool(key, fallback){
+  try{
+    const value = localStorage.getItem(key);
+    return value == null ? fallback : value === "1";
+  }catch(e){ return fallback; }
+}
+
+let volumeVisible = storedBool("leon_chart_volume", true);
+let showIndicatorTitles = storedBool("leon_chart_indicator_titles", true);
+let drawingsVisible = storedBool("leon_chart_drawings_visible", true);
+let crosshairMagnet = storedBool("leon_chart_crosshair_magnet", false);
+let logarithmicScale = storedBool("leon_chart_log_scale", false);
+
+function renderCoinList(symbols){
+  el.coins.replaceChildren(...symbols.map(sym => {
+    const option = document.createElement("option");
+    option.value = sym;
+    return option;
+  }));
+}
+
+async function loadCoinList(){
+  let cached;
+  try{ cached = JSON.parse(localStorage.getItem(COIN_CACHE_KEY) || "null"); }catch(e){}
+  if(cached && Date.now() - cached.at < COIN_CACHE_MS && Array.isArray(cached.symbols)){
+    renderCoinList(cached.symbols);
+    return;
+  }
+  renderCoinList(FALLBACK_COINS);
+  try{
+    const res = await fetch("https://api.binance.com/api/v3/exchangeInfo");
+    if(!res.ok) throw new Error("exchangeInfo " + res.status);
+    const payload = await res.json();
+    const available = (payload.symbols || [])
+      .filter(x => x.status === "TRADING" && x.quoteAsset === "USDT" &&
+        x.isSpotTradingAllowed !== false && x.symbol.endsWith("USDT"))
+      .map(x => x.symbol.slice(0, -4))
+      .filter((x, i, all) => x && all.indexOf(x) === i)
+      .sort((a, b) => a.localeCompare(b));
+    // exchangeInfo currently exposes hundreds of tiny pairs. Keep the field
+    // scannable while pinning the widely followed names to the front.
+    const popular = FALLBACK_COINS.filter(x => available.includes(x));
+    const symbols = [...popular, ...available.filter(x => !popular.includes(x))].slice(0, 250);
+    if(symbols.length){
+      renderCoinList(symbols);
+      try{ localStorage.setItem(COIN_CACHE_KEY, JSON.stringify({at:Date.now(), symbols})); }catch(e){}
+    }
+  }catch(e){ /* the popular fallback keeps the field useful offline */ }
+}
+
+/* ---------- shared context + watchlist / microstructure ---------- */
+const WATCH_KEY="leon_chart_watchlists_v2";
+const DEFAULT_WATCH=["BTC","ETH","SOL","BNB","XRP","DOGE"];
+let watchlist=[];
+let watchLists={};
+let activeWatchList="Mặc định";
+let watchQuotes={};
+let bookTimer=null;
+let tradeWs=null;
+let tapeEvents=[];
+let tapeMin=500000;
+let gexLevels=[];
+let levelFrame=0;
+
+function loadWatchlist(){
+  try{watchLists=JSON.parse(localStorage.getItem(WATCH_KEY)||"null")}catch(e){}
+  if(!watchLists||Array.isArray(watchLists)||typeof watchLists!=="object")watchLists={"Mặc định":[...DEFAULT_WATCH]};
+  try{activeWatchList=localStorage.getItem("leon_chart_watch_active")||Object.keys(watchLists)[0]}catch(e){activeWatchList=Object.keys(watchLists)[0]}
+  if(!Array.isArray(watchLists[activeWatchList]))activeWatchList=Object.keys(watchLists)[0]||"Mặc định";
+  watchlist=watchLists[activeWatchList]||[];
+  watchlist=[...new Set(watchlist.map(x=>String(x).toUpperCase()).filter(Boolean))].slice(0,30);
+  watchLists[activeWatchList]=watchlist;
+  renderWatchlist();refreshWatchQuotes();
+}
+function saveWatchlist(){watchLists[activeWatchList]=watchlist;try{localStorage.setItem(WATCH_KEY,JSON.stringify(watchLists));localStorage.setItem("leon_chart_watch_active",activeWatchList)}catch(e){}renderWatchlist();refreshWatchQuotes()}
+function updateWatchButton(){const on=watchlist.includes(symbol);el.watchAdd.textContent=on?"★":"☆";el.watchAdd.setAttribute("aria-pressed",String(on))}
+function renderWatchlist(){
+  updateWatchButton();
+  const tools=`<div class="side-summary"><select id="watch-list-select" style="max-width:112px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px">${Object.keys(watchLists).map(n=>`<option${n===activeWatchList?" selected":""}>${n.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}</option>`).join("")}</select><span><button class="watch-rm" data-watch-new title="Danh sách mới">＋</button><button class="watch-rm" data-watch-export title="Xuất CSV">⇩</button><button class="watch-rm" data-watch-import title="Nhập CSV">⇧</button><input id="watch-file" type="file" accept=".csv,text/csv" hidden></span></div>`;
+  const rows=watchlist.length?watchlist.map(sym=>{const q=watchQuotes[sym]||{},tone=q.ch==null?"":q.ch>=0?"up":"down";return `<div class="watch-row" data-watch="${sym}"><b>${sym}</b><span class="${tone}">${q.p==null?"—":nf(q.p,q.p<1?5:2)}${q.ch==null?"":`<small style="display:block">${q.ch>=0?"+":""}${q.ch.toFixed(2)}%</small>`}</span><button class="watch-rm" type="button" data-remove="${sym}" title="Bỏ ${sym}">×</button></div>`}).join(""):'<div class="side-empty">Nhấn ☆ để thêm mã đang xem.</div>';
+  el.sideWatch.innerHTML=tools+rows;
+}
+async function refreshWatchQuotes(){
+  if(!watchlist.length)return;
+  const pairs=watchlist.map(x=>x+"USDT");
+  try{const r=await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(pairs))}`);if(!r.ok)throw Error(r.status);const data=await r.json();for(const x of data){watchQuotes[x.symbol.slice(0,-4)]={p:+x.lastPrice,ch:+x.priceChangePercent}}renderWatchlist()}catch(e){}
+}
+function selectSymbol(next,announce=true){next=String(next||"").trim().toUpperCase();if(!next||next===symbol)return;symbol=next;el.sym.value=symbol;needsFit=true;loadDrawings();loadPriceAlerts();syncUrl(announce);updateWatchButton();load()}
+function setSide(name){if(!["watch","book","tape","levels"].includes(name))name="watch";document.querySelectorAll("[data-side]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.side===name)));for(const key of ["watch","book","tape","levels"]){document.getElementById(`side-${key}`).hidden=key!==name}try{localStorage.setItem("leon_chart_side_tab",name)}catch(e){}}
+function closeMicrostructure(){clearInterval(bookTimer);bookTimer=null;if(tradeWs){tradeWs.onmessage=tradeWs.onclose=tradeWs.onerror=null;try{tradeWs.close()}catch(e){}tradeWs=null}}
+async function refreshBook(sym,token){
+  if(token!==inflight)return;
+  try{const r=await fetch(`https://api.binance.com/api/v3/depth?symbol=${sym}USDT&limit=20`);if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;renderBookData(d,sym)
+  }catch(e){if(token===inflight)el.sideBook.innerHTML='<div class="side-empty">Không tải được sổ lệnh Binance.</div>'}
+}
+function renderBookData(d,sym=symbol){const asks=(d.asks||[]).slice(0,10).reverse(),bids=(d.bids||[]).slice(0,10),all=[...asks,...bids],max=Math.max(1,...all.map(x=>+x[1])),bidVol=bids.reduce((a,x)=>a+(+x[1]),0),askVol=asks.reduce((a,x)=>a+(+x[1]),0),imb=(bidVol+askVol)?bidVol/(bidVol+askVol)*100:50;const rows=(arr,side)=>arr.map(x=>`<div class="book-row ${side}"><i style="width:${(+x[1])/max*100}%"></i><span>${nf(+x[0],+x[0]<1?6:2)}</span><span>${compact(+x[1])}</span></div>`).join("");el.sideBook.innerHTML=`<div class="side-summary"><span>Mua ${imb.toFixed(0)}%</span><span>Bán ${(100-imb).toFixed(0)}%</span></div>${rows(asks,"ask")}<div class="side-summary"><b>${sym}</b><span>WebSocket 100ms</span></div>${rows(bids,"bid")}`}
+function renderTape(){const rows=[...tapeEvents].reverse().filter(x=>x.notional>=tapeMin).slice(0,60);el.sideTape.innerHTML=`<div class="side-summary"><span>Ngưỡng USD</span><input id="tape-min" type="number" min="100000" step="100000" value="${tapeMin}" style="width:94px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px"></div>`+(rows.length?rows.map(x=>`<div class="tape-row ${x.side}"><span>${new Date(x.at).toLocaleTimeString("vi-VN",{hour12:false})}</span><span>${nf(x.price,x.price<1?6:2)}</span><span>$${compact(x.notional)}</span></div>`).join(""):`<div class="side-empty">Chờ giao dịch từ ${compact(tapeMin)} USD…</div>`)}
+function scheduleLevels(){if(levelFrame)return;levelFrame=setTimeout(()=>{levelFrame=0;renderLevels()},700)}
+function classifyLevel(level){const bars=currentBars.slice(-240),spot=bars.at(-1)?.close||level,tol=spot*.0008,counts={break:0,absorb:0,fake:0,respect:0};for(const bar of bars){if(bar.low>level+tol||bar.high<level-tol)continue;const broke=(bar.open<level-tol&&bar.close>level+tol)||(bar.open>level+tol&&bar.close<level-tol);if(broke){counts.break++;continue}const start=bar.time*1000,end=start+(INTERVAL_MINUTES[timeframe]||60)*60000,big=tapeEvents.filter(x=>x.at>=start&&x.at<end&&Math.abs(x.price-level)<=tol).reduce((a,x)=>a+x.notional,0);if(big>=100000){counts.absorb++;continue}const fake=(bar.high>level+tol&&bar.close<level+tol)||(bar.low<level-tol&&bar.close>level-tol);if(fake)counts.fake++;else counts.respect++}const total=Object.values(counts).reduce((a,b)=>a+b,0);return {counts,total,pct:Object.fromEntries(Object.entries(counts).map(([k,v])=>[k,total?v/total*100:0]))}}
+function roundedLevelPct(p){const keys=["break","absorb","fake","respect"],raw=keys.map(k=>p[k]||0),whole=raw.map(Math.floor),missing=100-whole.reduce((a,b)=>a+b,0);raw.map((v,i)=>({i,f:v-whole[i]})).sort((a,b)=>b.f-a.f).slice(0,Math.max(0,missing)).forEach(x=>whole[x.i]++);return Object.fromEntries(keys.map((k,i)=>[k,whole[i]]))}
+function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML='<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
+async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH"].includes(sym))return;try{const r=await fetch(`../../data/gex_${sym.toLowerCase()}.json`,{cache:"no-cache"});if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;gexLevels=Array.isArray(d.levels)?d.levels:[];renderLevels()}catch(e){}}
+function openMicrostructure(sym,token){
+  closeMicrostructure();tapeEvents=[];gexLevels=[];try{tapeMin=Math.max(100000,+(localStorage.getItem(`leon_tapemin_${sym}`)||500000))}catch(e){tapeMin=500000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);
+  const streamSym=sym.toLowerCase()+"usdt";
+  try{tradeWs=new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streamSym}@aggTrade/${streamSym}@depth20@100ms`)}catch(e){return}
+  tradeWs.onmessage=ev=>{if(token!==inflight)return;let x;try{const payload=JSON.parse(ev.data);x=payload.data||payload}catch(e){return}if(Array.isArray(x.bids)&&Array.isArray(x.asks)){renderBookData(x,sym);return}if(x.e!=="aggTrade")return;const price=+x.p,qty=+x.q,notional=price*qty;if(!isFinite(notional)||notional<100000)return;const event={at:+x.T,price,notional,side:x.m?"sell":"buy"};tapeEvents.push(event);if(tapeEvents.length>500)tapeEvents.shift();renderTape();scheduleLevels()};
+}
+
+el.watchAdd.addEventListener("click",()=>{const at=watchlist.indexOf(symbol);if(at>=0)watchlist.splice(at,1);else watchlist.unshift(symbol);saveWatchlist()});
+el.sideToggle.addEventListener("click",()=>{document.body.classList.toggle("side-closed");const open=!document.body.classList.contains("side-closed");el.sideToggle.setAttribute("aria-pressed",String(open));try{localStorage.setItem("leon_chart_side",open?"1":"0")}catch(e){}});
+el.sideWatch.addEventListener("click",e=>{const remove=e.target.closest("[data-remove]");if(remove){watchlist=watchlist.filter(x=>x!==remove.dataset.remove);saveWatchlist();e.stopPropagation();return}if(e.target.closest("[data-watch-new]")){const name=(prompt("Tên watchlist mới:","")||"").trim().slice(0,30);if(name&&!watchLists[name]){activeWatchList=name;watchlist=[];watchLists[name]=watchlist;saveWatchlist()}return}if(e.target.closest("[data-watch-export]")){const blob=new Blob(["symbol\n"+watchlist.join("\n")+"\n"],{type:"text/csv"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`watchlist-${activeWatchList}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);return}if(e.target.closest("[data-watch-import]")){document.getElementById("watch-file")?.click();return}const row=e.target.closest("[data-watch]");if(row)selectSymbol(row.dataset.watch)});
+el.sideWatch.addEventListener("change",async e=>{if(e.target.id==="watch-list-select"){activeWatchList=e.target.value;watchlist=watchLists[activeWatchList]||[];saveWatchlist()}else if(e.target.id==="watch-file"&&e.target.files?.[0]){const text=await e.target.files[0].text();const imported=text.split(/\r?\n/).map(x=>x.split(",")[0].trim().toUpperCase()).filter(x=>/^[A-Z0-9_-]{2,12}$/.test(x)&&x!=="SYMBOL");watchlist=[...new Set([...watchlist,...imported])].slice(0,30);saveWatchlist()}});
+document.querySelector(".side-tabs").addEventListener("click",e=>{const b=e.target.closest("[data-side]");if(b)setSide(b.dataset.side)});
+el.sideTape.addEventListener("change",e=>{if(e.target.id!=="tape-min")return;tapeMin=Math.max(100000,+e.target.value||500000);try{localStorage.setItem(`leon_tapemin_${symbol}`,String(tapeMin))}catch(err){}renderTape()});
+try{setSide(params.get("side")||localStorage.getItem("leon_chart_side_tab")||"watch")}catch(e){setSide("watch")}
+try{if(localStorage.getItem("leon_chart_side")==="0"){document.body.classList.add("side-closed");el.sideToggle.setAttribute("aria-pressed","false")}}catch(e){}
 
 /* ---------- theme-aware chart colors ---------- */
 const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
 
 function chartTheme(){
   return {
-    layout:{ background:{color:css("--bg")}, textColor:css("--muted"), fontSize:11 },
+    layout:{
+      background:{color:css("--bg")}, textColor:css("--muted"), fontSize:11,
+      panes:{
+        enableResize:true,
+        separatorColor:css("--line"),
+        separatorHoverColor:css("--panel-2"),
+      },
+    },
     grid:{ vertLines:{color:css("--line")}, horzLines:{color:css("--line")} },
     rightPriceScale:{ borderColor:css("--line") },
     timeScale:{ borderColor:css("--line"), timeVisible:true, secondsVisible:false },
-    crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
+    crosshair:{ mode: crosshairMagnet
+      ? LightweightCharts.CrosshairMode.Magnet : LightweightCharts.CrosshairMode.Normal },
   };
 }
 
 const chart = LightweightCharts.createChart(document.getElementById("chart"), {
   ...chartTheme(), autoSize:true,
 });
-const candles = chart.addCandlestickSeries({
+const candles = chart.addSeries(LightweightCharts.CandlestickSeries, {
   upColor:css("--up"), downColor:css("--down"),
   borderUpColor:css("--up"), borderDownColor:css("--down"),
   wickUpColor:css("--up"), wickDownColor:css("--down"),
 });
-const volume = chart.addHistogramSeries({
-  priceFormat:{type:"volume"}, priceScaleId:"vol",
+const volume = chart.addSeries(LightweightCharts.HistogramSeries, {
+  priceFormat:{type:"volume"}, priceScaleId:"vol", visible:volumeVisible,
 });
 chart.priceScale("vol").applyOptions({ scaleMargins:{top:0.84, bottom:0} });
+candles.priceScale().applyOptions({
+  mode:logarithmicScale
+    ? LightweightCharts.PriceScaleMode.Logarithmic : LightweightCharts.PriceScaleMode.Normal,
+});
+
+/* ---------- indicator maths ----------
+   Written out rather than pulled from a library: every formula below is
+   textbook, and a dependency for arithmetic this small would cost more in
+   load time than it saves. Each takes the bar array and returns
+   {time, value} points aligned to it. */
+
+function sma(bars, period, key = "close"){
+  const out = [];
+  let sum = 0;
+  for(let i = 0; i < bars.length; i++){
+    sum += bars[i][key];
+    if(i >= period) sum -= bars[i - period][key];
+    if(i >= period - 1) out.push({time:bars[i].time, value:sum / period});
+  }
+  return out;
+}
+
+function emaValues(values, period){
+  // Seeded with the simple average of the first `period` values, which is the
+  // convention charting platforms use; seeding with the first value alone
+  // leaves a visible hook at the left edge.
+  const k = 2 / (period + 1), out = [];
+  let prev = null, sum = 0;
+  for(let i = 0; i < values.length; i++){
+    const v = values[i];
+    if(i < period - 1){ sum += v; out.push(null); continue; }
+    if(prev === null){ sum += v; prev = sum / period; }
+    else prev = v * k + prev * (1 - k);
+    out.push(prev);
+  }
+  return out;
+}
+
+function ema(bars, period, key = "close"){
+  const vals = emaValues(bars.map(b => b[key]), period);
+  return bars.map((b, i) => vals[i] == null ? null : {time:b.time, value:vals[i]})
+             .filter(Boolean);
+}
+
+function wma(bars, period, key = "close"){
+  const out = [], denom = period * (period + 1) / 2;
+  for(let i = period - 1; i < bars.length; i++){
+    let acc = 0;
+    for(let j = 0; j < period; j++) acc += bars[i - period + 1 + j][key] * (j + 1);
+    out.push({time:bars[i].time, value:acc / denom});
+  }
+  return out;
+}
+
+function hma(bars, period){
+  // Hull: WMA of (2*WMA(n/2) - WMA(n)), smoothed over sqrt(n).
+  const half = Math.max(1, Math.round(period / 2));
+  const sqrt = Math.max(1, Math.round(Math.sqrt(period)));
+  const w1 = wma(bars, half), w2 = wma(bars, period);
+  const byTime = new Map(w1.map(p => [p.time, p.value]));
+  const raw = w2.map(p => {
+    const a = byTime.get(p.time);
+    return a == null ? null : {time:p.time, close:2 * a - p.value};
+  }).filter(Boolean);
+  return wma(raw, sqrt);
+}
+
+function stdev(values){
+  const n = values.length;
+  if(n < 2) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  return Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+}
+
+function rsi(bars, period){
+  // Wilder smoothing, not a plain average: the first value is a simple mean of
+  // the opening window, and every later one decays it. A plain rolling mean
+  // gives a visibly different line and is the usual mistake.
+  const out = [];
+  let gain = 0, loss = 0;
+  for(let i = 1; i < bars.length; i++){
+    const diff = bars[i].close - bars[i - 1].close;
+    const up = Math.max(0, diff), down = Math.max(0, -diff);
+    if(i <= period){
+      gain += up; loss += down;
+      if(i === period){
+        gain /= period; loss /= period;
+        out.push({time:bars[i].time, value:loss === 0 ? (gain === 0 ? 50 : 100) : 100 - 100 / (1 + gain / loss)});
+      }
+      continue;
+    }
+    gain = (gain * (period - 1) + up) / period;
+    loss = (loss * (period - 1) + down) / period;
+    out.push({time:bars[i].time, value:loss === 0 ? (gain === 0 ? 50 : 100) : 100 - 100 / (1 + gain / loss)});
+  }
+  return out;
+}
+
+function macd(bars, fast, slow, signal){
+  const closes = bars.map(b => b.close);
+  const f = emaValues(closes, fast), s = emaValues(closes, slow);
+  const line = [], lineVals = [];
+  bars.forEach((b, i) => {
+    if(f[i] == null || s[i] == null) return;
+    lineVals.push(f[i] - s[i]);
+    line.push({time:b.time, value:f[i] - s[i]});
+  });
+  const sig = emaValues(lineVals, signal);
+  const signalPts = [], histPts = [];
+  line.forEach((p, i) => {
+    if(sig[i] == null) return;
+    signalPts.push({time:p.time, value:sig[i]});
+    const value = p.value - sig[i];
+    histPts.push({time:p.time, value,
+      color:value >= 0 ? "rgba(56,211,159,.58)" : "rgba(240,101,90,.58)"});
+  });
+  return {line, signal:signalPts, hist:histPts};
+}
+
+function bollinger(bars, period, mult){
+  const upper = [], mid = [], lower = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1).map(b => b.close);
+    const mean = win.reduce((a, b) => a + b, 0) / period;
+    const sd = stdev(win);
+    const t = bars[i].time;
+    upper.push({time:t, value:mean + mult * sd});
+    mid.push({time:t, value:mean});
+    lower.push({time:t, value:mean - mult * sd});
+  }
+  return {upper, mid, lower};
+}
+
+function trueRanges(bars){
+  const tr = [];
+  for(let i = 0; i < bars.length; i++){
+    const b = bars[i];
+    tr.push(i === 0 ? b.high - b.low : Math.max(
+      b.high - b.low,
+      Math.abs(b.high - bars[i-1].close),
+      Math.abs(b.low - bars[i-1].close)));
+  }
+  return tr;
+}
+
+function atr(bars, period){
+  const tr = trueRanges(bars), out = [];
+  let prev = null;
+  for(let i = 0; i < bars.length; i++){
+    if(i < period - 1) continue;
+    if(prev === null) prev = tr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    else prev = (prev * (period - 1) + tr[i]) / period;
+    out.push({time:bars[i].time, value:prev});
+  }
+  return out;
+}
+
+function stochastic(bars, period, smoothK, smoothD){
+  const raw = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1);
+    const hi = Math.max(...win.map(b => b.high));
+    const lo = Math.min(...win.map(b => b.low));
+    raw.push({time:bars[i].time,
+      close: hi === lo ? 50 : ((bars[i].close - lo) / (hi - lo)) * 100});
+  }
+  const k = sma(raw, smoothK);
+  const d = sma(k.map(p => ({time:p.time, close:p.value})), smoothD);
+  return {k, d};
+}
+
+function vwap(bars){
+  // Session-anchored: the running sum restarts each UTC day, which is what
+  // makes VWAP a level for the session rather than a slow drifting average.
+  const out = [];
+  let pv = 0, vol = 0, day = null;
+  for(const b of bars){
+    const d = Math.floor(b.time / 86400);
+    if(d !== day){ day = d; pv = 0; vol = 0; }
+    const typical = (b.high + b.low + b.close) / 3;
+    pv += typical * (b.volume || 0);
+    vol += b.volume || 0;
+    if(vol > 0) out.push({time:b.time, value:pv / vol});
+  }
+  return out;
+}
+
+function supertrend(bars, period, mult){
+  const a = atr(bars, period);
+  const atrAt = new Map(a.map(p => [p.time, p.value]));
+  const up = [], down = [];
+  let trend = 1, prevUpper = null, prevLower = null, prevClose = null;
+  for(const b of bars){
+    const av = atrAt.get(b.time);
+    if(av == null){ prevClose = b.close; continue; }
+    const mid = (b.high + b.low) / 2;
+    let upper = mid + mult * av, lower = mid - mult * av;
+    // Bands only tighten while the trend holds; that ratchet is what keeps the
+    // line from whipsawing on every bar.
+    if(prevUpper != null && prevClose != null)
+      upper = (upper < prevUpper || prevClose > prevUpper) ? upper : prevUpper;
+    if(prevLower != null && prevClose != null)
+      lower = (lower > prevLower || prevClose < prevLower) ? lower : prevLower;
+    if(prevUpper != null){
+      if(trend === 1 && b.close < prevLower) trend = -1;
+      else if(trend === -1 && b.close > prevUpper) trend = 1;
+    }
+    // Whitespace points break the opposite line, so a direction change is
+    // visible instead of painting one ambiguous colour through both regimes.
+    up.push(trend === 1 ? {time:b.time, value:lower} : {time:b.time});
+    down.push(trend === -1 ? {time:b.time, value:upper} : {time:b.time});
+    prevUpper = upper; prevLower = lower; prevClose = b.close;
+  }
+  return {up, down};
+}
+
+function ichimoku(bars, tenkanLen, kijunLen, senkouLen){
+  const hl = (from, to) => {
+    const win = bars.slice(from, to);
+    if(!win.length) return null;
+    return (Math.max(...win.map(b => b.high)) + Math.min(...win.map(b => b.low))) / 2;
+  };
+  const tenkan = [], kijun = [], spanA = [], spanB = [], chikou = [];
+  const futureTime = i => {
+    if(i < bars.length) return bars[i].time;
+    const step = bars.length > 1
+      ? bars[bars.length - 1].time - bars[bars.length - 2].time : 0;
+    return step ? bars[bars.length - 1].time + (i - bars.length + 1) * step : null;
+  };
+  for(let i = 0; i < bars.length; i++){
+    let tenkanValue = null, kijunValue = null;
+    if(i >= tenkanLen - 1){
+      tenkanValue = hl(i - tenkanLen + 1, i + 1);
+      if(tenkanValue != null) tenkan.push({time:bars[i].time, value:tenkanValue});
+    }
+    if(i >= kijunLen - 1){
+      kijunValue = hl(i - kijunLen + 1, i + 1);
+      if(kijunValue != null) kijun.push({time:bars[i].time, value:kijunValue});
+      const projected = futureTime(i + kijunLen);
+      if(projected != null && tenkanValue != null)
+        spanA.push({time:projected, value:(tenkanValue + kijunValue) / 2});
+    }
+    if(i >= senkouLen - 1){
+      const projected = futureTime(i + kijunLen);
+      const v = hl(i - senkouLen + 1, i + 1);
+      if(projected != null && v != null) spanB.push({time:projected, value:v});
+    }
+    if(i >= kijunLen) chikou.push({time:bars[i - kijunLen].time, value:bars[i].close});
+  }
+  return {tenkan, kijun, spanA, spanB, chikou};
+}
+
+function obv(bars){
+  const out = [];
+  let acc = 0;
+  for(let i = 1; i < bars.length; i++){
+    const d = bars[i].close - bars[i-1].close;
+    acc += d > 0 ? (bars[i].volume || 0) : d < 0 ? -(bars[i].volume || 0) : 0;
+    out.push({time:bars[i].time, value:acc});
+  }
+  return out;
+}
+
+function mfi(bars, period){
+  const out = [];
+  for(let i = period; i < bars.length; i++){
+    let pos = 0, neg = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      const tp = (bars[j].high + bars[j].low + bars[j].close) / 3;
+      const prev = (bars[j-1].high + bars[j-1].low + bars[j-1].close) / 3;
+      const flow = tp * (bars[j].volume || 0);
+      if(tp > prev) pos += flow; else if(tp < prev) neg += flow;
+    }
+    out.push({time:bars[i].time,
+      value: neg === 0 ? (pos === 0 ? 50 : 100) : 100 - 100 / (1 + pos / neg)});
+  }
+  return out;
+}
+
+function cci(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1)
+                    .map(b => (b.high + b.low + b.close) / 3);
+    const mean = win.reduce((a, b) => a + b, 0) / period;
+    const dev = win.reduce((a, b) => a + Math.abs(b - mean), 0) / period;
+    const tp = (bars[i].high + bars[i].low + bars[i].close) / 3;
+    out.push({time:bars[i].time, value: dev === 0 ? 0 : (tp - mean) / (0.015 * dev)});
+  }
+  return out;
+}
+
+function adx(bars, period){
+  const tr = trueRanges(bars), plus = [0], minus = [0];
+  for(let i = 1; i < bars.length; i++){
+    const up = bars[i].high - bars[i-1].high;
+    const dn = bars[i-1].low - bars[i].low;
+    plus.push(up > dn && up > 0 ? up : 0);
+    minus.push(dn > up && dn > 0 ? dn : 0);
+  }
+  const out = [];
+  let trS = 0, pS = 0, mS = 0, adxPrev = null, dxSum = 0, count = 0;
+  for(let i = 1; i < bars.length; i++){
+    if(i <= period){
+      trS += tr[i]; pS += plus[i]; mS += minus[i];
+      if(i < period) continue;
+    }else{
+      trS = trS - trS / period + tr[i];
+      pS  = pS  - pS  / period + plus[i];
+      mS  = mS  - mS  / period + minus[i];
+    }
+    if(trS === 0) continue;
+    const pdi = 100 * pS / trS, mdi = 100 * mS / trS;
+    const dx = (pdi + mdi) === 0 ? 0 : 100 * Math.abs(pdi - mdi) / (pdi + mdi);
+    if(adxPrev === null){
+      dxSum += dx; count++;
+      if(count === period){ adxPrev = dxSum / period; out.push({time:bars[i].time, value:adxPrev}); }
+    }else{
+      adxPrev = (adxPrev * (period - 1) + dx) / period;
+      out.push({time:bars[i].time, value:adxPrev});
+    }
+  }
+  return out;
+}
+
+function vwma(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    let pv = 0, v = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      const vol = bars[j].volume || 0;
+      pv += bars[j].close * vol; v += vol;
+    }
+    out.push({time:bars[i].time, value: v ? pv / v : bars[i].close});
+  }
+  return out;
+}
+
+// Parabolic SAR: the stop flips side when price crosses it, and the
+// acceleration factor steps up on each new extreme.
+function psar(bars, step, maxStep){
+  if(bars.length < 2) return [];
+  const out = [];
+  let up = bars[1].close >= bars[0].close;
+  let sar = up ? bars[0].low : bars[0].high;
+  let ep = up ? bars[0].high : bars[0].low;
+  let af = step;
+  for(let i = 1; i < bars.length; i++){
+    sar = sar + af * (ep - sar);
+    const b = bars[i];
+    if(up){
+      if(b.low < sar){ up = false; sar = ep; ep = b.low; af = step; }
+      else if(b.high > ep){ ep = b.high; af = Math.min(maxStep, af + step); }
+    }else{
+      if(b.high > sar){ up = true; sar = ep; ep = b.high; af = step; }
+      else if(b.low < ep){ ep = b.low; af = Math.min(maxStep, af + step); }
+    }
+    out.push({time:b.time, value:sar});
+  }
+  return out;
+}
+
+// Alligator: three smoothed averages of the median price, each pushed forward
+// by its own offset. The offsets are the point -- the lines only separate
+// once a trend is real.
+function smma(values, period){
+  const out = [];
+  let prev = null, sum = 0;
+  for(let i = 0; i < values.length; i++){
+    if(i < period - 1){ sum += values[i]; out.push(null); continue; }
+    if(prev === null){ sum += values[i]; prev = sum / period; }
+    else prev = (prev * (period - 1) + values[i]) / period;
+    out.push(prev);
+  }
+  return out;
+}
+
+function alligator(bars){
+  const med = bars.map(b => (b.high + b.low) / 2);
+  const mk = (period, shift) => {
+    const v = smma(med, period), out = [];
+    for(let i = 0; i < bars.length; i++){
+      const src = i - shift;
+      if(src < 0 || v[src] == null) continue;
+      out.push({time:bars[i].time, value:v[src]});
+    }
+    return out;
+  };
+  return {jaw:mk(13, 8), teeth:mk(8, 5), lips:mk(5, 3)};
+}
+
+function williamsR(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1);
+    const hi = Math.max(...win.map(b => b.high));
+    const lo = Math.min(...win.map(b => b.low));
+    out.push({time:bars[i].time, value: hi === lo ? -50 : -100 * (hi - bars[i].close) / (hi - lo)});
+  }
+  return out;
+}
+
+function roc(bars, period){
+  const out = [];
+  for(let i = period; i < bars.length; i++){
+    const base = bars[i - period].close;
+    out.push({time:bars[i].time, value: base ? (bars[i].close - base) / base * 100 : 0});
+  }
+  return out;
+}
+
+function momentum(bars, period){
+  const out = [];
+  for(let i = period; i < bars.length; i++)
+    out.push({time:bars[i].time, value:bars[i].close - bars[i - period].close});
+  return out;
+}
+
+// TRIX: rate of change of a triple-smoothed EMA -- the triple smoothing is
+// what strips the noise a single EMA leaves behind.
+function trix(bars, period){
+  const c = bars.map(b => b.close);
+  const e1 = emaValues(c, period);
+  const e2 = emaValues(e1.map(v => v == null ? 0 : v), period);
+  const e3 = emaValues(e2.map(v => v == null ? 0 : v), period);
+  const out = [];
+  for(let i = 1; i < bars.length; i++){
+    if(e3[i] == null || e3[i-1] == null || !e3[i-1]) continue;
+    out.push({time:bars[i].time, value:(e3[i] - e3[i-1]) / e3[i-1] * 100});
+  }
+  return out;
+}
+
+function tsi(bars, longLen, shortLen){
+  const diff = [], absDiff = [];
+  for(let i = 1; i < bars.length; i++){
+    const d = bars[i].close - bars[i-1].close;
+    diff.push(d); absDiff.push(Math.abs(d));
+  }
+  const s1 = emaValues(emaValues(diff, longLen).map(v => v == null ? 0 : v), shortLen);
+  const s2 = emaValues(emaValues(absDiff, longLen).map(v => v == null ? 0 : v), shortLen);
+  const out = [];
+  for(let i = 0; i < diff.length; i++){
+    if(s1[i] == null || s2[i] == null || !s2[i]) continue;
+    out.push({time:bars[i+1].time, value:100 * s1[i] / s2[i]});
+  }
+  return out;
+}
+
+function ultimate(bars, fast, mid, slow){
+  const bp = [], tr = [];
+  for(let i = 1; i < bars.length; i++){
+    const low = Math.min(bars[i].low, bars[i-1].close);
+    bp.push(bars[i].close - low);
+    tr.push(Math.max(bars[i].high, bars[i-1].close) - low);
+  }
+  const sumOf = (arr, end, n) => {
+    let s = 0;
+    for(let j = end - n + 1; j <= end; j++) s += arr[j];
+    return s;
+  };
+  const out = [];
+  for(let i = slow - 1; i < bp.length; i++){
+    const a = sumOf(tr, i, fast) ? sumOf(bp, i, fast) / sumOf(tr, i, fast) : 0;
+    const b = sumOf(tr, i, mid)  ? sumOf(bp, i, mid)  / sumOf(tr, i, mid)  : 0;
+    const c = sumOf(tr, i, slow) ? sumOf(bp, i, slow) / sumOf(tr, i, slow) : 0;
+    out.push({time:bars[i+1].time, value:100 * (4*a + 2*b + c) / 7});
+  }
+  return out;
+}
+
+function awesome(bars, fast, slow){
+  const med = bars.map(b => ({time:b.time, close:(b.high + b.low) / 2}));
+  const f = sma(med, fast), s = sma(med, slow);
+  const byTime = new Map(f.map(p => [p.time, p.value]));
+  return s.map(p => {
+    const fv = byTime.get(p.time);
+    return fv == null ? null : {time:p.time, value:fv - p.value};
+  }).filter(Boolean);
+}
+
+function aroon(bars, period){
+  const up = [], down = [];
+  for(let i = period; i < bars.length; i++){
+    const win = bars.slice(i - period, i + 1);
+    let hi = 0, lo = 0;
+    win.forEach((b, j) => {
+      if(b.high >= win[hi].high) hi = j;
+      if(b.low <= win[lo].low) lo = j;
+    });
+    up.push({time:bars[i].time, value:100 * hi / period});
+    down.push({time:bars[i].time, value:100 * lo / period});
+  }
+  return {up, down};
+}
+
+function vortex(bars, period){
+  const plus = [], minus = [];
+  const tr = trueRanges(bars);
+  for(let i = period; i < bars.length; i++){
+    let vp = 0, vm = 0, trSum = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      vp += Math.abs(bars[j].high - bars[j-1].low);
+      vm += Math.abs(bars[j].low - bars[j-1].high);
+      trSum += tr[j];
+    }
+    if(!trSum) continue;
+    plus.push({time:bars[i].time, value:vp / trSum});
+    minus.push({time:bars[i].time, value:vm / trSum});
+  }
+  return {plus, minus};
+}
+
+function elderRay(bars, period){
+  const e = ema(bars, period);
+  const byTime = new Map(e.map(p => [p.time, p.value]));
+  const bull = [], bear = [];
+  bars.forEach(b => {
+    const v = byTime.get(b.time);
+    if(v == null) return;
+    bull.push({time:b.time, value:b.high - v});
+    bear.push({time:b.time, value:b.low - v});
+  });
+  return {bull, bear};
+}
+
+function keltner(bars, period, atrPeriod, mult){
+  const mid = ema(bars, period);
+  const a = atr(bars, atrPeriod);
+  const atrAt = new Map(a.map(p => [p.time, p.value]));
+  const upper = [], lower = [], centre = [];
+  mid.forEach(p => {
+    const av = atrAt.get(p.time);
+    if(av == null) return;
+    centre.push(p);
+    upper.push({time:p.time, value:p.value + mult * av});
+    lower.push({time:p.time, value:p.value - mult * av});
+  });
+  return {upper, mid:centre, lower};
+}
+
+function donchian(bars, period){
+  const upper = [], lower = [], mid = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const win = bars.slice(i - period + 1, i + 1);
+    const hi = Math.max(...win.map(b => b.high));
+    const lo = Math.min(...win.map(b => b.low));
+    const t = bars[i].time;
+    upper.push({time:t, value:hi});
+    lower.push({time:t, value:lo});
+    mid.push({time:t, value:(hi + lo) / 2});
+  }
+  return {upper, mid, lower};
+}
+
+function envelope(bars, period, pct){
+  const mid = sma(bars, period);
+  return {
+    upper: mid.map(p => ({time:p.time, value:p.value * (1 + pct / 100)})),
+    mid,
+    lower: mid.map(p => ({time:p.time, value:p.value * (1 - pct / 100)})),
+  };
+}
+
+// Annualised standard deviation of log returns.
+function historicalVol(bars, period){
+  const rets = [];
+  for(let i = 1; i < bars.length; i++)
+    rets.push(bars[i-1].close ? Math.log(bars[i].close / bars[i-1].close) : 0);
+  const out = [];
+  for(let i = period - 1; i < rets.length; i++)
+    out.push({time:bars[i+1].time, value:stdev(rets.slice(i - period + 1, i + 1)) * Math.sqrt(365) * 100});
+  return out;
+}
+
+// Where today's range sits among the last `history` ranges. Low readings mean
+// the market is coiled, which is what the compression indicator watches for.
+function rangePercentile(bars, period, history){
+  const a = atr(bars, period);
+  const out = [];
+  for(let i = history; i < a.length; i++){
+    const win = a.slice(i - history, i + 1).map(p => p.value);
+    const cur = a[i].value;
+    const below = win.filter(v => v < cur).length;
+    out.push({time:a[i].time, value:100 * below / win.length});
+  }
+  return out;
+}
+
+function chandelier(bars, period, mult){
+  const a = atr(bars, period);
+  const atrAt = new Map(a.map(p => [p.time, p.value]));
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    const av = atrAt.get(bars[i].time);
+    if(av == null) continue;
+    const hi = Math.max(...bars.slice(i - period + 1, i + 1).map(b => b.high));
+    out.push({time:bars[i].time, value:hi - mult * av});
+  }
+  return out;
+}
+
+function chaikinMF(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    let mfv = 0, vol = 0;
+    for(let j = i - period + 1; j <= i; j++){
+      const b = bars[j], span = b.high - b.low;
+      const mult = span ? ((b.close - b.low) - (b.high - b.close)) / span : 0;
+      mfv += mult * (b.volume || 0);
+      vol += b.volume || 0;
+    }
+    out.push({time:bars[i].time, value: vol ? mfv / vol : 0});
+  }
+  return out;
+}
+
+function accumDist(bars){
+  const out = [];
+  let acc = 0;
+  bars.forEach(b => {
+    const span = b.high - b.low;
+    const mult = span ? ((b.close - b.low) - (b.high - b.close)) / span : 0;
+    acc += mult * (b.volume || 0);
+    out.push({time:b.time, value:acc});
+  });
+  return out;
+}
+
+// Swing points: a bar whose high tops the `left` bars before and `right` after
+// it. The lookahead is why the most recent bars never carry a pivot.
+function pivots(bars, left, right){
+  const highs = [], lows = [];
+  for(let i = left; i < bars.length - right; i++){
+    const win = bars.slice(i - left, i + right + 1);
+    if(bars[i].high >= Math.max(...win.map(b => b.high)))
+      highs.push({time:bars[i].time, value:bars[i].high});
+    if(bars[i].low <= Math.min(...win.map(b => b.low)))
+      lows.push({time:bars[i].time, value:bars[i].low});
+  }
+  return {highs, lows};
+}
+
+// Classic floor-trader pivots from the previous session.
+function pivotPoints(bars){
+  const byDay = new Map();
+  bars.forEach(b => {
+    const day = Math.floor(b.time / 86400);
+    const cur = byDay.get(day);
+    if(!cur) byDay.set(day, {high:b.high, low:b.low, close:b.close});
+    else {
+      cur.high = Math.max(cur.high, b.high);
+      cur.low = Math.min(cur.low, b.low);
+      cur.close = b.close;
+    }
+  });
+  const days = [...byDay.keys()].sort((a, b) => a - b);
+  const level = {p:[], r1:[], s1:[], r2:[], s2:[]};
+  bars.forEach(b => {
+    const day = Math.floor(b.time / 86400);
+    const idx = days.indexOf(day);
+    if(idx <= 0) return;
+    const prev = byDay.get(days[idx - 1]);
+    const p = (prev.high + prev.low + prev.close) / 3;
+    const span = prev.high - prev.low;
+    level.p.push({time:b.time, value:p});
+    level.r1.push({time:b.time, value:2*p - prev.low});
+    level.s1.push({time:b.time, value:2*p - prev.high});
+    level.r2.push({time:b.time, value:p + span});
+    level.s2.push({time:b.time, value:p - span});
+  });
+  return level;
+}
+
+// ZigZag keeps only the swings that moved more than `dev` percent, so the
+// line reads the structure rather than every wiggle.
+function zigzag(bars, dev){
+  if(!bars.length) return [];
+  const out = [{time:bars[0].time, value:bars[0].close}];
+  let lastIdx = 0, dir = 0;
+  for(let i = 1; i < bars.length; i++){
+    const last = out[out.length - 1].value;
+    const change = (bars[i].close - last) / last * 100;
+    if(dir >= 0 && change <= -dev){ out.push({time:bars[i].time, value:bars[i].close}); dir = -1; lastIdx = i; }
+    else if(dir <= 0 && change >= dev){ out.push({time:bars[i].time, value:bars[i].close}); dir = 1; lastIdx = i; }
+    else if((dir > 0 && bars[i].close > last) || (dir < 0 && bars[i].close < last)){
+      out[out.length - 1] = {time:bars[i].time, value:bars[i].close};
+      lastIdx = i;
+    }
+  }
+  return out;
+}
+
+// Squeeze: Bollinger bands inside Keltner channels means volatility has
+// contracted, and the release is what traders position for.
+function squeeze(bars, period, bbMult, kcMult){
+  const bb = bollinger(bars, period, bbMult);
+  const kc = keltner(bars, period, period, kcMult);
+  const kcUp = new Map(kc.upper.map(p => [p.time, p.value]));
+  const kcDn = new Map(kc.lower.map(p => [p.time, p.value]));
+  const out = [];
+  bb.upper.forEach((p, i) => {
+    const up = kcUp.get(p.time), dn = kcDn.get(p.time);
+    if(up == null || dn == null) return;
+    const on = p.value < up && bb.lower[i].value > dn;
+    out.push({time:p.time, value: on ? 1 : 0});
+  });
+  return out;
+}
+
+// Regime helpers: each returns a 0/1 series that the registry paints as a
+// coloured strip, so the reader sees when a condition held rather than
+// reading a number and deciding for themselves.
+function regimeFromPair(bars, fast, slow){
+  const f = ema(bars, fast), s = ema(bars, slow);
+  const sAt = new Map(s.map(p => [p.time, p.value]));
+  return f.map(p => {
+    const sv = sAt.get(p.time);
+    return sv == null ? null : {time:p.time, value: p.value > sv ? 1 : 0};
+  }).filter(Boolean);
+}
+
+function drawdownSeries(bars){
+  let peak = -Infinity;
+  return bars.map(b => {
+    peak = Math.max(peak, b.close);
+    return {time:b.time, value: peak ? (b.close - peak) / peak * 100 : 0};
+  });
+}
+
+// Hurst exponent by rescaled range: above 0.5 the series trends, below it
+// mean-reverts. Estimated over one window rather than a full R/S regression,
+// which is enough to colour a regime strip.
+function hurst(bars, window){
+  const out = [];
+  for(let i = window; i < bars.length; i++){
+    const win = bars.slice(i - window, i).map(b => b.close);
+    const rets = [];
+    for(let j = 1; j < win.length; j++) rets.push(win[j] - win[j-1]);
+    const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+    let cum = 0, min = 0, max = 0;
+    rets.forEach(r => { cum += r - mean; min = Math.min(min, cum); max = Math.max(max, cum); });
+    const sd = stdev(rets);
+    const rs = sd ? (max - min) / sd : 0;
+    out.push({time:bars[i].time, value: rs > 0 ? Math.log(rs) / Math.log(rets.length) : 0.5});
+  }
+  return out;
+}
+
+// Linear-regression candles: each bar replaced by the fitted value over the
+// trailing window, which strips the wicks and leaves the underlying drift.
+function linregLine(bars, period){
+  const out = [];
+  for(let i = period - 1; i < bars.length; i++){
+    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+    for(let j = 0; j < period; j++){
+      const y = bars[i - period + 1 + j].close;
+      sx += j; sy += y; sxy += j * y; sxx += j * j;
+    }
+    const den = period * sxx - sx * sx;
+    if(!den) continue;
+    const slope = (period * sxy - sx * sy) / den;
+    const icpt = (sy - slope * sx) / period;
+    out.push({time:bars[i].time, value:icpt + slope * (period - 1)});
+  }
+  return out;
+}
+
+// UT Bot: an ATR trailing stop that flips side when price closes through it.
+function utBot(bars, keyValue, atrPeriod){
+  const a = atr(bars, atrPeriod);
+  const atrAt = new Map(a.map(p => [p.time, p.value]));
+  const out = [];
+  let stop = null, pos = 1;
+  for(const b of bars){
+    const av = atrAt.get(b.time);
+    if(av == null) continue;
+    const n = keyValue * av;
+    if(stop === null){ stop = b.close - n; out.push({time:b.time, value:stop}); continue; }
+    if(b.close > stop && pos === 1) stop = Math.max(stop, b.close - n);
+    else if(b.close < stop && pos === -1) stop = Math.min(stop, b.close + n);
+    else { pos = b.close > stop ? 1 : -1; stop = pos === 1 ? b.close - n : b.close + n; }
+    out.push({time:b.time, value:stop});
+  }
+  return out;
+}
+
+// Bill Williams fractal: a high with two lower highs on each side. The two-bar
+// lookahead is why the last two bars never carry one.
+function fractals(bars, periods){
+  const up = [], down = [];
+  for(let i = periods; i < bars.length - periods; i++){
+    let isHigh = true, isLow = true;
+    for(let j = 1; j <= periods; j++){
+      if(bars[i].high <= bars[i-j].high || bars[i].high <= bars[i+j].high) isHigh = false;
+      if(bars[i].low  >= bars[i-j].low  || bars[i].low  >= bars[i+j].low ) isLow  = false;
+    }
+    if(isHigh) up.push({time:bars[i].time, value:bars[i].high});
+    if(isLow) down.push({time:bars[i].time, value:bars[i].low});
+  }
+  return {up, down};
+}
+
+// Fair value gaps: a three-bar window where the outer two do not overlap, so
+// price skipped a range nobody traded.
+function fairValueGaps(bars){
+  const up = [], down = [];
+  for(let i = 2; i < bars.length; i++){
+    const a = bars[i-2], c = bars[i];
+    if(c.low > a.high) up.push({time:c.time, value:(c.low + a.high) / 2});
+    else if(c.high < a.low) down.push({time:c.time, value:(c.high + a.low) / 2});
+  }
+  return {up, down};
+}
+
+// Higher-timeframe close, held flat between HTF bars so the level a larger
+// chart is watching is visible on this one.
+function htfClose(bars, multiple){
+  const out = [];
+  let held = null;
+  bars.forEach((b, i) => {
+    if(i % multiple === 0) held = b.close;
+    if(held != null) out.push({time:b.time, value:held});
+  });
+  return out;
+}
+
+// Market structure: 1 while each swing high tops the last one, 0 once it does
+// not -- a break of structure in the simplest form that is still honest.
+function structureSeries(bars, lookback){
+  const out = [];
+  let lastHigh = null, state = 1;
+  for(let i = lookback; i < bars.length; i++){
+    const win = bars.slice(i - lookback, i + 1);
+    const hi = Math.max(...win.map(b => b.high));
+    if(lastHigh != null) state = hi >= lastHigh ? 1 : 0;
+    lastHigh = hi;
+    out.push({time:bars[i].time, value:state});
+  }
+  return out;
+}
+
+// Choppiness: 100 when the range is filled by noise, 0 when it is one clean
+// move. Above the guide the market is ranging.
+function choppiness(bars, period){
+  const tr = trueRanges(bars);
+  const out = [];
+  for(let i = period; i < bars.length; i++){
+    let sum = 0;
+    for(let j = i - period + 1; j <= i; j++) sum += tr[j];
+    const win = bars.slice(i - period + 1, i + 1);
+    const span = Math.max(...win.map(b => b.high)) - Math.min(...win.map(b => b.low));
+    if(!span || !sum) continue;
+    out.push({time:bars[i].time,
+      value:100 * Math.log10(sum / span) / Math.log10(period)});
+  }
+  return out;
+}
+
+// Volume regime: 1 when volume runs above its own average.
+function volumeRegime(bars, period){
+  const avg = sma(bars.map(b => ({time:b.time, close:b.volume || 0})), period);
+  const avgAt = new Map(avg.map(p => [p.time, p.value]));
+  return bars.map(b => {
+    const a = avgAt.get(b.time);
+    return a == null ? null : {time:b.time, value:(b.volume || 0) > a ? 1 : 0};
+  }).filter(Boolean);
+}
+
+// Volatility regime: 1 when ATR sits above its own average.
+function volRegime(bars, period){
+  const a = atr(bars, period);
+  const avg = sma(a.map(p => ({time:p.time, close:p.value})), period);
+  const avgAt = new Map(avg.map(p => [p.time, p.value]));
+  return a.map(p => {
+    const m = avgAt.get(p.time);
+    return m == null ? null : {time:p.time, value:p.value > m ? 1 : 0};
+  }).filter(Boolean);
+}
+
+// Two-state hidden-Markov stand-in: classify each bar by whether its return
+// exceeds the rolling mean, then require persistence before switching. Not a
+// fitted HMM, and labelled as such rather than implied to be one.
+function hmmRegime(bars, window, persist){
+  const rets = [];
+  for(let i = 1; i < bars.length; i++)
+    rets.push({time:bars[i].time, r:bars[i-1].close ? (bars[i].close - bars[i-1].close) / bars[i-1].close : 0});
+  const out = [];
+  let state = 1, run = 0;
+  for(let i = window; i < rets.length; i++){
+    const win = rets.slice(i - window, i).map(x => x.r);
+    const mean = win.reduce((a, b) => a + b, 0) / win.length;
+    const want = rets[i].r >= mean ? 1 : 0;
+    if(want === state) run = 0;
+    else if(++run >= persist){ state = want; run = 0; }
+    out.push({time:rets[i].time, value:state});
+  }
+  return out;
+}
+
+/* ---------- indicator registry ----------
+   One entry per indicator. `pane` 0 draws over the candles; anything else gets
+   its own strip below. `build` returns the plotted lines, so adding an
+   indicator means adding an entry here and nothing else. */
+const INDICATORS = {
+  sma:    {name:"SMA", color:"#3b82f6", pane:0, params:{period:20},
+           build:(b, p) => [{data:sma(b, p.period), color:"#3b82f6"}]},
+  ema:    {name:"EMA", color:"#f59e0b", pane:0, params:{period:9},
+           build:(b, p) => [{data:ema(b, p.period), color:"#f59e0b"}]},
+  wma:    {name:"WMA", color:"#8b5cf6", pane:0, params:{period:20},
+           build:(b, p) => [{data:wma(b, p.period), color:"#8b5cf6"}]},
+  hma:    {name:"HMA", color:"#ec4899", pane:0, params:{period:20},
+           build:(b, p) => [{data:hma(b, p.period), color:"#ec4899"}]},
+  bb:     {name:"Bollinger", color:"#94a3b8", pane:0, params:{period:20, mult:2},
+           build:(b, p) => {
+             const r = bollinger(b, p.period, p.mult);
+             return [{data:r.upper, color:"#94a3b8"},
+                     {data:r.mid, color:"#64748b", dashed:true},
+                     {data:r.lower, color:"#94a3b8"}];
+           }},
+  vwap:   {name:"VWAP", color:"#eab308", pane:0, params:{},
+           build:b => [{data:vwap(b), color:"#eab308", width:2}]},
+  supertrend:{name:"Supertrend", color:"#10b981", pane:0, params:{period:10, mult:3},
+           build:(b, p) => {
+             const r = supertrend(b, p.period, p.mult);
+             return [{data:r.up, color:"#10b981", width:2},
+                     {data:r.down, color:"#f0655a", width:2}];
+           }},
+  ichimoku:{name:"Ichimoku", color:"#22d3ee", pane:0, params:{tenkan:9, kijun:26, senkou:52},
+           build:(b, p) => {
+             const r = ichimoku(b, p.tenkan, p.kijun, p.senkou);
+             return [{data:r.tenkan, color:"#22d3ee"},
+                     {data:r.kijun, color:"#f43f5e"},
+                     {data:r.spanA, color:"#38d39f", dashed:true},
+                     {data:r.spanB, color:"#f0655a", dashed:true},
+                     {data:r.chikou, color:"#a78bfa", dashed:true}];
+           }},
+  rsi:    {name:"RSI", color:"#a78bfa", pane:1, range:[0, 100], guides:[30, 70], params:{period:14},
+           build:(b, p) => [{data:rsi(b, p.period), color:"#a78bfa"}]},
+  macd:   {name:"MACD", color:"#3b82f6", pane:1, guides:[0], params:{fast:12, slow:26, signal:9},
+           build:(b, p) => {
+             const r = macd(b, p.fast, p.slow, p.signal);
+             return [{data:r.line, color:"#3b82f6"},
+                     {data:r.signal, color:"#f59e0b"},
+                     {data:r.hist, color:"#64748b", histogram:true}];
+           }},
+  stoch:  {name:"Stochastic", color:"#3b82f6", pane:1, range:[0, 100], guides:[20, 80],
+           params:{period:14, smoothK:3, smoothD:3},
+           build:(b, p) => {
+             const r = stochastic(b, p.period, p.smoothK, p.smoothD);
+             return [{data:r.k, color:"#3b82f6"}, {data:r.d, color:"#f59e0b"}];
+           }},
+  atr:    {name:"ATR", color:"#f97316", pane:1, params:{period:14},
+           build:(b, p) => [{data:atr(b, p.period), color:"#f97316"}]},
+  adx:    {name:"ADX", color:"#14b8a6", pane:1, range:[0, 100], guides:[25], params:{period:14},
+           build:(b, p) => [{data:adx(b, p.period), color:"#14b8a6"}]},
+  cci:    {name:"CCI", color:"#8b5cf6", pane:1, guides:[-100, 0, 100], params:{period:20},
+           build:(b, p) => [{data:cci(b, p.period), color:"#8b5cf6"}]},
+  mfi:    {name:"MFI", color:"#06b6d4", pane:1, range:[0, 100], guides:[20, 80], params:{period:14},
+           build:(b, p) => [{data:mfi(b, p.period), color:"#06b6d4"}]},
+  obv:    {name:"OBV", color:"#84cc16", pane:1, params:{},
+           build:b => [{data:obv(b), color:"#84cc16"}]},
+
+  // --- moving averages and overlays ---
+  vwma:   {name:"VWMA", color:"#0ea5e9", pane:0, params:{period:20},
+           build:(b, p) => [{data:vwma(b, p.period), color:"#0ea5e9"}]},
+  emacross:{name:"EMA Cross", color:"#f59e0b", pane:0, params:{fast:9, slow:21},
+           build:(b, p) => [{data:ema(b, p.fast), color:"#3b82f6"},
+                            {data:ema(b, p.slow), color:"#f59e0b"}]},
+  psar:   {name:"Parabolic SAR", color:"#e11d48", pane:0, params:{step:0.02, max:0.2},
+           build:(b, p) => [{data:psar(b, p.step, p.max), color:"#e11d48", dots:true}]},
+  alligator:{name:"Alligator", color:"#22c55e", pane:0, params:{},
+           build:b => {
+             const r = alligator(b);
+             return [{data:r.jaw, color:"#3b82f6"},
+                     {data:r.teeth, color:"#ef4444"},
+                     {data:r.lips, color:"#22c55e"}];
+           }},
+  keltner:{name:"Keltner", color:"#94a3b8", pane:0, params:{period:20, atrPeriod:10, mult:2},
+           build:(b, p) => {
+             const r = keltner(b, p.period, p.atrPeriod, p.mult);
+             return [{data:r.upper, color:"#94a3b8"},
+                     {data:r.mid, color:"#64748b", dashed:true},
+                     {data:r.lower, color:"#94a3b8"}];
+           }},
+  donchian:{name:"Donchian", color:"#a3a3a3", pane:0, params:{period:20},
+           build:(b, p) => {
+             const r = donchian(b, p.period);
+             return [{data:r.upper, color:"#a3a3a3"},
+                     {data:r.mid, color:"#737373", dashed:true},
+                     {data:r.lower, color:"#a3a3a3"}];
+           }},
+  envelope:{name:"Envelope", color:"#c084fc", pane:0, params:{period:20, pct:2.5},
+           build:(b, p) => {
+             const r = envelope(b, p.period, p.pct);
+             return [{data:r.upper, color:"#c084fc"},
+                     {data:r.mid, color:"#a855f7", dashed:true},
+                     {data:r.lower, color:"#c084fc"}];
+           }},
+  linregchan:{name:"Kênh hồi quy", color:"#22d3ee", pane:0, params:{period:100},
+           build:(b, p) => {
+             const win = b.slice(-Math.min(p.period, b.length));
+             if(win.length < 3) return [];
+             let sx=0, sy=0, sxy=0, sxx=0;
+             win.forEach((bar, i) => { sx+=i; sy+=bar.close; sxy+=i*bar.close; sxx+=i*i; });
+             const n = win.length, den = n*sxx - sx*sx;
+             if(!den) return [];
+             const slope = (n*sxy - sx*sy)/den, icpt = (sy - slope*sx)/n;
+             const resid = win.map((bar, i) => bar.close - (icpt + slope*i));
+             const sd = Math.sqrt(resid.reduce((a, r) => a + r*r, 0)/n);
+             const mk = off => win.map((bar, i) => ({time:bar.time, value:icpt + slope*i + off}));
+             return [{data:mk(0), color:"#22d3ee"},
+                     {data:mk(sd), color:"#22d3ee", dashed:true},
+                     {data:mk(-sd), color:"#22d3ee", dashed:true}];
+           }},
+  chandelier:{name:"Chandelier Exit", color:"#fb923c", pane:0, params:{period:22, mult:3},
+           build:(b, p) => [{data:chandelier(b, p.period, p.mult), color:"#fb923c"}]},
+  pivotpoints:{name:"Pivot Points", color:"#eab308", pane:0, params:{},
+           build:b => {
+             const r = pivotPoints(b);
+             return [{data:r.p, color:"#eab308"},
+                     {data:r.r1, color:"#ef5350", dashed:true},
+                     {data:r.s1, color:"#26a69a", dashed:true},
+                     {data:r.r2, color:"#ef5350", dashed:true},
+                     {data:r.s2, color:"#26a69a", dashed:true}];
+           }},
+  zigzag: {name:"ZigZag", color:"#f472b6", pane:0, params:{dev:5},
+           build:(b, p) => [{data:zigzag(b, p.dev), color:"#f472b6", width:2}]},
+  pivot:  {name:"Pivot cao/thấp", color:"#facc15", pane:0, params:{left:5, right:5},
+           build:(b, p) => {
+             const r = pivots(b, p.left, p.right);
+             return [{data:r.highs, color:"#ef5350", dots:true},
+                     {data:r.lows, color:"#26a69a", dots:true}];
+           }},
+
+  // --- oscillators ---
+  willr:  {name:"Williams %R", color:"#c084fc", pane:1, range:[-100, 0], guides:[-80, -20],
+           params:{period:14},
+           build:(b, p) => [{data:williamsR(b, p.period), color:"#c084fc"}]},
+  roc:    {name:"ROC", color:"#38bdf8", pane:1, guides:[0], params:{period:9},
+           build:(b, p) => [{data:roc(b, p.period), color:"#38bdf8"}]},
+  momentum:{name:"Momentum", color:"#818cf8", pane:1, guides:[0], params:{period:10},
+           build:(b, p) => [{data:momentum(b, p.period), color:"#818cf8"}]},
+  trix:   {name:"TRIX", color:"#fb7185", pane:1, guides:[0], params:{period:15},
+           build:(b, p) => [{data:trix(b, p.period), color:"#fb7185"}]},
+  tsi:    {name:"TSI", color:"#2dd4bf", pane:1, guides:[0], params:{long:25, short:13},
+           build:(b, p) => [{data:tsi(b, p.long, p.short), color:"#2dd4bf"}]},
+  ultimate:{name:"Ultimate Osc", color:"#a78bfa", pane:1, range:[0,100], guides:[30,70],
+           params:{fast:7, mid:14, slow:28},
+           build:(b, p) => [{data:ultimate(b, p.fast, p.mid, p.slow), color:"#a78bfa"}]},
+  ao:     {name:"Awesome Osc", color:"#64748b", pane:1, guides:[0], params:{fast:5, slow:34},
+           build:(b, p) => [{data:awesome(b, p.fast, p.slow), color:"#64748b", histogram:true}]},
+  aroon:  {name:"Aroon", color:"#26a69a", pane:1, range:[0,100], guides:[30,70],
+           params:{period:14},
+           build:(b, p) => {
+             const r = aroon(b, p.period);
+             return [{data:r.up, color:"#26a69a"}, {data:r.down, color:"#ef5350"}];
+           }},
+  vortex: {name:"Vortex", color:"#26a69a", pane:1, guides:[1], params:{period:14},
+           build:(b, p) => {
+             const r = vortex(b, p.period);
+             return [{data:r.plus, color:"#26a69a"}, {data:r.minus, color:"#ef5350"}];
+           }},
+  elderray:{name:"Elder Ray", color:"#26a69a", pane:1, guides:[0], params:{period:13},
+           build:(b, p) => {
+             const r = elderRay(b, p.period);
+             return [{data:r.bull, color:"#26a69a", histogram:true},
+                     {data:r.bear, color:"#ef5350", histogram:true}];
+           }},
+  cmf:    {name:"CMF", color:"#0ea5e9", pane:1, guides:[0], params:{period:20},
+           build:(b, p) => [{data:chaikinMF(b, p.period), color:"#0ea5e9"}]},
+  ad:     {name:"A/D Line", color:"#84cc16", pane:1, params:{},
+           build:b => [{data:accumDist(b), color:"#84cc16"}]},
+  hv:     {name:"Biến động lịch sử", color:"#f97316", pane:1, params:{period:20},
+           build:(b, p) => [{data:historicalVol(b, p.period), color:"#f97316"}]},
+  rangevol:{name:"Phân vị biên độ", color:"#eab308", pane:1, range:[0,100], guides:[20,80],
+           params:{period:20, history:200},
+           build:(b, p) => [{data:rangePercentile(b, p.period, p.history), color:"#eab308"}]},
+  compression:{name:"Nén biên độ", color:"#a855f7", pane:1, range:[0,100], guides:[20],
+           params:{period:20, history:200},
+           build:(b, p) => [{data:rangePercentile(b, p.period, p.history), color:"#a855f7"}]},
+  volume: {name:"Khối lượng + MA", color:"#64748b", pane:1, params:{maPeriod:20},
+           build:(b, p) => [
+             {data:b.map(x => ({time:x.time, value:x.volume || 0})), color:"#64748b", histogram:true},
+             {data:sma(b.map(x => ({time:x.time, close:x.volume || 0})), p.maPeriod), color:"#f59e0b"},
+           ]},
+
+  // --- regime strips: 0/1 conditions, drawn as a band ---
+  squeeze:{name:"TTM Squeeze", color:"#f43f5e", pane:1, range:[0,1],
+           params:{period:20, bbMult:2, kcMult:1.5},
+           build:(b, p) => [{data:squeeze(b, p.period, p.bbMult, p.kcMult),
+                             color:"#f43f5e", histogram:true}]},
+  trenddet:{name:"Chế độ xu hướng", color:"#26a69a", pane:1, range:[0,1],
+           params:{fast:20, slow:50},
+           build:(b, p) => [{data:regimeFromPair(b, p.fast, p.slow), color:"#26a69a", histogram:true}]},
+  bullbear:{name:"Tăng / Giảm", color:"#26a69a", pane:1, range:[0,1],
+           params:{fast:50, slow:200},
+           build:(b, p) => [{data:regimeFromPair(b, p.fast, p.slow), color:"#26a69a", histogram:true}]},
+  drawdownreg:{name:"Sụt giảm từ đỉnh", color:"#ef5350", pane:1, guides:[-10, -20],
+           params:{},
+           build:b => [{data:drawdownSeries(b), color:"#ef5350"}]},
+  hurstreg:{name:"Hurst", color:"#8b5cf6", pane:1, range:[0,1], guides:[0.5],
+           params:{window:100},
+           build:(b, p) => [{data:hurst(b, p.window), color:"#8b5cf6"}]},
+
+  linregcandles:{name:"Nến hồi quy", color:"#22d3ee", pane:0, params:{period:11},
+           build:(b, p) => [{data:linregLine(b, p.period), color:"#22d3ee", width:2}]},
+  utbot:  {name:"UT Bot", color:"#f43f5e", pane:0, params:{keyValue:1, atrPeriod:10},
+           build:(b, p) => [{data:utBot(b, p.keyValue, p.atrPeriod), color:"#f43f5e"}]},
+  fractal:{name:"Fractal", color:"#facc15", pane:0, params:{periods:2},
+           build:(b, p) => {
+             const r = fractals(b, p.periods);
+             return [{data:r.up, color:"#ef5350", dots:true},
+                     {data:r.down, color:"#26a69a", dots:true}];
+           }},
+  smc:    {name:"Fair Value Gap", color:"#26a69a", pane:0, params:{},
+           build:b => {
+             const r = fairValueGaps(b);
+             return [{data:r.up, color:"#26a69a", dots:true},
+                     {data:r.down, color:"#ef5350", dots:true}];
+           }},
+  htf:    {name:"Đóng cửa khung lớn", color:"#94a3b8", pane:0, params:{multiple:24},
+           build:(b, p) => [{data:htfClose(b, p.multiple), color:"#94a3b8", dashed:true}]},
+  volprofile:{name:"Volume Profile", color:"#ff9800", pane:1, params:{rows:24},
+           // The overlay version is the vprofile drawing tool; as an indicator
+           // it plots volume against price order so the busy prices stand out.
+           build:(b, p) => {
+             const lo = Math.min(...b.map(x => x.low)), hi = Math.max(...b.map(x => x.high));
+             if(hi <= lo) return [];
+             const rows = Math.max(5, Math.min(100, p.rows));
+             const rowH = (hi - lo) / rows, sums = new Array(rows).fill(0);
+             b.forEach(x => {
+               const i = Math.min(rows-1, Math.max(0, Math.floor((x.close - lo) / rowH)));
+               sums[i] += x.volume || 0;
+             });
+             const byBar = b.map(x => {
+               const i = Math.min(rows-1, Math.max(0, Math.floor((x.close - lo) / rowH)));
+               return {time:x.time, value:sums[i]};
+             });
+             return [{data:byBar, color:"#ff9800", histogram:true}];
+           }},
+
+  volregime:{name:"Chế độ biến động", color:"#f97316", pane:1, range:[0,1],
+           params:{period:20},
+           build:(b, p) => [{data:volRegime(b, p.period), color:"#f97316", histogram:true}]},
+  volumereg:{name:"Chế độ khối lượng", color:"#84cc16", pane:1, range:[0,1],
+           params:{period:20},
+           build:(b, p) => [{data:volumeRegime(b, p.period), color:"#84cc16", histogram:true}]},
+  adxregime:{name:"Chế độ ADX", color:"#14b8a6", pane:1, range:[0,1], params:{period:14, level:25},
+           build:(b, p) => [{data:adx(b, p.period).map(x =>
+                              ({time:x.time, value:x.value > p.level ? 1 : 0})),
+                             color:"#14b8a6", histogram:true}]},
+  supertrendreg:{name:"Chế độ Supertrend", color:"#10b981", pane:1, range:[0,1],
+           params:{period:10, mult:3},
+           build:(b, p) => {
+             const r = supertrend(b, p.period, p.mult);
+             const upAt = new Map(r.up.filter(x => x.value != null).map(x => [x.time, 1]));
+             return [{data:b.map(x => ({time:x.time, value:upAt.get(x.time) ? 1 : 0})),
+                      color:"#10b981", histogram:true}];
+           }},
+  chopreg:{name:"Choppiness", color:"#eab308", pane:1, range:[0,100], guides:[38.2, 61.8],
+           params:{period:14},
+           build:(b, p) => [{data:choppiness(b, p.period), color:"#eab308"}]},
+  structure:{name:"Cấu trúc thị trường", color:"#22d3ee", pane:1, range:[0,1],
+           params:{lookback:5},
+           build:(b, p) => [{data:structureSeries(b, p.lookback), color:"#22d3ee", histogram:true}]},
+  hmmreg: {name:"Chế độ HMM (xấp xỉ)", color:"#a855f7", pane:1, range:[0,1],
+           params:{window:50, persist:3},
+           build:(b, p) => [{data:hmmRegime(b, p.window, p.persist), color:"#a855f7", histogram:true}]},
+};
+const INDICATOR_KEYS = Object.keys(INDICATORS);
+
+/* Active instances. Each carries its own id, so the same indicator can be
+   added several times with different periods (EMA 20 + EMA 50 + EMA 200) --
+   which a single on/off toggle per type could never express. */
+let indicators = [];
+let indicatorSeq = 1;
+const MAX_INDICATORS = 16;
+const MAX_INDICATOR_PANES = 4;
+
+const PARAM_META = {
+  period:{label:"Chu kỳ", min:1, max:400, step:1},
+  mult:{label:"Hệ số", min:.1, max:10, step:.1},
+  fast:{label:"Nhanh", min:1, max:200, step:1},
+  slow:{label:"Chậm", min:2, max:400, step:1},
+  signal:{label:"Tín hiệu", min:1, max:200, step:1},
+  tenkan:{label:"Tenkan", min:1, max:200, step:1},
+  kijun:{label:"Kijun", min:2, max:300, step:1},
+  senkou:{label:"Senkou", min:3, max:400, step:1},
+  smoothK:{label:"Mượt K", min:1, max:50, step:1},
+  smoothD:{label:"Mượt D", min:1, max:50, step:1},
+};
+
+const DEFAULT_INDICATORS = [
+  // MA20 and MA50 stay on by default because those are the two averages
+  // signals_build.py crosses to generate a trade: the chart shows the rule
+  // that produced a signal rather than asking the reader to take it on trust.
+  {type:"sma", params:{period:20}, color:"#3b82f6", visible:true},
+  {type:"sma", params:{period:50}, color:"#f59e0b", visible:true},
+];
+
+function normaliseParams(type, raw){
+  const defaults = INDICATORS[type].params;
+  const out = {};
+  Object.keys(defaults).forEach(key => {
+    const meta = PARAM_META[key];
+    let value = Number(raw && raw[key]);
+    if(!Number.isFinite(value)) value = defaults[key];
+    if(meta){
+      value = Math.max(meta.min, Math.min(meta.max, value));
+      if(meta.step === 1) value = Math.round(value);
+    }
+    out[key] = value;
+  });
+  return out;
+}
+
+function validIndicatorColor(value){
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+}
+
+function loadIndicators(){
+  let stored = null;
+  try{ stored = JSON.parse(localStorage.getItem("leon_chart_inds") || "null"); }catch(e){}
+  const source = Array.isArray(stored) ? stored : DEFAULT_INDICATORS;
+  indicators = source
+    .filter(d => d && INDICATORS[d.type])
+    .map(d => ({
+      id: indicatorSeq++,
+      type: d.type,
+      color: validIndicatorColor(d.color) || INDICATORS[d.type].color,
+      visible: d.visible !== false,
+      params: normaliseParams(d.type, d.params),
+    })).slice(0, MAX_INDICATORS);
+}
+
+function saveIndicators(){
+  try{
+    localStorage.setItem("leon_chart_inds", JSON.stringify(
+      indicators.map(i => ({type:i.type, params:i.params, color:i.color, visible:i.visible}))));
+  }catch(e){}
+}
+
+function disposeIndicator(inst){
+  (inst._series || []).forEach(s => { try{ chart.removeSeries(s); }catch(e){} });
+  inst._series = null;
+  inst._signature = null;
+  inst._paneIndex = null;
+  scheduleDraw();
+}
+
+function setIndicatorVisibility(inst){
+  (inst._series || []).forEach(s => {
+    try{ s.applyOptions({visible:inst.visible}); }catch(e){}
+  });
+}
+
+function buildIndicator(inst, bars){
+  const def = INDICATORS[inst.type];
+  if(!inst.visible && def.pane !== 0){
+    disposeIndicator(inst);
+    return;
+  }
+  if(!bars.length) return;
+  let plots = [];
+  try{ plots = def.build(bars, inst.params) || []; }catch(e){ return; }
+  const signature = plots.map(p => p.histogram ? "h" : "l").join("");
+
+  // Keep existing series when only their data changed. Recreating every pane
+  // after a history page arrived made the chart jump and discarded the user's
+  // resized pane heights.
+  if(inst._series && inst._signature === signature && inst._series.length === plots.length){
+    plots.forEach((plot, i) => inst._series[i].setData(plot.data));
+    setIndicatorVisibility(inst);
+    return;
+  }
+
+  disposeIndicator(inst);
+  const paneIndex = def.pane === 0 ? 0 : chart.panes().length;
+  inst._paneIndex = paneIndex;
+
+  inst._series = plots.map((plot, slot) => {
+    const common = {
+      priceScaleId:"right",
+      priceLineVisible: false, lastValueVisible: def.pane !== 0,
+      crosshairMarkerVisible: false,
+      visible:inst.visible,
+      title:showIndicatorTitles && slot === 0 ? indicatorLabel(inst) : "",
+    };
+    const s = plot.histogram
+      ? chart.addSeries(LightweightCharts.HistogramSeries,
+          Object.assign({color:plot.color}, common), paneIndex)
+      : chart.addSeries(LightweightCharts.LineSeries, Object.assign({
+          color: slot === 0 && inst.color ? inst.color : plot.color,
+          lineWidth: plot.width || 1,
+          // Parabolic SAR and pivots are point series, not curves: joining
+          // them would draw a line through gaps that carry no meaning.
+          lineStyle: plot.dots
+            ? LightweightCharts.LineStyle.Dotted
+            : plot.dashed ? LightweightCharts.LineStyle.Dashed
+                          : LightweightCharts.LineStyle.Solid,
+          pointMarkersVisible: !!plot.dots,
+          lineVisible: !plot.dots,
+        }, common), paneIndex);
+    s.setData(plot.data);
+    return s;
+  });
+  inst._signature = signature;
+
+  if(def.pane !== 0 && inst._series.length){
+    const first = inst._series[0];
+    // Bound oscillators to their mathematical range and draw the decision
+    // levels declared by the registry. Those fields existed before, but were
+    // never applied, so RSI could autoscale to e.g. 43-58 and hide 30/70.
+    (def.range || []).forEach(price => first.createPriceLine({
+      price, color:"rgba(139,152,168,.16)", lineWidth:1,
+      lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true,
+    }));
+    (def.guides || []).filter(x => !(def.range || []).includes(x)).forEach(price =>
+      first.createPriceLine({
+        price, color:"rgba(139,152,168,.42)", lineWidth:1,
+        lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:false,
+      }));
+    requestAnimationFrame(() => {
+      const pane = chart.panes()[inst._paneIndex];
+      const mainPane = chart.panes()[0];
+      if(mainPane && mainPane.getStretchFactor() < 3) mainPane.setStretchFactor(3);
+      if(pane) pane.setStretchFactor(1);
+      scheduleDraw();
+    });
+  }
+}
+
+function applyIndicators(bars){
+  indicators.forEach(inst => buildIndicator(inst, bars));
+  scheduleDraw();
+}
+
+/* Live tick: recompute and push only the newest point of each plot. setData on
+   every tick would rebuild thousands of points several times a second, and on
+   the 5m chart with history paged in that is visible as stutter. */
+function tickIndicators(){
+  if(!currentBars.length) return;
+  indicators.forEach(inst => {
+    if(!inst._series || !inst._series.length) return;
+    let plots = [];
+    try{ plots = INDICATORS[inst.type].build(currentBars, inst.params) || []; }
+    catch(e){ return; }
+    plots.forEach((plot, i) => {
+      const s = inst._series[i];
+      const last = plot.data && plot.data[plot.data.length - 1];
+      if(s && last) { try{ s.update(last); }catch(e){} }
+    });
+  });
+}
+
+let indicatorTickTimer = 0;
+function scheduleIndicatorTick(){
+  if(indicatorTickTimer) return;
+  indicatorTickTimer = setTimeout(() => {
+    indicatorTickTimer = 0;
+    tickIndicators();
+  }, 300);
+}
+
+// Kept as the single name the load path and the websocket path both call, so
+// the two can never drift apart the way the old hand-written pair did.
+function applyMA(bars){ applyIndicators(bars); }
 
 /* ---------- data sources ----------
    Binance is fetched from the browser on purpose: it geo-blocks US datacenter
    IPs (451), so a server-side fetch from CI would fail while the reader's own
    browser succeeds. Hyperliquid is the fallback and needs no key either. */
-const HL_INTERVAL = {"5m":"5m","15m":"15m","1h":"1h","4h":"4h","1d":"1d"};
+const HL_INTERVAL = Object.fromEntries(TIMEFRAMES.map(tf => [tf, tf]));
 
-async function fromBinance(sym, tf){
-  const url = `https://api.binance.com/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=${LIMIT}`;
+// endTime pages backwards: Binance returns the LIMIT bars ending there, which
+// is how scrolling left keeps finding more history instead of running out.
+async function fromBinance(sym, tf, endTime){
+  const url = `https://api.binance.com/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=${LIMIT}`
+    + (endTime ? `&endTime=${endTime}` : "");
   const res = await fetch(url);
   if(!res.ok) throw new Error("binance " + res.status);
   const rows = await res.json();
@@ -181,9 +1906,9 @@ async function fromBinance(sym, tf){
   }));
 }
 
-async function fromHyperliquid(sym, tf){
-  const end = Date.now();
-  const spanMs = {"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440}[tf] * 60000 * LIMIT;
+async function fromHyperliquid(sym, tf, endTime){
+  const end = endTime || Date.now();
+  const spanMs = INTERVAL_MINUTES[tf] * 60000 * LIMIT;
   const res = await fetch("https://api.hyperliquid.xyz/info", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
@@ -268,7 +1993,7 @@ function renderStats(items){
 // Bars per 24 hours, so the headline change means the same thing on every
 // timeframe. Measuring from the first loaded bar instead would quietly report
 // a 20-day move on the 1h chart and a 40-hour move on the 5m one.
-const BARS_PER_DAY = {"5m":288, "15m":96, "1h":24, "4h":6, "1d":1};
+const BARS_PER_DAY = {"1m":1440,"3m":480,"5m":288,"15m":96,"30m":48,"1h":24,"2h":12,"4h":6,"8h":3,"12h":2,"1d":1,"3d":1,"1w":1,"1M":1};
 
 function renderQuote(bars){
   const last = bars[bars.length - 1];
@@ -279,9 +2004,9 @@ function renderQuote(bars){
 
   const span = BARS_PER_DAY[timeframe] || 24;
   const ref = bars[Math.max(0, bars.length - 1 - span)];
-  const base = timeframe === "1d" ? ref.close : ref.open;
+  const base = timeframe === "1d" ? ref.close : ["3d","1w","1M"].includes(timeframe) ? last.open : ref.open;
   const pct = (last.close - base) / base * 100;
-  const label = timeframe === "1d" ? "1d" : "24h";
+  const label = {"1d":"1d","3d":"3d","1w":"7d","1M":"1 tháng"}[timeframe] || "24h";
 
   el.chg.innerHTML =
     `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}% <span class="dim">${label}</span>`;
@@ -289,6 +2014,120 @@ function renderQuote(bars){
 }
 
 let inflight = 0;
+// The bars currently on screen, kept so the websocket can update the last one
+// in place instead of refetching the whole series.
+let currentBars = [];
+// fitContent() is for a chart the reader has not framed yet. Calling it on
+// every refresh (as this used to) threw away their zoom and pan once a minute.
+let needsFit = true;
+// Which feed answered last, and how far back the series currently reaches.
+// Paging older bars needs both: the same source that served the first page,
+// and the timestamp to page backwards from.
+let currentSource = "Binance";
+let oldestTime = null;
+let loadingHistory = false;
+let historyExhausted = false;
+
+function volumeBar(b){
+  return {
+    time: b.time, value: b.volume,
+    color: b.close >= b.open ? css("--up") + "55" : css("--down") + "55",
+  };
+}
+
+/* ---------- live stream ----------
+   Binance publishes a kline stream that pushes the in-progress candle several
+   times a second. Updating that one bar is what makes the price move on screen;
+   the old 60-second full refetch could not, and reset the viewport besides.
+   The REST poll below is kept as a fallback for when the socket cannot hold. */
+let ws = null;
+let wsRetry = 0;
+let wsTimer = null;
+let wsLastMessage = 0;
+
+function closeStream(){
+  clearTimeout(wsTimer);
+  if(ws){
+    // Drop the handlers first: an onclose that still fires would schedule a
+    // reconnect for a stream nobody is watching any more.
+    ws.onclose = ws.onerror = ws.onmessage = null;
+    try{ ws.close(); }catch(e){}
+    ws = null;
+  }
+  wsLastMessage = 0;
+  setLive(false);
+}
+
+function setLive(on){
+  el.live.hidden = !on;
+}
+
+function openStream(sym, tf, token){
+  closeStream();
+  let socket;
+  try{
+    socket = new WebSocket(
+      `wss://stream.binance.com:9443/ws/${sym.toLowerCase()}usdt@kline_${tf}`);
+  }catch(e){ return; }
+  ws = socket;
+
+  socket.onopen = () => {
+    if(token !== inflight){ closeStream(); return; }
+    wsRetry = 0;
+    wsLastMessage = Date.now();
+    setLive(true);
+  };
+
+  socket.onmessage = ev => {
+    if(token !== inflight) return;
+    let k;
+    try{ k = JSON.parse(ev.data).k; }catch(e){ return; }
+    if(!k) return;
+    wsLastMessage = Date.now();
+
+    const bar = {
+      time: k.t / 1000,
+      open:+k.o, high:+k.h, low:+k.l, close:+k.c, volume:+k.v,
+    };
+    candles.update(bar);
+    volume.update(volumeBar(bar));
+
+    // Keep currentBars in step so the stat strip and the moving averages read
+    // the same series the chart is showing.
+    const last = currentBars[currentBars.length - 1];
+    const previousClose = last && Number.isFinite(last.close) ? last.close : null;
+    if(last && last.time === bar.time) currentBars[currentBars.length - 1] = bar;
+    else currentBars.push(bar);
+    if(currentBars.length > MAX_BARS) currentBars.splice(0, currentBars.length - MAX_BARS);
+
+    // Recompute the last point of every indicator through the same path the
+    // initial load uses. The old code recomputed MA20/50 by hand right here,
+    // which meant two copies of the same arithmetic that had to be kept in
+    // step -- exactly the kind of pair that drifts.
+    scheduleIndicatorTick();
+    checkPriceAlerts(previousClose, bar.close);
+    renderQuote(currentBars);
+    el.upd.textContent = new Date().toLocaleTimeString("vi-VN");
+    scheduleDraw();
+    scheduleLevels();
+  };
+
+  socket.onerror = () => { try{ socket.close(); }catch(e){} };
+
+  socket.onclose = () => {
+    if(socket !== ws || token !== inflight) return;
+    ws = null;
+    setLive(false);
+    // Back off rather than hammering: a symbol Binance does not stream would
+    // otherwise reconnect in a tight loop. The polling timer still refreshes
+    // the chart meanwhile, so a failed socket degrades instead of breaking.
+    if(wsRetry >= 5) return;
+    const wait = Math.min(30000, 1000 * Math.pow(2, wsRetry++));
+    wsTimer = setTimeout(() => {
+      if(token === inflight) openStream(sym, tf, token);
+    }, wait);
+  };
+}
 
 async function load(){
   const token = ++inflight;
@@ -304,6 +2143,8 @@ async function load(){
       source = "Hyperliquid";
     }catch(fallback){
       if(token !== inflight) return;
+      closeStream();
+      closeMicrostructure();
       el.msg.innerHTML =
         `<strong>Không tải được ${symbol}</strong>` +
         `<small>Cả Binance lẫn Hyperliquid đều không trả dữ liệu cho mã này. ` +
@@ -313,12 +2154,31 @@ async function load(){
   }
   if(token !== inflight) return;
 
+  currentBars = bars;
+  currentSource = source;
+  oldestTime = bars.length ? bars[0].time : null;
+  // A refresh of the same symbol re-fetches only the newest page, so any older
+  // pages are gone and the reader may page back through them again.
+  historyExhausted = false;
+  loadingHistory = false;
   candles.setData(bars);
-  volume.setData(bars.map(b => ({
-    time: b.time, value: b.volume,
-    color: b.close >= b.open ? css("--up") + "55" : css("--down") + "55",
-  })));
-  chart.timeScale().fitContent();
+  volume.setData(bars.map(volumeBar));
+  applyMA(bars);
+  if(needsFit){
+    chart.timeScale().fitContent();
+    needsFit = false;
+  }
+  scheduleDraw();
+
+  // Live updates ride on top of the history just loaded; Hyperliquid has no
+  // equivalent public candle stream, so that path stays on the polling timer.
+  if(source === "Binance"){
+    openStream(symbol, timeframe, token);
+    openMicrostructure(symbol, token);
+  }else{
+    closeStream();
+    closeMicrostructure();
+  }
 
   renderQuote(bars);
   el.src.textContent = source;
@@ -333,10 +2193,11 @@ async function load(){
   const last = bars[bars.length - 1];
   // On the daily chart a "24h range" would be a single candle, so widen the
   // window to a week and say so rather than showing one bar's own high and low.
-  const isDaily = timeframe === "1d";
-  const window = isDaily ? 7 : (BARS_PER_DAY[timeframe] || 24);
+  const isDaily = timeframe === "1d", isThreeDay=timeframe === "3d",
+    isWeekly=timeframe === "1w", isMonthly=timeframe === "1M";
+  const window = isDaily ? 7 : isThreeDay ? 4 : isWeekly ? 4 : isMonthly ? 12 : (BARS_PER_DAY[timeframe] || 24);
   const day = bars.slice(-window);
-  const rangeLabel = isDaily ? "7 ngày" : "24h";
+  const rangeLabel = isDaily ? "7 ngày" : isThreeDay ? "12 ngày" : isWeekly ? "4 tuần" : isMonthly ? "12 tháng" : "24h";
   renderStats([
     { label:`Cao ${rangeLabel}`, value: nf(Math.max(...day.map(b => b.high)), 2) },
     { label:`Thấp ${rangeLabel}`, value: nf(Math.min(...day.map(b => b.low)), 2) },
@@ -363,26 +2224,1922 @@ async function load(){
   ]);
 }
 
-/* ---------- controls ---------- */
-TIMEFRAMES.forEach(tf => {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.textContent = tf;
-  b.setAttribute("aria-pressed", String(tf === timeframe));
-  b.addEventListener("click", () => {
-    timeframe = tf;
-    [...el.tfs.children].forEach(c => c.setAttribute("aria-pressed", String(c.textContent === tf)));
-    syncUrl();
-    load();
+/* ---------- drawing overlay ----------
+   Drawings are stored in market coordinates, never pixels. The conversion is
+   repeated on every zoom/pan, so a line remains attached to the candle and
+   price where the reader placed it. */
+const drawCtx = el.drawing.getContext("2d");
+const FIB_LEVELS = [0, .236, .382, .5, .618, .786, 1];
+const FIB_EXT_LEVELS = [0, .382, .618, 1, 1.272, 1.618];
+
+/* One table per tool instead of the same switch written out in the paint, the
+   hit test, the click handler and the load validator. `need` is how many points
+   the tool takes; everything else reads it rather than restating it. */
+const TOOLS = {
+  hline: {need:1, label:"—",  title:"Đường ngang — 1 điểm"},
+  hray:  {need:1, label:"→",  title:"Tia ngang — 1 điểm, kéo dài sang phải"},
+  trend: {need:2, label:"╱",  title:"Đường xu hướng — 2 điểm"},
+  vline: {need:1, label:"│",  title:"Đường dọc — mốc thời gian"},
+  rect:  {need:2, label:"▭",  title:"Hộp — 2 điểm"},
+  fib:   {need:2, label:"Fib", title:"Fibonacci thoái lui — 2 điểm"},
+  fibext:{need:3, label:"Fib+", title:"Fibonacci mở rộng — 3 điểm"},
+  range: {need:2, label:"⇔",  title:"Đo khoảng — Δgiá, Δ%, số nến"},
+  mark:  {need:1, label:"▲",  title:"Đánh dấu — 1 điểm"},
+  text:  {need:1, label:"T",  title:"Ghi chú — 1 điểm"},
+  // Multi-point tools. `need` is the vertex count that finishes the shape;
+  // `labels` names each vertex, `ratios` reads the Fibonacci relationship
+  // between legs so a harmonic pattern says whether it actually is one.
+  channel:{need:3, label:"═",  title:"Kênh song song — 3 điểm", color:"#26a69a"},
+  pitchfork:{need:3, label:"⑂", title:"Pitchfork (Andrews) — 3 điểm", color:"#facc15"},
+  triangle:{need:3, label:"◺", title:"Tam giác — 3 điểm", color:"#60a5fa"},
+  ellipse:{need:2, label:"◯", title:"Ellipse — 2 điểm", color:"#60a5fa"},
+  gannfan:{need:2, label:"╳",  title:"Gann Fan — 2 điểm", color:"#8b5cf6"},
+  linreg:{need:2, label:"◫",  title:"Kênh hồi quy tuyến tính — 2 điểm", color:"#22d3ee"},
+  fibfan:{need:2, label:"⋔",  title:"Fibonacci Fan — 2 điểm", color:"#9c27b0"},
+  fibtime:{need:2, label:"⁞", title:"Fibonacci Time Zones — 2 điểm", color:"#9c27b0"},
+  abcd:  {need:4, label:"ABCD", title:"Mẫu hình ABCD — 4 đỉnh",
+          color:"#a78bfa", labels:["A","B","C","D"], ratios:true},
+  xabcd: {need:5, label:"XABCD", title:"Harmonic XABCD — 5 đỉnh",
+          color:"#a78bfa", labels:["X","A","B","C","D"], ratios:true},
+  elliott:{need:6, label:"1-5", title:"Elliott sóng đẩy 1-5 — 6 đỉnh",
+          color:"#22d3ee", labels:["0","1","2","3","4","5"]},
+  elliottabc:{need:4, label:"ABC", title:"Elliott sóng điều chỉnh A-B-C — 4 đỉnh",
+          color:"#f472b6", labels:["0","A","B","C"]},
+  hns:   {need:5, label:"H&S", title:"Vai-Đầu-Vai — 5 đỉnh",
+          color:"#f472b6", labels:["LS","","H","","RS"]},
+  long:  {need:2, label:"⊞",  title:"Vị thế mua — kéo TP/SL", color:"#26a69a"},
+  short: {need:2, label:"⊟",  title:"Vị thế bán — kéo TP/SL", color:"#ef5350"},
+  arrow: {need:2, label:"↗",  title:"Mũi tên — 2 điểm", color:"#f59e0b"},
+  crossline:{need:1, label:"✛", title:"Đường chữ thập — 1 điểm", color:"#64748b"},
+  infoline:{need:2, label:"ⓘ", title:"Đo chi tiết — góc, Δgiá, Δ%, số nến", color:"#ff9800"},
+  callout:{need:2, label:"💬", title:"Chú thích có đường dẫn — 2 điểm", color:"#22d3ee"},
+  brush: {need:0, label:"✎",  title:"Vẽ tay — giữ chuột và kéo", color:"#ffeb3b"},
+  avwap: {need:1, label:"aV", title:"VWAP neo — 1 điểm, tính tới hiện tại", color:"#06b6d4"},
+  vprofile:{need:2, label:"▥", title:"Volume Profile vùng chọn — 2 điểm", color:"#ff9800"},
+  gannbox:{need:2, label:"⊠", title:"Gann Box — 2 điểm, lưới fib + chéo", color:"#f59e0b"},
+  fibchannel:{need:3, label:"Fib║", title:"Fibonacci Channel — 3 điểm", color:"#9c27b0"},
+};
+// mark carries a direction; arrowdown is the same tool aimed the other way,
+// chosen from the price at the click rather than from a separate button.
+const GANN_BOX_LEVELS = [0.25, 0.382, 0.5, 0.618, 0.75];
+const FIB_CHANNEL_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+
+// Ratios a harmonic leg is allowed to land on, and the tolerance that counts
+// as "landed". Straight from the standard pattern definitions.
+const HARMONIC_RATIOS = [0.382, 0.5, 0.618, 0.707, 0.786, 0.886, 1, 1.13,
+                         1.272, 1.414, 1.618, 2, 2.24, 2.618, 3.14, 3.618];
+function nearHarmonic(r){
+  return HARMONIC_RATIOS.some(h => Math.abs(r - h) <= 0.03);
+}
+const GANN_ANGLES = [[1,8],[1,4],[1,3],[1,2],[1,1],[2,1],[3,1],[4,1],[8,1]];
+const FIB_FAN_LEVELS = [0.382, 0.5, 0.618];
+const FIB_TIME_STEPS = [1, 2, 3, 5, 8, 13, 21, 34, 55];
+const TOOL_KEYS = Object.keys(TOOLS);
+
+let drawMode = "pan";
+let drawings = [];
+let selectedDrawing = -1;
+let pendingPoint = null;
+let pendingPoints = [];   // tools that take three points collect them here
+let previewPoint = null;
+let dragging = null;
+let brushing = null;      // freehand stroke in progress
+let drawFrame = 0;
+let drawTransformFrame = 0;
+let drawTransformSignature = "";
+// How close, in pixels, a candle price has to be before the magnet takes the
+// click. Roughly a fingertip: near enough that the reader was aiming at it.
+const MAGNET_RADIUS = 12;
+let magnetEnabled = false;
+try{ magnetEnabled = localStorage.getItem("leon_chart_magnet") === "1"; }catch(e){}
+
+function drawingKey(){ return "leon_draw_" + symbol.replace(/[^A-Z0-9_-]/g, ""); }
+
+function validPoint(p){
+  return p && Number.isFinite(+p.t) && Number.isFinite(+p.p);
+}
+
+/* Two storage shapes coexist. Tools of three points or fewer keep the original
+   a/b/c fields, so drawings saved before the polygon tools existed still load.
+   Anything longer stores pts[], because naming a sixth vertex `f` stops being
+   readable. shapePoints() hides the difference from everything downstream. */
+function shapePoints(d){
+  if(Array.isArray(d.pts)) return d.pts;
+  const out = [];
+  [d.a, d.b, d.c].forEach(p => { if(validPoint(p)) out.push(p); });
+  return out;
+}
+
+function shapeOk(d){
+  const tool = d && TOOLS[d.type];
+  if(!tool) return false;
+  const pts = shapePoints(d);
+  // A freehand stroke has no fixed vertex count, but two points is the
+  // minimum that draws as a line rather than a dot.
+  if(tool.need === 0) return pts.length >= 2 && pts.every(validPoint);
+  if(pts.length < tool.need) return false;
+  return pts.every(validPoint);
+}
+
+function loadDrawings(){
+  drawings = [];
+  try{
+    const value = JSON.parse(localStorage.getItem(drawingKey()) || "[]");
+    if(Array.isArray(value)) drawings = value.filter(shapeOk);
+  }catch(e){}
+  selectedDrawing = -1;
+  pendingPoint = previewPoint = null;
+  pendingPoints = [];
+  undoStack = []; redoStack = [];
+  updateDrawCount();
+  applyDrawingsVisibility();
+  scheduleDraw();
+}
+
+/* Undo/redo hold whole-array snapshots. The drawing list is small and the
+   shapes are plain data, so a snapshot is cheaper to get right than a log of
+   reversible edits. */
+let undoStack = [], redoStack = [];
+const UNDO_MAX = 30;
+
+function pushUndo(snapshot = JSON.stringify(drawings)){
+  undoStack.push(snapshot);
+  if(undoStack.length > UNDO_MAX) undoStack.shift();
+  redoStack = [];
+  syncDrawControls();
+}
+
+function restoreFrom(stack, other){
+  if(!stack.length) return;
+  other.push(JSON.stringify(drawings));
+  try{ drawings = JSON.parse(stack.pop()).filter(shapeOk); }catch(e){ return; }
+  selectedDrawing = -1;
+  pendingPoint = previewPoint = null;
+  pendingPoints = [];
+  try{ localStorage.setItem(drawingKey(), JSON.stringify(drawings)); }catch(e){}
+  updateDrawCount();
+  scheduleDraw();
+}
+
+function saveDrawings(){
+  try{ localStorage.setItem(drawingKey(), JSON.stringify(drawings)); }catch(e){}
+  updateDrawCount();
+}
+
+function syncDrawControls(){
+  el.drawUndo.disabled = undoStack.length === 0;
+  el.drawRedo.disabled = redoStack.length === 0;
+  el.drawMagnet.setAttribute("aria-pressed", String(magnetEnabled));
+}
+
+function updateDrawCount(){
+  el.drawCount.textContent = String(drawings.length);
+  syncDrawControls();
+}
+
+function applyDrawingsVisibility(){
+  el.drawing.hidden = !drawingsVisible;
+}
+
+function setDrawingsVisible(visible){
+  drawingsVisible = !!visible;
+  try{ localStorage.setItem("leon_chart_drawings_visible", drawingsVisible ? "1" : "0"); }catch(e){}
+  if(!drawingsVisible && drawMode !== "pan") setDrawMode("pan");
+  applyDrawingsVisibility();
+  scheduleDraw();
+}
+
+/* Time and pixels convert both ways only inside the loaded data. Past the last
+   bar -- the empty space on the right where a trendline is most often aimed --
+   coordinateToTime returns null, and a click there used to be dropped in
+   silence. Same in reverse: pan a shape off screen and timeToCoordinate stops
+   answering, so the shape vanished instead of being clipped.
+
+   Both are fixed by extrapolating along the bar spacing, which is uniform in
+   coordinate space because the chart lays bars out by index, not by clock. */
+// Seconds per bar for the current timeframe. Measured from the data rather
+// than parsed from the label, so a gap-free crypto series and a VN session
+// with holidays both answer correctly.
+function tfSeconds(){
+  const b = currentBars;
+  if(b.length < 2) return 60;
+  // Median of the last few gaps: a single diff straddling a weekend would
+  // report Monday's step as three days.
+  const gaps = [];
+  for(let i = Math.max(1, b.length - 12); i < b.length; i++) gaps.push(b[i].time - b[i-1].time);
+  gaps.sort((x, y) => x - y);
+  return gaps[Math.floor(gaps.length / 2)] || 60;
+}
+
+/* Time and pixels convert through the chart's own logical index -- the bar
+   number, which the chart keeps defined past the last bar and off both edges.
+   Interpolating pixels from the spacing of the final two bars (the previous
+   approach) drifts as soon as the reader zooms, because that spacing is
+   exactly what zooming changes; asking for the logical index instead is exact
+   at any zoom. */
+function timeToX(t){
+  if(t == null || !isFinite(t)) return null;
+  const ts = chart.timeScale();
+  const direct = ts.timeToCoordinate(t);
+  if(direct != null) return direct;
+  const b = currentBars;
+  if(!b.length) return null;
+  const last = b.length - 1;
+  return ts.logicalToCoordinate(last + Math.round((t - b[last].time) / tfSeconds()));
+}
+
+function xToTime(x){
+  const ts = chart.timeScale();
+  const t = ts.coordinateToTime(x);
+  if(t != null){
+    // Daily and coarser series hand back {year, month, day} instead of a
+    // timestamp; both shapes have to end up as seconds.
+    return (typeof t === "object" && t.year)
+      ? Math.floor(Date.UTC(t.year, t.month - 1, t.day) / 1000)
+      : Number(t);
+  }
+  const logical = ts.coordinateToLogical(x);
+  const b = currentBars;
+  if(logical == null || !b.length) return null;
+  const last = b.length - 1;
+  return b[last].time + Math.round(logical - last) * tfSeconds();
+}
+
+function nearestBar(t){
+  if(!currentBars.length) return null;
+  let lo = 0, hi = currentBars.length - 1;
+  while(lo < hi){
+    const mid = Math.floor((lo + hi) / 2);
+    if(currentBars[mid].time < t) lo = mid + 1; else hi = mid;
+  }
+  if(lo > 0 && Math.abs(currentBars[lo - 1].time - t) < Math.abs(currentBars[lo].time - t)) lo--;
+  return currentBars[lo];
+}
+
+function snapToOhlc(t, p, y){
+  const bar = nearestBar(t);
+  if(!bar) return {t, p};
+  const step = currentBars.length > 1
+    ? currentBars[currentBars.length - 1].time - currentBars[currentBars.length - 2].time : 0;
+  // Do not pull a projection in the blank future area back to the last candle.
+  if(step && Math.abs(t - bar.time) > step * .65) return {t, p};
+  const values = [bar.open, bar.high, bar.low, bar.close].filter(Number.isFinite);
+  if(!values.length) return {t, p};
+  let best = values[0], bestDistance = Infinity;
+  values.forEach(value => {
+    const cy = candles.priceToCoordinate(value);
+    const distance = cy == null ? Math.abs(value - p) : Math.abs(cy - y);
+    if(distance < bestDistance){ best = value; bestDistance = distance; }
   });
-  el.tfs.appendChild(b);
+  // Snap only when the candle price is already near the cursor. Without this
+  // the magnet reaches across the whole bar -- a click in the middle of a long
+  // wick jumped to its tip, sometimes 190px away, so the shape landed nowhere
+  // near where it was placed. A magnet that has to be aimed at is useless;
+  // one that quietly relocates the click is worse.
+  if(bestDistance > MAGNET_RADIUS) return {t, p};
+  return {t:bar.time, p:best};
+}
+
+function pointFromEvent(e, allowSnap = true){
+  const rect = el.drawing.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const t = xToTime(x);
+  const p = candles.coordinateToPrice(y);
+  if(t == null || p == null || !Number.isFinite(t) || !Number.isFinite(+p)) return null;
+  const shouldSnap = allowSnap && (magnetEnabled !== !!e.ctrlKey);
+  const market = shouldSnap ? snapToOhlc(t, +p, y) : {t, p:+p};
+  return {t:market.t, p:market.p, x, y};
+}
+
+function pixelPoint(p){
+  if(!validPoint(p)) return null;
+  const x = timeToX(+p.t);
+  const y = candles.priceToCoordinate(+p.p);
+  return x == null || y == null ? null : {x, y};
+}
+
+function line(ctx, x1, y1, x2, y2){
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+
+/* Renderers for the multi-point tools. Each receives pixel points, the market
+   points behind them, and a few helpers. Kept in one table so the shape of a
+   tool lives next to how it draws, the way the reference implementation does
+   it -- adding one means adding a registry entry and a function here. */
+const POLY_PAINT = {
+  // Main line through the first two points; the third anchors a parallel copy,
+  // and the band between them is filled.
+  channel(ctx, px, mk, d, u){
+    const [A, B, C] = px;
+    if(!B) return;
+    const slope = B.x === A.x ? 0 : (B.y - A.y) / (B.x - A.x);
+    const at = (anc, x) => anc.y + slope * (x - anc.x);
+    const xs = px.map(p => p.x);
+    const xl = Math.min(...xs), xr = Math.max(...xs);
+    line(ctx, xl, at(A, xl), xr, at(A, xr));
+    if(C){
+      line(ctx, xl, at(C, xl), xr, at(C, xr));
+      ctx.globalAlpha = 0.10;
+      ctx.beginPath();
+      ctx.moveTo(xl, at(A, xl)); ctx.lineTo(xr, at(A, xr));
+      ctx.lineTo(xr, at(C, xr)); ctx.lineTo(xl, at(C, xl));
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    px.forEach(p => u.dot(p, 1.5));
+  },
+
+  // Andrews pitchfork: median from the first point through the midpoint of the
+  // other two, with tines parallel to it through each of them.
+  pitchfork(ctx, px, mk, d, u){
+    const [P, B, C] = px;
+    if(!C) return;
+    const M = {x:(B.x + C.x) / 2, y:(B.y + C.y) / 2};
+    const dx = M.x - P.x, dy = M.y - P.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, ext = 4000;
+    line(ctx, B.x, B.y, C.x, C.y);
+    line(ctx, P.x, P.y, M.x + ux * ext, M.y + uy * ext);
+    [B, C].forEach(p => line(ctx, p.x, p.y, p.x + ux * ext, p.y + uy * ext));
+    ctx.globalAlpha = 0.07;
+    ctx.beginPath();
+    ctx.moveTo(B.x, B.y); ctx.lineTo(B.x + ux*ext, B.y + uy*ext);
+    ctx.lineTo(C.x + ux*ext, C.y + uy*ext); ctx.lineTo(C.x, C.y);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+    px.forEach(p => u.dot(p, 1.5));
+  },
+
+  triangle(ctx, px, mk, d, u){
+    if(px.length < 3) return;
+    ctx.beginPath();
+    ctx.moveTo(px[0].x, px[0].y);
+    px.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.globalAlpha = 0.12; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.stroke();
+  },
+
+  ellipse(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const cx = (A.x + B.x) / 2, cy = (A.y + B.y) / 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, Math.abs(B.x - A.x) / 2, Math.abs(B.y - A.y) / 2, 0, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.10; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.stroke();
+  },
+
+  // Nine rays whose slopes are the classic price/time ratios. The 1x1 line is
+  // the reference; the others fan out from it in both directions.
+  gannfan(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const unitX = B.x - A.x, unitY = B.y - A.y;
+    if(!unitX || !unitY) return;
+    ctx.font = u.small;
+    GANN_ANGLES.forEach(([rise, run]) => {
+      const k = (rise / run);
+      const ex = A.x + unitX * 6, ey = A.y + unitY * 6 * k;
+      line(ctx, A.x, A.y, ex, ey);
+    });
+    u.dot(A, 2); u.dot(B, 2);
+  },
+
+  // Least-squares fit over the bars between the two clicks, with a band at one
+  // standard deviation of the residuals -- the usual regression channel.
+  linreg(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const t0 = Math.min(mk[0].t, mk[1].t), t1 = Math.max(mk[0].t, mk[1].t);
+    const inside = currentBars.filter(bar => bar.time >= t0 && bar.time <= t1);
+    if(inside.length < 3){ line(ctx, A.x, A.y, B.x, B.y); return; }
+    const n = inside.length;
+    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+    inside.forEach((bar, i) => {
+      sx += i; sy += bar.close; sxy += i * bar.close; sxx += i * i;
+    });
+    const denom = n * sxx - sx * sx;
+    if(!denom){ line(ctx, A.x, A.y, B.x, B.y); return; }
+    const slope = (n * sxy - sx * sy) / denom;
+    const intercept = (sy - slope * sx) / n;
+    const resid = inside.map((bar, i) => bar.close - (intercept + slope * i));
+    const sd = Math.sqrt(resid.reduce((acc, r) => acc + r * r, 0) / n);
+    const ptAt = (i, off) => {
+      const x = timeToX(inside[i].time);
+      const y = candles.priceToCoordinate(intercept + slope * i + off);
+      return (x == null || y == null) ? null : {x, y};
+    };
+    [0, sd, -sd].forEach((off, idx) => {
+      const p0 = ptAt(0, off), p1 = ptAt(n - 1, off);
+      if(!p0 || !p1) return;
+      ctx.save();
+      if(idx) ctx.setLineDash([4, 3]);
+      line(ctx, p0.x, p0.y, p1.x, p1.y);
+      ctx.restore();
+    });
+  },
+
+  // Rays from the first point through the Fibonacci fractions of the move.
+  fibfan(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    ctx.font = u.small;
+    FIB_FAN_LEVELS.forEach(level => {
+      const y = A.y + (B.y - A.y) * level;
+      const dx = (B.x - A.x) * 4, dy = (y - A.y) * 4;
+      line(ctx, A.x, A.y, A.x + dx, A.y + dy);
+      ctx.fillText(`${(level * 100).toFixed(1)}%`, B.x + 3, y);
+    });
+    line(ctx, A.x, A.y, B.x, B.y);
+  },
+
+  // Vertical lines at Fibonacci multiples of the span between the two clicks.
+  fibtime(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const step = mk[1].t - mk[0].t;
+    if(!step) return;
+    ctx.font = u.small;
+    FIB_TIME_STEPS.forEach(mult => {
+      const x = timeToX(mk[0].t + step * mult);
+      if(x == null || x < -50 || x > u.w + 50) return;
+      line(ctx, x, 0, x, u.h);
+      ctx.fillText(String(mult), x + 3, 12);
+    });
+  },
+
+  // Labelled polylines. Harmonic patterns additionally print each leg's
+  // retracement and mark it when it lands on a recognised ratio.
+  polyline(ctx, px, mk, d, u){
+    const tool = TOOLS[d.type];
+    ctx.beginPath();
+    ctx.moveTo(px[0].x, px[0].y);
+    px.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    ctx.font = u.small;
+    px.forEach((p, i) => {
+      u.dot(p, 2.5);
+      const label = tool.labels && tool.labels[i];
+      if(label) ctx.fillText(label, p.x + 5, p.y - 5);
+    });
+    if(tool.ratios && mk.length >= 3){
+      for(let i = 2; i < mk.length; i++){
+        const prev = Math.abs(mk[i-1].p - mk[i-2].p);
+        if(!prev) continue;
+        const ratio = Math.abs(mk[i].p - mk[i-1].p) / prev;
+        const mx = (px[i].x + px[i-1].x) / 2, my = (px[i].y + px[i-1].y) / 2;
+        ctx.save();
+        ctx.fillStyle = nearHarmonic(ratio) ? css("--up") : css("--muted");
+        ctx.fillText(ratio.toFixed(3), mx + 4, my);
+        ctx.restore();
+      }
+    }
+    if(d.type === "hns" && px.length >= 5){
+      // Neckline through the two troughs, extended right: the level whose
+      // break is what the pattern is watched for.
+      const l = px[1], r = px[3];
+      if(l && r && l.x !== r.x){
+        const slope = (r.y - l.y) / (r.x - l.x);
+        ctx.save(); ctx.setLineDash([5, 4]);
+        line(ctx, l.x, l.y, u.w, l.y + slope * (u.w - l.x));
+        ctx.restore();
+      }
+    }
+  },
+
+  arrow(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    line(ctx, A.x, A.y, B.x, B.y);
+    const ang = Math.atan2(B.y - A.y, B.x - A.x), head = 10;
+    ctx.save(); ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(B.x, B.y);
+    ctx.lineTo(B.x - head * Math.cos(ang - Math.PI/7), B.y - head * Math.sin(ang - Math.PI/7));
+    ctx.lineTo(B.x - head * Math.cos(ang + Math.PI/7), B.y - head * Math.sin(ang + Math.PI/7));
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  },
+
+  crossline(ctx, px, mk, d, u){
+    const A = px[0];
+    line(ctx, 0, A.y, u.w, A.y);
+    line(ctx, A.x, 0, A.x, u.h);
+    ctx.font = u.small;
+    ctx.fillText(u.price(mk[0].p), 6, A.y - 4);
+  },
+
+  // A trendline that reads itself out: angle on screen, price move, percent,
+  // and how many bars it spans.
+  infoline(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    line(ctx, A.x, A.y, B.x, B.y);
+    const dp = mk[1].p - mk[0].p;
+    const pct = mk[0].p ? dp / mk[0].p * 100 : 0;
+    const lo = Math.min(mk[0].t, mk[1].t), hi = Math.max(mk[0].t, mk[1].t);
+    const bars = currentBars.filter(bar => bar.time >= lo && bar.time <= hi).length;
+    // Screen angle, so it answers "how steep does this look" rather than a
+    // price-per-second figure nobody reads.
+    const ang = Math.atan2(-(B.y - A.y), B.x - A.x) * 180 / Math.PI;
+    const label = `${ang.toFixed(1)}° · ${dp >= 0 ? "+" : ""}${u.price(dp)}` +
+                  ` (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%) · ${bars} nến`;
+    ctx.save(); ctx.setLineDash([]);
+    ctx.font = "11px -apple-system,Segoe UI,sans-serif";
+    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = css("--panel"); ctx.globalAlpha = 0.85;
+    ctx.fillRect(mx - tw/2 - 4, my - 9, tw + 8, 18);
+    ctx.globalAlpha = 1; ctx.fillStyle = u.active ? css("--accent") : u.base;
+    ctx.fillText(label, mx - tw/2, my + 4);
+    ctx.restore();
+  },
+
+  callout(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    line(ctx, A.x, A.y, B.x, B.y);
+    ctx.save(); ctx.setLineDash([]);
+    ctx.font = "11px -apple-system,Segoe UI,sans-serif";
+    const text = d.text || "";
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = css("--panel"); ctx.globalAlpha = 0.9;
+    ctx.fillRect(B.x, B.y - 11, tw + 10, 22);
+    ctx.globalAlpha = 1;
+    ctx.strokeRect(B.x, B.y - 11, tw + 10, 22);
+    ctx.fillStyle = u.active ? css("--accent") : u.base;
+    ctx.fillText(text, B.x + 5, B.y + 4);
+    ctx.restore();
+    u.dot(A, 2.5);
+  },
+
+  brush(ctx, px, mk, d, u){
+    if(px.length < 2) { if(px.length) u.dot(px[0], 2); return; }
+    ctx.save(); ctx.setLineDash([]);
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(px[0].x, px[0].y);
+    px.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  // VWAP restarted at the anchor rather than at the session boundary: it
+  // answers "what has the average buyer paid since this event".
+  avwap(ctx, px, mk, d, u){
+    const anchor = mk[0].t;
+    let pv = 0, vol = 0;
+    const pts = [];
+    for(const bar of currentBars){
+      if(bar.time < anchor) continue;
+      const typical = (bar.high + bar.low + bar.close) / 3;
+      const v = bar.volume || 0;
+      if(v > 0){ pv += typical * v; vol += v; }
+      else { pv += typical; vol += 1; }
+      const x = timeToX(bar.time), y = candles.priceToCoordinate(pv / vol);
+      if(x != null && y != null) pts.push({x, y});
+    }
+    if(pts.length < 2){ u.dot(px[0], 3); return; }
+    ctx.save(); ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    u.dot(pts[0], 3);
+    ctx.font = u.small;
+    const last = pts[pts.length - 1];
+    ctx.fillText("aVWAP", last.x - 42, last.y - 4);
+    ctx.restore();
+  },
+
+  // Volume by price over the selected span. Each bar's volume is dropped into
+  // the row its close falls in -- an approximation of the true distribution,
+  // which would need tick data, and the one every charting package draws.
+  vprofile(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const xl = Math.min(A.x, B.x), xr = Math.max(A.x, B.x);
+    ctx.save();
+    ctx.setLineDash([4, 3]); ctx.globalAlpha = 0.45;
+    line(ctx, xl, 0, xl, u.h); line(ctx, xr, 0, xr, u.h);
+    ctx.restore();
+
+    const t0 = Math.min(mk[0].t, mk[1].t), t1 = Math.max(mk[0].t, mk[1].t);
+    const inside = currentBars.filter(bar => bar.time >= t0 && bar.time <= t1);
+    if(inside.length < 2) return;
+    const lo = Math.min(...inside.map(b => b.low));
+    const hi = Math.max(...inside.map(b => b.high));
+    if(hi <= lo) return;
+    const rows = 24, rowH = (hi - lo) / rows;
+    const sums = new Array(rows).fill(0);
+    inside.forEach(bar => {
+      const idx = Math.min(rows - 1, Math.max(0, Math.floor((bar.close - lo) / rowH)));
+      sums[idx] += bar.volume || 0;
+    });
+    const peak = Math.max(...sums);
+    if(!peak) return;
+    const span = (xr - xl) * 0.9;
+    ctx.save(); ctx.setLineDash([]);
+    let pocIdx = 0;
+    sums.forEach((v, i) => { if(v > sums[pocIdx]) pocIdx = i; });
+    sums.forEach((v, i) => {
+      if(!v) return;
+      const yTop = candles.priceToCoordinate(lo + (i + 1) * rowH);
+      const yBot = candles.priceToCoordinate(lo + i * rowH);
+      if(yTop == null || yBot == null) return;
+      ctx.globalAlpha = i === pocIdx ? 0.55 : 0.28;
+      ctx.fillRect(xl, yTop, span * (v / peak), Math.max(1, yBot - yTop));
+    });
+    ctx.globalAlpha = 1;
+    // Point of control: the price that traded most in the window.
+    const pocY = candles.priceToCoordinate(lo + (pocIdx + 0.5) * rowH);
+    if(pocY != null){
+      ctx.strokeStyle = css("--warn");
+      line(ctx, xl, pocY, xr, pocY);
+      ctx.font = u.small;
+      ctx.fillStyle = css("--warn");
+      ctx.fillText("POC", xr + 3, pocY + 3);
+    }
+    ctx.restore();
+  },
+
+  gannbox(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const x = Math.min(A.x, B.x), y = Math.min(A.y, B.y);
+    const w = Math.abs(B.x - A.x), h = Math.abs(B.y - A.y);
+    ctx.strokeRect(x, y, w, h);
+    ctx.save();
+    ctx.globalAlpha = 0.4; ctx.setLineDash([3, 3]);
+    GANN_BOX_LEVELS.forEach(level => {
+      line(ctx, x, y + h * level, x + w, y + h * level);
+      line(ctx, x + w * level, y, x + w * level, y + h);
+    });
+    ctx.setLineDash([]); ctx.globalAlpha = 0.6;
+    line(ctx, x, y, x + w, y + h);
+    line(ctx, x, y + h, x + w, y);
+    ctx.restore();
+    u.dot(A, 1.5); u.dot(B, 1.5);
+  },
+
+  // Fibonacci levels drawn between a base line and a parallel through the
+  // third point, so the retracements tilt with the trend instead of lying flat.
+  fibchannel(ctx, px, mk, d, u){
+    const [A, B, C] = px;
+    if(!C) return;
+    const slope = B.x === A.x ? 0 : (B.y - A.y) / (B.x - A.x);
+    const at = (anc, x) => anc.y + slope * (x - anc.x);
+    const xs = px.map(p => p.x);
+    const xl = Math.min(...xs), xr = Math.max(...xs);
+    ctx.font = u.small;
+    FIB_CHANNEL_LEVELS.forEach(level => {
+      const yl = at(A, xl) + (at(C, xl) - at(A, xl)) * level;
+      const yr = at(A, xr) + (at(C, xr) - at(A, xr)) * level;
+      ctx.save();
+      if(level !== 0 && level !== 1) ctx.globalAlpha = 0.7;
+      line(ctx, xl, yl, xr, yr);
+      ctx.restore();
+      ctx.fillText(`${(level * 100).toFixed(1)}%`, xl + 3, yl - 3);
+    });
+    px.forEach(p => u.dot(p, 1.5));
+  },
+
+  // Entry with a target above and a stop below (inverted for a short), drawn
+  // as two tinted boxes so the risk and reward are compared by area.
+  position(ctx, px, mk, d, u){
+    const [A, B] = px;
+    if(!B) return;
+    const isLong = d.type === "long";
+    const entryY = candles.priceToCoordinate(d.entry);
+    const tpY = candles.priceToCoordinate(d.tp);
+    const slY = candles.priceToCoordinate(d.sl);
+    if(entryY == null || tpY == null || slY == null) return;
+    const x0 = Math.min(A.x, B.x), x1 = Math.max(A.x, B.x);
+    const box = (yA, yB, colour) => {
+      ctx.save();
+      ctx.fillStyle = colour; ctx.globalAlpha = 0.14;
+      ctx.fillRect(x0, Math.min(yA, yB), x1 - x0, Math.abs(yB - yA));
+      ctx.restore();
+    };
+    box(entryY, tpY, css("--up"));
+    box(entryY, slY, css("--down"));
+    ctx.save(); ctx.setLineDash([]);
+    ctx.strokeStyle = css("--muted");
+    line(ctx, x0, entryY, x1, entryY);
+    ctx.restore();
+    const risk = Math.abs(d.entry - d.sl);
+    const reward = Math.abs(d.tp - d.entry);
+    ctx.font = u.small;
+    ctx.fillText(`${isLong ? "Mua" : "Bán"} · R:R ${risk ? (reward/risk).toFixed(2) : "—"}`,
+      x0 + 4, Math.min(tpY, slY) - 4);
+  },
+};
+POLY_PAINT.abcd = POLY_PAINT.polyline;
+POLY_PAINT.xabcd = POLY_PAINT.polyline;
+POLY_PAINT.elliott = POLY_PAINT.polyline;
+POLY_PAINT.elliottabc = POLY_PAINT.polyline;
+POLY_PAINT.hns = POLY_PAINT.polyline;
+POLY_PAINT.long = POLY_PAINT.position;
+POLY_PAINT.short = POLY_PAINT.position;
+
+function paintDrawing(d, index, ctx, w, h){
+  const tool = TOOLS[d.type];
+  if(!tool) return;
+  const market = shapePoints(d);
+  const px = market.map(pixelPoint);
+  if(!px.length || px.some(p => !p)) return;
+  const a = px[0], b = px[1] || null;
+  const active = index === selectedDrawing;
+  // Tools that carry their own colour keep it, so a pitchfork and a channel
+  // stay distinguishable when several are on the chart at once.
+  const base = tool.color || css("--warn");
+  ctx.strokeStyle = active ? css("--accent") : base;
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.lineWidth = active ? 2 : 1.35;
+  ctx.setLineDash(active ? [] : [5, 3]);
+
+  const price = v => nf(v, v < 1 ? 6 : 2);
+  const small = "10px -apple-system,Segoe UI,sans-serif";
+  const dot = (p, r = 2) => { ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill(); };
+
+  if(POLY_PAINT[d.type]){
+    POLY_PAINT[d.type](ctx, px, market, d, {w, h, price, small, dot, base, active});
+    ctx.setLineDash([]);
+    if(active) px.forEach(p => {
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
+      ctx.fillStyle = css("--bg"); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = ctx.strokeStyle;
+    });
+    return;
+  }
+
+  if(d.type === "hline"){
+    line(ctx, 0, a.y, w, a.y);
+    ctx.font = "11px -apple-system,Segoe UI,sans-serif";
+    ctx.fillText(price(d.a.p), 8, Math.max(12, a.y - 5));
+  }else if(d.type === "hray"){
+    // Anchored at a, extended right at a's price: a level that only applies
+    // from the moment it was set, unlike hline which claims all of history.
+    line(ctx, a.x, a.y, w, a.y);
+    ctx.font = small;
+    ctx.fillText(price(d.a.p), Math.min(a.x + 6, w - 60), a.y - 4);
+  }else if(d.type === "trend"){
+    line(ctx, a.x, a.y, b.x, b.y);
+  }else if(d.type === "vline"){
+    line(ctx, a.x, 0, a.x, h);
+  }else if(d.type === "rect"){
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    const rw = Math.abs(b.x - a.x), rh = Math.abs(b.y - a.y);
+    ctx.globalAlpha = 0.12; ctx.fillRect(x, y, rw, rh); ctx.globalAlpha = 1;
+    ctx.strokeRect(x, y, rw, rh);
+  }else if(d.type === "mark"){
+    const up = d.dir !== "down", s = 7;
+    ctx.beginPath();
+    if(up){ ctx.moveTo(a.x, a.y - s); ctx.lineTo(a.x - s, a.y + s); ctx.lineTo(a.x + s, a.y + s); }
+    else  { ctx.moveTo(a.x, a.y + s); ctx.lineTo(a.x - s, a.y - s); ctx.lineTo(a.x + s, a.y - s); }
+    ctx.closePath(); ctx.fill();
+  }else if(d.type === "text"){
+    ctx.font = "12px -apple-system,Segoe UI,sans-serif";
+    ctx.fillText(d.text || "", a.x + 4, a.y - 4);
+  }else if(d.type === "range"){
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    const rw = Math.abs(b.x - a.x), rh = Math.abs(b.y - a.y);
+    ctx.globalAlpha = 0.1; ctx.fillRect(x, y, rw, rh); ctx.globalAlpha = 1;
+    ctx.strokeRect(x, y, rw, rh);
+    const dp = d.b.p - d.a.p;
+    const pct = d.a.p ? (dp / d.a.p) * 100 : 0;
+    // Bars, not clock time: on a chart with gaps the reader is counting
+    // candles, and a weekend would otherwise inflate the answer.
+    const step = currentBars.length > 1
+      ? (currentBars[currentBars.length-1].time - currentBars[0].time) / (currentBars.length-1)
+      : 0;
+    const bars = step ? Math.round(Math.abs(d.b.t - d.a.t) / step) : 0;
+    ctx.font = small;
+    ctx.fillText(`${dp >= 0 ? "+" : ""}${price(dp)}  ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%  ${bars} nến`,
+      x + 4, y - 4);
+  }else if(d.type === "fib" || d.type === "fibext"){
+    ctx.font = small;
+    const ext = d.type === "fibext";
+    // Retracement measures a→b. Extension projects that leg forward from c,
+    // which is what the third point is for.
+    const base = ext ? d.c.p : d.a.p;
+    const span = ext ? (d.b.p - d.a.p) : (d.b.p - d.a.p);
+    const levels = ext ? FIB_EXT_LEVELS : FIB_LEVELS;
+    const xs = [a.x, b.x].concat(ext && d.c ? [pixelPoint(d.c)?.x ?? a.x] : []);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    levels.forEach(level => {
+      const y = candles.priceToCoordinate(base + span * level);
+      if(y == null) return;
+      line(ctx, x0, y, x1, y);
+      ctx.fillText(`${(level * 100).toFixed(level % 1 === 0 ? 0 : 1)}%`, x0 + 4, y - 3);
+    });
+  }
+
+  if(active){
+    ctx.setLineDash([]);
+    [a, b, d.c ? pixelPoint(d.c) : null].forEach(pt => {
+      if(!pt) return;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = css("--bg"); ctx.fill(); ctx.stroke();
+    });
+  }
+  ctx.setLineDash([]);
+}
+
+function syncDrawingPaneHeight(){
+  let height = 0;
+  try{ height = chart.panes()[0].getHeight(); }catch(e){}
+  if(height > 0 && el.drawing.style.height !== `${height}px`)
+    el.drawing.style.height = `${height}px`;
+}
+
+function redraw(){
+  drawFrame = 0;
+  if(!drawingsVisible) return;
+  // The canvas only covers the price pane. Oscillator panes remain interactive
+  // while a drawing tool is active, and candle price coordinates stay aligned.
+  syncDrawingPaneHeight();
+  const rect = el.drawing.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const pxW = Math.round(rect.width * dpr), pxH = Math.round(rect.height * dpr);
+  if(el.drawing.width !== pxW || el.drawing.height !== pxH){
+    el.drawing.width = pxW; el.drawing.height = pxH;
+  }
+  drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawCtx.clearRect(0, 0, rect.width, rect.height);
+  drawings.forEach((d, i) => paintDrawing(d, i, drawCtx, rect.width, rect.height));
+  // Preview the shape mid-placement. Index -2 never matches selectedDrawing,
+  // so it draws in the unselected style without claiming to be a real shape.
+  if(pendingPoints.length && previewPoint){
+    const pts = pendingPoints.concat([previewPoint]);
+    const tool = TOOLS[drawMode];
+    const ghost = tool && tool.need > 3
+      ? {type:drawMode, pts}
+      : {type:drawMode, a:pts[0], b:pts[1] || previewPoint};
+    if(tool && tool.need === 3 && pts[2]) ghost.c = pts[2];
+    if(drawMode === "long" || drawMode === "short"){
+      ghost.entry = pts[0].p;
+      ghost.tp = (pts[1] || previewPoint).p;
+      ghost.sl = ghost.entry - (ghost.tp - ghost.entry);
+    }
+    // Partial polylines are legitimate to preview even though shapeOk would
+    // reject them for having too few vertices.
+    const previewOk = tool && tool.need > 3
+      ? pts.length >= 2 && pts.every(validPoint)
+      : shapeOk(ghost);
+    if(previewOk) paintDrawing(ghost, -2, drawCtx, rect.width, rect.height);
+  }
+}
+
+function scheduleDraw(){
+  if(!drawFrame) drawFrame = requestAnimationFrame(redraw);
+  if(!drawTransformFrame) drawTransformFrame = requestAnimationFrame(watchDrawingTransform);
+}
+
+/* Lightweight Charts publishes time-range events, but its price-scale API has
+   no equivalent subscription for a manual axis drag. An external canvas would
+   otherwise keep the previous Y transform until some unrelated event happened,
+   making drawings look delayed or detached from candles. Poll only the two
+   visible transforms while a drawing exists and repaint when either changes. */
+function watchDrawingTransform(){
+  drawTransformFrame = 0;
+  if(!drawingsVisible || (!drawings.length && !pendingPoints.length)){
+    drawTransformSignature = "";
+    return;
+  }
+  let priceRange = null, logicalRange = null, paneHeight = 0;
+  try{ priceRange = candles.priceScale().getVisibleRange(); }catch(e){}
+  try{ logicalRange = chart.timeScale().getVisibleLogicalRange(); }catch(e){}
+  try{ paneHeight = chart.panes()[0].getHeight(); }catch(e){}
+  const q = value => Number.isFinite(+value) ? (+value).toPrecision(10) : "";
+  const signature = [
+    priceRange && q(priceRange.from), priceRange && q(priceRange.to),
+    logicalRange && q(logicalRange.from), logicalRange && q(logicalRange.to),
+    paneHeight,
+  ].join("|");
+  // Repaint inside this same frame rather than queueing another one. The poll
+  // already runs after the chart has applied its new transform, so deferring to
+  // the next rAF leaves the overlay one frame behind for the whole drag -- the
+  // visible symptom being drawings that trail the candles while the price axis
+  // is dragged, then snap into place when it stops.
+  if(drawTransformSignature && signature !== drawTransformSignature){
+    if(drawFrame){ cancelAnimationFrame(drawFrame); drawFrame = 0; }
+    redraw();
+  }
+  drawTransformSignature = signature;
+  if(!drawTransformFrame) drawTransformFrame = requestAnimationFrame(watchDrawingTransform);
+}
+
+function segmentDistance(p, a, b){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  if(dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  const t = Math.max(0, Math.min(1, ((p.x-a.x)*dx + (p.y-a.y)*dy) / (dx*dx + dy*dy)));
+  return Math.hypot(p.x - (a.x+t*dx), p.y - (a.y+t*dy));
+}
+
+function hitDrawing(p){
+  const near = 6;
+  // Newest first: shapes drawn later sit on top, so they answer the click.
+  for(let i = drawings.length - 1; i >= 0; i--){
+    const d = drawings[i];
+    const t = d.type;
+
+    // Multi-point shapes are hit through their outline: close enough to any
+    // segment between consecutive vertices, or to a vertex itself. Exact
+    // per-tool geometry (a pitchfork's tines, a fan's rays) is not worth the
+    // code -- the reader is aiming at the shape, not at one of its rays.
+    if(POLY_PAINT[t]){
+      const pts = shapePoints(d).map(pixelPoint);
+      if(pts.some(q => !q)) continue;
+      if(pts.some(q => Math.hypot(p.x - q.x, p.y - q.y) <= near + 2)) return i;
+      let hit = false;
+      for(let k = 1; k < pts.length && !hit; k++){
+        if(segmentDistance(p, pts[k-1], pts[k]) <= near) hit = true;
+      }
+      // Position tools are boxes, so anywhere inside counts.
+      if(!hit && (t === "long" || t === "short")){
+        const ys = [d.entry, d.tp, d.sl].map(v => candles.priceToCoordinate(v));
+        if(ys.every(y => y != null)){
+          const xs = pts.map(q => q.x);
+          if(p.x >= Math.min(...xs) - near && p.x <= Math.max(...xs) + near &&
+             p.y >= Math.min(...ys) - near && p.y <= Math.max(...ys) + near) hit = true;
+        }
+      }
+      if(hit) return i;
+      continue;
+    }
+
+    const a = pixelPoint(d.a), b = d.b ? pixelPoint(d.b) : null;
+    if(!a) continue;
+
+    if(t === "hline" && Math.abs(p.y - a.y) <= near) return i;
+    if(t === "hray" && Math.abs(p.y - a.y) <= near && p.x >= a.x - near) return i;
+    if(t === "vline" && Math.abs(p.x - a.x) <= near) return i;
+    if((t === "mark" || t === "text") &&
+       Math.hypot(p.x - a.x, p.y - a.y) <= 10) return i;
+    if(t === "trend" && b && segmentDistance(p, a, b) <= near) return i;
+
+    if((t === "rect" || t === "range") && b){
+      const x0 = Math.min(a.x,b.x)-near, x1 = Math.max(a.x,b.x)+near;
+      const y0 = Math.min(a.y,b.y)-near, y1 = Math.max(a.y,b.y)+near;
+      // Edges only, so a box does not swallow clicks meant for what it frames.
+      if(p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1){
+        const inner = p.x > x0+2*near && p.x < x1-2*near &&
+                      p.y > y0+2*near && p.y < y1-2*near;
+        if(!inner) return i;
+      }
+    }
+
+    if((t === "fib" || t === "fibext") && b){
+      const ext = t === "fibext";
+      const cx = ext && d.c ? (pixelPoint(d.c)?.x ?? a.x) : a.x;
+      const x0 = Math.min(a.x,b.x,cx)-near, x1 = Math.max(a.x,b.x,cx)+near;
+      if(p.x < x0 || p.x > x1) continue;
+      const base = ext ? d.c.p : d.a.p, span = d.b.p - d.a.p;
+      const hit = (ext ? FIB_EXT_LEVELS : FIB_LEVELS).some(level => {
+        const y = candles.priceToCoordinate(base + span*level);
+        return y != null && Math.abs(p.y-y) <= near;
+      });
+      if(hit) return i;
+    }
+  }
+  return -1;
+}
+
+function hitSelectedHandle(p){
+  if(selectedDrawing < 0 || !drawings[selectedDrawing]) return null;
+  const d = drawings[selectedDrawing];
+  // Polyline shapes address their vertices by index; a/b/c shapes by name.
+  // Returning the index as a number keeps both callable through one path.
+  if(Array.isArray(d.pts)){
+    for(let i = 0; i < d.pts.length; i++){
+      const pt = pixelPoint(d.pts[i]);
+      if(pt && Math.hypot(p.x - pt.x, p.y - pt.y) <= 9) return i;
+    }
+    return null;
+  }
+  for(const key of ["a", "b", "c"]){
+    if(!d[key]) continue;
+    const pt = pixelPoint(d[key]);
+    if(pt && Math.hypot(p.x - pt.x, p.y - pt.y) <= 9) return key;
+  }
+  return null;
+}
+
+function setDrawMode(mode){
+  if(mode !== "pan" && !drawingsVisible){
+    drawingsVisible = true;
+    try{ localStorage.setItem("leon_chart_drawings_visible", "1"); }catch(e){}
+    applyDrawingsVisibility();
+  }
+  drawMode = mode;
+  pendingPoint = previewPoint = null;
+  pendingPoints = [];
+  dragging = null;
+  [...el.drawTools.querySelectorAll("[data-tool]")].forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.tool === mode)));
+  el.drawing.classList.toggle("active", mode !== "pan");
+  el.drawing.classList.toggle("selecting", mode === "select");
+  if(mode !== "select") selectedDrawing = -1;
+  scheduleDraw();
+}
+
+// Insert the generated tool buttons before undo, so the row reads
+// pan · select · [tools] · undo · redo · clear.
+(function buildToolButtons(){
+  const anchor = document.getElementById("draw-undo");
+  TOOL_KEYS.forEach(key => {
+    const t = TOOLS[key];
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.tool = key;
+    b.setAttribute("aria-pressed", "false");
+    b.title = `${t.title} · Vẽ liên tục; bấm lại, chuột phải hoặc Esc để thoát`;
+    b.textContent = t.label;
+    el.drawTools.insertBefore(b, anchor);
+  });
+})();
+
+el.drawTools.addEventListener("click", e => {
+  const button = e.target.closest("[data-tool]");
+  if(button) setDrawMode(button.dataset.tool === drawMode && drawMode !== "pan"
+    ? "pan" : button.dataset.tool);
 });
 
-function syncUrl(){
+el.drawUndo.addEventListener("click", () => restoreFrom(undoStack, redoStack));
+el.drawRedo.addEventListener("click", () => restoreFrom(redoStack, undoStack));
+el.drawMagnet.addEventListener("click", () => {
+  magnetEnabled = !magnetEnabled;
+  try{ localStorage.setItem("leon_chart_magnet", magnetEnabled ? "1" : "0"); }catch(e){}
+  syncDrawControls();
+});
+
+el.drawClear.addEventListener("click", () => {
+  if(!drawings.length) return;
+  pushUndo();
+  drawings = [];
+  selectedDrawing = -1;
+  pendingPoint = previewPoint = null;
+  pendingPoints = [];
+  saveDrawings();
+  scheduleDraw();
+});
+
+el.drawing.addEventListener("pointerdown", e => {
+  if(e.button !== 0) return;
+  const p = pointFromEvent(e, drawMode !== "select");
+  if(!p) return;
+  el.drawing.focus({preventScroll:true});
+  e.preventDefault();
+
+  if(drawMode === "select"){
+    const handle = hitSelectedHandle(p);
+    // A polyline's first vertex is index 0, which is falsy -- testing the
+    // handle for truthiness would drop it and drag the whole shape instead.
+    if(handle == null) selectedDrawing = hitDrawing(p);
+    if(selectedDrawing >= 0){
+      const original = drawings[selectedDrawing];
+      dragging = {
+        start:p, index:selectedDrawing, handle,
+        original:JSON.parse(JSON.stringify(original)),
+        snapshot:JSON.stringify(drawings), dirty:false,
+      };
+      el.drawing.setPointerCapture(e.pointerId);
+    }
+    scheduleDraw();
+    return;
+  }
+  const tool = TOOLS[drawMode];
+  if(!tool) return;
+  const here = {t:p.t, p:p.p};
+
+  // Freehand is the one tool with no vertex count: the stroke starts on press
+  // and is collected on move until release.
+  if(tool.need === 0){
+    pushUndo();
+    brushing = {type:drawMode, pts:[here]};
+    drawings.push(brushing);
+    el.drawing.setPointerCapture(e.pointerId);
+    scheduleDraw();
+    return;
+  }
+
+  if(tool.need === 1){
+    pushUndo();
+    const shape = {type:drawMode, a:here};
+    if(drawMode === "text"){
+      const note = (prompt("Ghi chú:", "") || "").trim().slice(0, 80);
+      if(!note){ undoStack.pop(); syncDrawControls(); scheduleDraw(); return; }
+      shape.text = note;
+    }
+    if(drawMode === "mark"){
+      // Above the click points down at the bar, below points up at it.
+      const mid = candles.coordinateToPrice(el.drawing.clientHeight / 2);
+      shape.dir = mid != null && p.p > +mid ? "down" : "up";
+    }
+    drawings.push(shape);
+    saveDrawings();
+    finishAndContinue();
+    scheduleDraw();
+    return;
+  }
+
+  pendingPoints.push(here);
+  previewPoint = here;
+  pendingPoint = pendingPoints[0];
+  if(pendingPoints.length >= tool.need){
+    pushUndo();
+    const shape = tool.need > 3
+      ? {type:drawMode, pts:pendingPoints.slice(0, tool.need)}
+      : {type:drawMode, a:pendingPoints[0], b:pendingPoints[1]};
+    if(tool.need === 3) shape.c = pendingPoints[2];
+    if(drawMode === "long" || drawMode === "short"){
+      // Entry is where the reader clicked first; the second click sets the
+      // target, and the stop mirrors it so the box opens at 1:1 and can be
+      // dragged from there.
+      const entry = pendingPoints[0].p, target = pendingPoints[1].p;
+      shape.entry = entry; shape.tp = target; shape.sl = entry - (target - entry);
+    }
+    if(drawMode === "callout"){
+      const note = (prompt("Chú thích:", "") || "").trim().slice(0, 80);
+      if(!note){
+        undoStack.pop();
+        pendingPoints = []; pendingPoint = previewPoint = null;
+        scheduleDraw();
+        return;
+      }
+      shape.text = note;
+    }
+    drawings.push(shape);
+    pendingPoints = [];
+    pendingPoint = previewPoint = null;
+    saveDrawings();
+    finishAndContinue();
+  }
+  scheduleDraw();
+});
+
+/* Keep the active tool armed so several levels/zones can be placed quickly.
+   The explicit Pan button, a second click on the active tool, right-click or
+   Escape all leave placement mode. Selection stays a separate deliberate
+   action, which prevents a completed shape from unexpectedly changing tools. */
+function finishAndContinue(){
+  selectedDrawing = -1;
+  pendingPoint = previewPoint = null;
+  pendingPoints = [];
+  syncDrawControls();
+}
+
+el.drawing.addEventListener("pointermove", e => {
+  const p = pointFromEvent(e, !!(dragging && dragging.handle) || pendingPoints.length > 0);
+  if(!p) return;
+  if(brushing){
+    // Thin the stroke as it is collected: a pointermove per pixel would store
+    // thousands of points for one gesture and redraw them on every pan.
+    const last = brushing.pts[brushing.pts.length - 1];
+    const lastPx = pixelPoint(last);
+    if(!lastPx || Math.hypot(p.x - lastPx.x, p.y - lastPx.y) >= 3){
+      brushing.pts.push({t:p.t, p:p.p});
+      scheduleDraw();
+    }
+    return;
+  }
+  if(dragging && selectedDrawing === dragging.index){
+    const moved = JSON.parse(JSON.stringify(dragging.original));
+    if(dragging.handle !== null && dragging.handle !== undefined){
+      if(typeof dragging.handle === "number") moved.pts[dragging.handle] = {t:p.t, p:p.p};
+      else moved[dragging.handle] = {t:p.t, p:p.p};
+    }else{
+      const dt = p.t - dragging.start.t, dp = p.p - dragging.start.p;
+      if(Array.isArray(moved.pts)){
+        moved.pts.forEach(q => { q.t += dt; q.p += dp; });
+      }else{
+        moved.a.t += dt; moved.a.p += dp;
+        if(moved.b){ moved.b.t += dt; moved.b.p += dp; }
+        if(moved.c){ moved.c.t += dt; moved.c.p += dp; }
+      }
+      // Position tools carry prices outside the point list; they have to move
+      // with it or the box detaches from its own handles.
+      if(moved.entry != null){ moved.entry += dp; moved.tp += dp; moved.sl += dp; }
+    }
+    if(!dragging.dirty){
+      pushUndo(dragging.snapshot);
+      dragging.dirty = true;
+    }
+    drawings[selectedDrawing] = moved;
+    scheduleDraw();
+  }else if(pendingPoints.length){
+    previewPoint = {t:p.t, p:p.p};
+    scheduleDraw();
+  }else if(drawMode === "select"){
+    el.drawing.style.cursor = hitSelectedHandle(p) != null ? "crosshair" :
+      (hitDrawing(p) >= 0 ? "move" : "default");
+  }
+});
+
+function finishDrag(e){
+  if(brushing){
+    try{ el.drawing.releasePointerCapture(e.pointerId); }catch(err){}
+    // A press with no movement leaves a single point, which is not a stroke.
+    const kept = brushing.pts.length >= 2;
+    if(!kept){
+      const i = drawings.indexOf(brushing);
+      if(i >= 0) drawings.splice(i, 1);
+      undoStack.pop();
+    }
+    brushing = null;
+    saveDrawings();
+    if(kept) finishAndContinue();
+    scheduleDraw();
+    return;
+  }
+  if(!dragging) return;
+  try{ el.drawing.releasePointerCapture(e.pointerId); }catch(err){}
+  const changed = dragging.dirty;
+  dragging = null;
+  if(changed) saveDrawings();
+}
+el.drawing.addEventListener("pointerup", finishDrag);
+el.drawing.addEventListener("pointercancel", finishDrag);
+
+document.addEventListener("keydown", e => {
+  const tag = e.target && e.target.tagName;
+  const editing = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" ||
+    (e.target && e.target.isContentEditable);
+  if(editing) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if(mod && e.key.toLowerCase() === "z" && !e.shiftKey){
+    restoreFrom(undoStack, redoStack); e.preventDefault();
+  }else if(mod && (e.key.toLowerCase() === "y" ||
+                   (e.shiftKey && e.key.toLowerCase() === "z"))){
+    restoreFrom(redoStack, undoStack); e.preventDefault();
+  }else if((e.key === "Delete" || e.key === "Backspace") && selectedDrawing >= 0){
+    pushUndo();
+    drawings.splice(selectedDrawing, 1);
+    selectedDrawing = -1;
+    saveDrawings(); scheduleDraw(); e.preventDefault();
+  }else if(e.key === "Escape"){
+    closeChartMenu();
+    if(el.alertDialog.open) el.alertDialog.close();
+    setDrawMode("pan");
+  }
+});
+
+/* ---------- paging older history ----------
+   The first fetch is the most recent LIMIT bars, which on the 5m chart is under
+   two days. Scrolling left used to simply run out. Now nearing the left edge
+   pulls the previous page and prepends it, so the reader can keep going back
+   until the exchange has nothing older. */
+async function loadOlderHistory(){
+  if(loadingHistory || historyExhausted || oldestTime == null) return;
+  if(!currentBars.length) return;
+  loadingHistory = true;
+  const token = inflight;
+  try{
+    // endTime is inclusive, so step back one second to avoid refetching the
+    // bar already held at the left edge.
+    const endMs = (oldestTime - 1) * 1000;
+    const older = currentSource === "Hyperliquid"
+      ? await fromHyperliquid(symbol, timeframe, endMs)
+      : await fromBinance(symbol, timeframe, endMs);
+
+    if(token !== inflight) return;          // symbol or timeframe changed mid-flight
+    const fresh = older.filter(b => b.time < oldestTime);
+    if(!fresh.length){ historyExhausted = true; return; }
+
+    currentBars = fresh.concat(currentBars);
+    if(currentBars.length > MAX_BARS) currentBars = currentBars.slice(-MAX_BARS);
+    oldestTime = currentBars[0].time;
+
+    // setData, not update: prepending rewrites the start of the series, and
+    // the viewport stays where the reader put it because no fitContent runs.
+    candles.setData(currentBars);
+    volume.setData(currentBars.map(volumeBar));
+    applyMA(currentBars);
+    scheduleDraw();
+  }catch(e){
+    // A failed page is not fatal; the reader keeps the bars already loaded.
+    historyExhausted = true;
+  }finally{
+    loadingHistory = false;
+  }
+}
+
+chart.timeScale().subscribeVisibleTimeRangeChange(scheduleDraw);
+chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+  // `from` counts bars from the left edge of the data, going negative once the
+  // viewport scrolls past it. Ten bars of slack starts the fetch before the
+  // reader reaches actual blank space.
+  if(range && range.from < 10) loadOlderHistory();
+});
+const drawResizeObserver = new ResizeObserver(scheduleDraw);
+drawResizeObserver.observe(el.drawing.parentElement);
+// The outer <main> does not resize when a pane separator moves; the price pane
+// itself does. Observe both so drawing coordinates stay aligned after a manual
+// pane-height adjustment.
+const pricePaneElement = chart.panes()[0].getHTMLElement();
+if(pricePaneElement) drawResizeObserver.observe(pricePaneElement);
+
+/* ---------- controls ---------- */
+function updateTimeframeControls(){
+  [...el.tfs.querySelectorAll("button")].forEach(c => c.setAttribute("aria-pressed", String(c.dataset.tf === timeframe)));
+  const more = el.tfs.querySelector("select");
+  if(more){ more.value = PRIMARY_TIMEFRAMES.includes(timeframe) ? "" : timeframe; more.classList.toggle("active", !PRIMARY_TIMEFRAMES.includes(timeframe)); }
+}
+function selectTimeframe(tf){
+  if(!TIMEFRAMES.includes(tf) || tf === timeframe) return;
+  timeframe = tf;
+  needsFit = true;
+  updateTimeframeControls();
+  syncUrl();
+  load();
+}
+PRIMARY_TIMEFRAMES.forEach(tf => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.dataset.tf = tf;
+  b.textContent = tf;
+  b.setAttribute("aria-pressed", String(tf === timeframe));
+  b.addEventListener("click", () => selectTimeframe(tf));
+  el.tfs.appendChild(b);
+});
+const tfMore=document.createElement("select");
+tfMore.className="tf-more";
+tfMore.setAttribute("aria-label","Khung thời gian khác");
+tfMore.innerHTML='<option value="">Khác</option>'+TIMEFRAMES.filter(tf=>!PRIMARY_TIMEFRAMES.includes(tf)).map(tf=>`<option value="${tf}">${tf}</option>`).join("");
+if(!PRIMARY_TIMEFRAMES.includes(timeframe)){tfMore.value=timeframe;tfMore.classList.add("active")}
+tfMore.addEventListener("change",()=>{if(tfMore.value)selectTimeframe(tfMore.value)});
+el.tfs.appendChild(tfMore);
+
+/* ---------- indicator panel ---------- */
+const indEl = {
+  open:  document.getElementById("ind-open"),
+  count: document.getElementById("ind-count"),
+  panel: document.getElementById("ind-panel"),
+  type:  document.getElementById("ind-type"),
+  params:document.getElementById("ind-params"),
+  color: document.getElementById("ind-color"),
+  add:   document.getElementById("ind-add"),
+  reset: document.getElementById("ind-reset"),
+  close: document.getElementById("ind-close"),
+  status:document.getElementById("ind-status"),
+  list:  document.getElementById("ind-list"),
+};
+
+// A blank first option so opening the panel does not immediately add whatever
+// happens to sit at the top of the list.
+(function fillIndicatorSelect(){
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "— chọn chỉ báo —";
+  indEl.type.appendChild(blank);
+  INDICATOR_KEYS.forEach(key => {
+    const o = document.createElement("option");
+    o.value = key;
+    o.textContent = INDICATORS[key].name;
+    indEl.type.appendChild(o);
+  });
+})();
+
+function indicatorLabel(inst){
+  const def = INDICATORS[inst.type];
+  const p = inst.params;
+  if(inst.type === "macd") return `${def.name} ${p.fast}/${p.slow}/${p.signal}`;
+  if(inst.type === "ichimoku") return `${def.name} ${p.tenkan}/${p.kijun}/${p.senkou}`;
+  if(inst.type === "stoch") return `${def.name} ${p.period}/${p.smoothK}/${p.smoothD}`;
+  if("mult" in p) return `${def.name} ${p.period} ×${p.mult}`;
+  if("period" in p) return `${def.name} ${p.period}`;
+  return def.name;
+}
+
+function indicatorColor(inst){
+  return validIndicatorColor(inst.color) || INDICATORS[inst.type].color || "#8b98a5";
+}
+
+function setIndicatorStatus(message, error = false){
+  indEl.status.textContent = message;
+  indEl.status.classList.toggle("error", error);
+}
+
+function renderIndicatorList(){
+  indEl.count.textContent = String(indicators.length);
+  indEl.list.replaceChildren();
+  if(!indicators.length){
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "Chưa có chỉ báo nào";
+    indEl.list.appendChild(empty);
+    return;
+  }
+  indicators.forEach(inst => {
+    const label = indicatorLabel(inst);
+    const li = document.createElement("li");
+    li.dataset.id = inst.id;
+    li.classList.toggle("off", !inst.visible);
+    const dot = document.createElement("i");
+    dot.className = "dot";
+    dot.style.background = indicatorColor(inst);
+    const text = document.createElement("span");
+    text.textContent = label;
+    const toggle = document.createElement("button");
+    toggle.className = "toggle";
+    toggle.type = "button";
+    toggle.dataset.action = "toggle";
+    toggle.dataset.id = inst.id;
+    toggle.textContent = inst.visible ? "◉" : "○";
+    toggle.title = `${inst.visible ? "Ẩn" : "Hiện"} ${label}`;
+    toggle.setAttribute("aria-label", toggle.title);
+    const remove = document.createElement("button");
+    remove.className = "rm";
+    remove.type = "button";
+    remove.dataset.action = "remove";
+    remove.dataset.id = inst.id;
+    remove.textContent = "×";
+    remove.title = `Bỏ ${label}`;
+    remove.setAttribute("aria-label", remove.title);
+    li.append(dot, text, toggle, remove);
+    indEl.list.appendChild(li);
+  });
+}
+
+function renderParamInputs(){
+  const def = INDICATORS[indEl.type.value];
+  indEl.params.replaceChildren();
+  if(!def) return;   // blank selection: nothing to configure yet
+  Object.entries(def.params).forEach(([key, value]) => {
+    const meta = PARAM_META[key];
+    const label = document.createElement("label");
+    label.className = "ind-param";
+    label.append(document.createTextNode(meta.label));
+    const input = document.createElement("input");
+    input.type = "number";
+    input.dataset.param = key;
+    input.min = String(meta.min);
+    input.max = String(meta.max);
+    input.step = String(meta.step);
+    input.value = String(value);
+    input.setAttribute("aria-label", meta.label);
+    label.appendChild(input);
+    indEl.params.appendChild(label);
+  });
+  indEl.color.value = def.color;
+  setIndicatorStatus(def.pane === 0 ? "Vẽ trên biểu đồ giá" : "Mở trong pane riêng có thể kéo đổi chiều cao");
+}
+
+function readIndicatorForm(type){
+  const raw = {};
+  indEl.params.querySelectorAll("[data-param]").forEach(input => {
+    raw[input.dataset.param] = Number(input.value);
+  });
+  const params = normaliseParams(type, raw);
+  if(type === "macd" && params.fast >= params.slow)
+    return {error:"MACD cần chu kỳ Nhanh nhỏ hơn Chậm."};
+  if(type === "ichimoku" && !(params.tenkan < params.kijun && params.kijun < params.senkou))
+    return {error:"Ichimoku cần Tenkan < Kijun < Senkou."};
+  return {params, color:validIndicatorColor(indEl.color.value) || INDICATORS[type].color};
+}
+
+indEl.open.addEventListener("click", () => {
+  indEl.panel.hidden = !indEl.panel.hidden;
+  indEl.open.setAttribute("aria-pressed", String(!indEl.panel.hidden));
+  if(!indEl.panel.hidden){ renderIndicatorList(); renderParamInputs(); }
+});
+indEl.close.addEventListener("click", () => {
+  indEl.panel.hidden = true;
+  indEl.open.setAttribute("aria-pressed", "false");
+});
+// Picking from the list adds the indicator straight away. The Add button
+// stays for a second copy at different settings, but choosing a name and then
+// having to confirm it was one step too many.
+indEl.type.addEventListener("change", () => {
+  renderParamInputs();
+  if(indEl.type.value) addIndicatorFromForm();
+});
+
+function addIndicatorFromForm(){
+  const type = indEl.type.value;
+  const def = INDICATORS[type];
+  if(!def) return;
+  if(indicators.length >= MAX_INDICATORS){
+    setIndicatorStatus(`Tối đa ${MAX_INDICATORS} chỉ báo để chart vẫn mượt.`, true);
+    return;
+  }
+  const paneCount = indicators.filter(i => i.visible && INDICATORS[i.type].pane !== 0).length;
+  if(def.pane !== 0 && paneCount >= MAX_INDICATOR_PANES){
+    setIndicatorStatus(`Tối đa ${MAX_INDICATOR_PANES} pane phụ; hãy ẩn hoặc bỏ một pane trước.`, true);
+    return;
+  }
+  const form = readIndicatorForm(type);
+  if(form.error){ setIndicatorStatus(form.error, true); return; }
+  const inst = {id: indicatorSeq++, type, color:form.color, params:form.params, visible:true};
+  indicators.push(inst);
+  buildIndicator(inst, currentBars);
+  saveIndicators();
+  renderIndicatorList();
+  setIndicatorStatus(`Đã thêm ${indicatorLabel(inst)}.`);
+  // Back to blank, so the next pick fires a change event even if it is the
+  // same indicator again with different settings.
+  indEl.type.value = "";
+  renderParamInputs();
+}
+
+indEl.add.addEventListener("click", addIndicatorFromForm);
+
+indEl.params.addEventListener("keydown", e => {
+  if(e.key === "Enter"){ indEl.add.click(); e.preventDefault(); }
+});
+
+indEl.reset.addEventListener("click", () => {
+  indicators.forEach(disposeIndicator);
+  indicators = DEFAULT_INDICATORS.map(d => ({
+    id:indicatorSeq++, type:d.type, color:d.color,
+    params:normaliseParams(d.type, d.params), visible:true,
+  }));
+  applyIndicators(currentBars);
+  saveIndicators();
+  renderIndicatorList();
+  setIndicatorStatus("Đã khôi phục SMA20 và SMA50 theo rule tín hiệu.");
+});
+
+indEl.list.addEventListener("click", e => {
+  const btn = e.target.closest("button[data-action]");
+  if(!btn) return;
+  const id = Number(btn.dataset.id);
+  const i = indicators.findIndex(x => x.id === id);
+  if(i < 0) return;
+  if(btn.dataset.action === "toggle"){
+    indicators[i].visible = !indicators[i].visible;
+    if(indicators[i].visible) buildIndicator(indicators[i], currentBars);
+    else if(INDICATORS[indicators[i].type].pane !== 0) disposeIndicator(indicators[i]);
+    else setIndicatorVisibility(indicators[i]);
+    saveIndicators();
+    renderIndicatorList();
+    return;
+  }
+  disposeIndicator(indicators[i]);
+  indicators.splice(i, 1);
+  saveIndicators();
+  renderIndicatorList();
+  setIndicatorStatus("Đã bỏ chỉ báo.");
+});
+
+/* ---------- local price alerts ----------
+   Alerts are deliberately local and one-shot: they need no account/backend and
+   cannot imply that a server will keep watching after this tab is closed. */
+let priceAlerts = [];
+let alertPriceLines = [];
+let toastTimer = 0;
+
+function priceAlertKey(){
+  return "leon_chart_alerts_" + symbol.replace(/[^A-Z0-9_-]/g, "");
+}
+
+function loadPriceAlerts(){
+  priceAlerts = [];
+  try{
+    const value = JSON.parse(localStorage.getItem(priceAlertKey()) || "[]");
+    if(Array.isArray(value)) priceAlerts = value.filter(a =>
+      a && typeof a.id === "string" && Number.isFinite(+a.price) && +a.price > 0)
+      .map(a => ({
+        id:a.id, price:+a.price, active:a.active !== false,
+        triggeredAt:typeof a.triggeredAt === "string" ? a.triggeredAt : null,
+        createdAt:typeof a.createdAt === "string" ? a.createdAt : new Date().toISOString(),
+      })).slice(0, 30);
+  }catch(e){}
+  renderPriceAlerts();
+  if(el.alertDialog.open) renderAlertDialog();
+}
+
+function savePriceAlerts(){
+  try{ localStorage.setItem(priceAlertKey(), JSON.stringify(priceAlerts)); }catch(e){}
+  renderPriceAlerts();
+}
+
+function renderPriceAlerts(){
+  alertPriceLines.forEach(line => { try{ candles.removePriceLine(line); }catch(e){} });
+  alertPriceLines = priceAlerts.map(a => candles.createPriceLine({
+    price:a.price,
+    color:a.active ? css("--warn") : css("--muted"),
+    lineWidth:1,
+    lineStyle:a.active ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Dotted,
+    axisLabelVisible:true,
+    title:a.active ? "Cảnh báo" : "Đã chạm",
+  }));
+}
+
+function showToast(message){
+  clearTimeout(toastTimer);
+  el.toast.textContent = message;
+  el.toast.hidden = false;
+  toastTimer = setTimeout(() => { el.toast.hidden = true; }, 2600);
+}
+
+function addPriceAlert(price){
+  if(!Number.isFinite(price) || price <= 0) return;
+  const duplicate = priceAlerts.some(a => Math.abs(a.price - price) <= Math.max(price * 1e-8, 1e-8));
+  if(duplicate){ showToast(`Đã có cảnh báo tại ${nf(price, price < 1 ? 6 : 2)}.`); return; }
+  priceAlerts.push({
+    id:`a${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`,
+    price, active:true, triggeredAt:null, createdAt:new Date().toISOString(),
+  });
+  savePriceAlerts();
+  showToast(`Đã thêm cảnh báo local tại ${nf(price, price < 1 ? 6 : 2)}.`);
+}
+
+function checkPriceAlerts(previous, current){
+  if(!Number.isFinite(previous) || !Number.isFinite(current) || previous === current) return;
+  const hit = priceAlerts.filter(a => a.active &&
+    ((previous <= a.price && current >= a.price) || (previous >= a.price && current <= a.price)));
+  if(!hit.length) return;
+  const at = new Date().toISOString();
+  hit.forEach(a => { a.active = false; a.triggeredAt = at; });
+  savePriceAlerts();
+  showToast(`${symbol} vừa chạm cảnh báo ${nf(hit[0].price, hit[0].price < 1 ? 6 : 2)}${hit.length > 1 ? ` (+${hit.length-1})` : ""}.`);
+}
+
+function renderAlertDialog(){
+  document.getElementById("alert-title").textContent = `Cảnh báo giá · ${symbol}`;
+  el.alertList.replaceChildren();
+  if(!priceAlerts.length){
+    const empty = document.createElement("div");
+    empty.className = "alert-empty";
+    empty.textContent = "Chưa có cảnh báo. Chuột phải trên pane giá để thêm.";
+    el.alertList.appendChild(empty);
+    return;
+  }
+  priceAlerts.slice().reverse().forEach(a => {
+    const row = document.createElement("div");
+    row.className = "alert-row";
+    const info = document.createElement("div");
+    info.className = "alert-price";
+    info.textContent = nf(a.price, a.price < 1 ? 6 : 2);
+    const state = document.createElement("small");
+    state.className = "alert-state";
+    state.textContent = a.active ? "Đang theo dõi khi tab mở" :
+      `Đã chạm${a.triggeredAt ? " · " + new Date(a.triggeredAt).toLocaleString("vi-VN") : ""}`;
+    info.appendChild(state);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.dataset.alertAction = "toggle";
+    toggle.dataset.id = a.id;
+    toggle.textContent = a.active ? "Tạm dừng" : "Bật lại";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.dataset.alertAction = "remove";
+    remove.dataset.id = a.id;
+    remove.textContent = "Xóa";
+    row.append(info, toggle, remove);
+    el.alertList.appendChild(row);
+  });
+}
+
+document.getElementById("alert-close").addEventListener("click", () => el.alertDialog.close());
+el.alertList.addEventListener("click", e => {
+  const button = e.target.closest("button[data-alert-action]");
+  if(!button) return;
+  const alert = priceAlerts.find(a => a.id === button.dataset.id);
+  if(!alert) return;
+  if(button.dataset.alertAction === "remove")
+    priceAlerts = priceAlerts.filter(a => a.id !== alert.id);
+  else{
+    alert.active = !alert.active;
+    if(alert.active) alert.triggeredAt = null;
+  }
+  savePriceAlerts();
+  renderAlertDialog();
+});
+
+/* ---------- right-click chart menu ---------- */
+let menuPoint = null;
+
+function closeChartMenu(){ el.menu.hidden = true; }
+
+function appendMenuItem(group, item){
+  if(item.separator){
+    const sep = document.createElement("div");
+    sep.className = "ctx-sep";
+    group.appendChild(sep);
+    return;
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.role = "menuitem";
+  button.dataset.action = item.action;
+  button.disabled = !!item.disabled;
+  if(item.danger) button.classList.add("danger");
+  const icon = document.createElement("span");
+  icon.className = "ctx-icon";
+  icon.textContent = item.icon || "";
+  const label = document.createElement("span");
+  label.className = "ctx-label";
+  label.textContent = item.label;
+  const value = document.createElement("span");
+  value.className = "ctx-value";
+  value.textContent = item.value || "";
+  const check = document.createElement("span");
+  check.className = "ctx-check";
+  check.textContent = item.checked ? "✓" : "";
+  button.append(icon, label, value, check);
+  group.appendChild(button);
+}
+
+function renderChartMenu(){
+  const scaleOptions = candles.priceScale().options();
+  const anyIndicatorsVisible = indicators.some(i => i.visible);
+  const priceText = menuPoint && Number.isFinite(menuPoint.price)
+    ? nf(menuPoint.price, menuPoint.price < 1 ? 6 : 2) : "—";
+  const items = [
+    {action:"alert-add", icon:"♧", label:`Thêm cảnh báo @ ${priceText}`, disabled:!menuPoint},
+    {action:"alert-manage", icon:"♧", label:"Quản lý cảnh báo…", value:String(priceAlerts.length)},
+    {separator:true},
+    {action:"fit-price", icon:"↔", label:"Tự co giãn scale giá"},
+    {action:"auto-price", label:"Auto-scale price", checked:scaleOptions.autoScale},
+    {action:"scale-mode", label:`Scale: ${logarithmicScale ? "Logarithmic → Normal" : "Normal → Logarithmic"}`},
+    {action:"crosshair-mode", label:`Crosshair: ${crosshairMagnet ? "Magnet → Normal (free)" : "Normal (free) → Magnet (close)"}`},
+    {separator:true},
+    {action:"volume", icon:"▥", label:"Volume bars", checked:volumeVisible},
+    {action:"indicator-titles", label:"Tiêu đề chỉ báo", checked:showIndicatorTitles},
+    {action:"indicator-visibility", icon:"◉", label:`${anyIndicatorsVisible ? "Ẩn" : "Hiện"} hết indicator`, disabled:!indicators.length},
+    {action:"drawing-visibility", icon:"◉", label:`${drawingsVisible ? "Ẩn" : "Hiện"} hết hình vẽ`, disabled:!drawings.length},
+    {action:"drawing-delete", icon:"♜", label:`Xóa hình vẽ (${drawings.length})`, disabled:!drawings.length, danger:true},
+    {action:"indicator-delete", icon:"♜", label:`Xóa hết indicator (${indicators.length})`, disabled:!indicators.length, danger:true},
+    {separator:true},
+    {action:"image-copy", icon:"▧", label:"Copy ảnh chart"},
+    {action:"image-download", icon:"⇩", label:"Tải PNG"},
+    {separator:true},
+    {action:"theme", icon:"◐", label:"Đổi giao diện sáng / tối"},
+    {action:"settings", icon:"⚙", label:"Cài đặt chỉ báo…"},
+  ];
+  el.menu.replaceChildren();
+  items.forEach(item => appendMenuItem(el.menu, item));
+}
+
+function openChartMenu(e){
+  e.preventDefault();
+  if(drawMode !== "pan") setDrawMode("pan");
+  const rect = el.main.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const time = x >= 0 && x <= rect.width ? xToTime(x) : null;
+  const pricePaneHeight = chart.panes()[0].getHeight();
+  const price = y >= 0 && y <= pricePaneHeight ? candles.coordinateToPrice(y) : null;
+  menuPoint = price != null && Number.isFinite(+price) && +price > 0
+    ? {time:time == null ? null : +time, price:+price} : null;
+  renderChartMenu();
+  el.menu.hidden = false;
+  el.menu.style.left = "0px";
+  el.menu.style.top = "0px";
+  const menuRect = el.menu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(e.clientX, innerWidth - menuRect.width - 8));
+  const top = Math.max(8, Math.min(e.clientY, innerHeight - menuRect.height - 8));
+  el.menu.style.left = `${left}px`;
+  el.menu.style.top = `${top}px`;
+  const first = el.menu.querySelector("button:not(:disabled)");
+  if(first) first.focus({preventScroll:true});
+}
+
+function setAllIndicatorsVisible(visible){
+  let panes = 0, limited = false;
+  indicators.forEach(inst => {
+    if(visible && INDICATORS[inst.type].pane !== 0){
+      if(panes >= MAX_INDICATOR_PANES){ inst.visible = false; limited = true; return; }
+      panes++;
+    }
+    inst.visible = visible;
+    if(visible) buildIndicator(inst, currentBars);
+    else if(INDICATORS[inst.type].pane !== 0) disposeIndicator(inst);
+    else setIndicatorVisibility(inst);
+  });
+  saveIndicators();
+  renderIndicatorList();
+  if(limited) showToast(`Chỉ mở ${MAX_INDICATOR_PANES} pane phụ để chart vẫn đọc được.`);
+}
+
+function updateIndicatorTitles(){
+  indicators.forEach(inst => (inst._series || []).forEach((series, slot) => {
+    try{ series.applyOptions({title:showIndicatorTitles && slot === 0 ? indicatorLabel(inst) : ""}); }catch(e){}
+  }));
+}
+
+async function chartImageBlob(){
+  const base = chart.takeScreenshot(true, true);
+  const output = document.createElement("canvas");
+  output.width = base.width;
+  output.height = base.height;
+  const ctx = output.getContext("2d");
+  ctx.drawImage(base, 0, 0);
+  if(drawingsVisible && drawings.length){
+    const mainRect = el.main.getBoundingClientRect();
+    const drawRect = el.drawing.getBoundingClientRect();
+    const sx = output.width / mainRect.width, sy = output.height / mainRect.height;
+    ctx.drawImage(el.drawing, 0, 0, el.drawing.width, el.drawing.height,
+      (drawRect.left-mainRect.left)*sx, (drawRect.top-mainRect.top)*sy,
+      drawRect.width*sx, drawRect.height*sy);
+  }
+  return new Promise((resolve, reject) => output.toBlob(
+    blob => blob ? resolve(blob) : reject(new Error("Không tạo được ảnh")), "image/png"));
+}
+
+async function runMenuAction(action){
+  if(action === "alert-add" && menuPoint) addPriceAlert(menuPoint.price);
+  else if(action === "alert-manage"){
+    renderAlertDialog();
+    el.alertDialog.showModal();
+  }else if(action === "fit-price"){
+    candles.priceScale().applyOptions({autoScale:true});
+    showToast("Đã tự co giãn trục giá.");
+  }else if(action === "auto-price"){
+    const next = !candles.priceScale().options().autoScale;
+    candles.priceScale().applyOptions({autoScale:next});
+  }else if(action === "scale-mode"){
+    logarithmicScale = !logarithmicScale;
+    candles.priceScale().applyOptions({mode:logarithmicScale
+      ? LightweightCharts.PriceScaleMode.Logarithmic : LightweightCharts.PriceScaleMode.Normal});
+    try{ localStorage.setItem("leon_chart_log_scale", logarithmicScale ? "1" : "0"); }catch(e){}
+  }else if(action === "crosshair-mode"){
+    crosshairMagnet = !crosshairMagnet;
+    chart.applyOptions({crosshair:{mode:crosshairMagnet
+      ? LightweightCharts.CrosshairMode.Magnet : LightweightCharts.CrosshairMode.Normal}});
+    try{ localStorage.setItem("leon_chart_crosshair_magnet", crosshairMagnet ? "1" : "0"); }catch(e){}
+  }else if(action === "volume"){
+    volumeVisible = !volumeVisible;
+    volume.applyOptions({visible:volumeVisible});
+    try{ localStorage.setItem("leon_chart_volume", volumeVisible ? "1" : "0"); }catch(e){}
+  }else if(action === "indicator-titles"){
+    showIndicatorTitles = !showIndicatorTitles;
+    updateIndicatorTitles();
+    try{ localStorage.setItem("leon_chart_indicator_titles", showIndicatorTitles ? "1" : "0"); }catch(e){}
+  }else if(action === "indicator-visibility"){
+    setAllIndicatorsVisible(!indicators.some(i => i.visible));
+  }else if(action === "drawing-visibility"){
+    setDrawingsVisible(!drawingsVisible);
+  }else if(action === "drawing-delete"){
+    pushUndo(); drawings = []; selectedDrawing = -1; saveDrawings(); scheduleDraw();
+  }else if(action === "indicator-delete"){
+    indicators.forEach(disposeIndicator); indicators = []; saveIndicators(); renderIndicatorList();
+  }else if(action === "image-copy"){
+    try{
+      const blob = await chartImageBlob();
+      if(!navigator.clipboard || typeof ClipboardItem === "undefined") throw new Error("Clipboard không hỗ trợ ảnh");
+      await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);
+      showToast("Đã copy ảnh chart vào clipboard.");
+    }catch(e){ showToast("Không copy được ảnh; hãy dùng Tải PNG."); }
+  }else if(action === "image-download"){
+    try{
+      const blob = await chartImageBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `LEON-${symbol}-${timeframe}-${new Date().toISOString().slice(0,10)}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("Đã tạo ảnh PNG của chart.");
+    }catch(e){ showToast("Không tạo được ảnh PNG."); }
+  }else if(action === "theme"){
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try{ localStorage.setItem("leon_theme", next); }catch(e){}
+    try{ parent.document.documentElement.dataset.theme = next; }catch(e){}
+  }else if(action === "settings"){
+    if(indEl.panel.hidden) indEl.open.click();
+    indEl.type.focus({preventScroll:true});
+  }
+}
+
+el.main.addEventListener("contextmenu", openChartMenu);
+el.menu.addEventListener("click", e => {
+  const button = e.target.closest("button[data-action]");
+  if(!button || button.disabled) return;
+  const action = button.dataset.action;
+  closeChartMenu();
+  runMenuAction(action);
+});
+el.menu.addEventListener("keydown", e => {
+  if(e.key === "Escape"){ closeChartMenu(); setDrawMode("pan"); return; }
+  if(!["ArrowDown","ArrowUp","Home","End"].includes(e.key)) return;
+  const buttons = [...el.menu.querySelectorAll("button:not(:disabled)")];
+  if(!buttons.length) return;
+  const current = Math.max(0, buttons.indexOf(document.activeElement));
+  const next = e.key === "Home" ? 0 : e.key === "End" ? buttons.length-1 :
+    (current + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+  buttons[next].focus(); e.preventDefault();
+});
+document.addEventListener("pointerdown", e => {
+  if(!el.menu.hidden && !el.menu.contains(e.target)) closeChartMenu();
+});
+window.addEventListener("resize", closeChartMenu);
+
+function syncUrl(announce=true){
   const p = new URLSearchParams(location.search);
   p.set("sym", symbol);
   p.set("tf", timeframe);
   history.replaceState(null, "", "?" + p.toString());
+  try{
+    localStorage.setItem("leon_chart_symbol",symbol);
+    localStorage.setItem("leon_chart_tf",timeframe);
+  }catch(e){}
+  if(announce)try{contextChannel?.postMessage({symbol,timeframe})}catch(e){}
 }
 
 let symTimer;
@@ -390,10 +4147,28 @@ el.sym.addEventListener("input", () => {
   clearTimeout(symTimer);
   symTimer = setTimeout(() => {
     const next = el.sym.value.trim().toUpperCase();
-    if(next && next !== symbol){ symbol = next; syncUrl(); load(); }
+    if(next && next !== symbol){
+      selectSymbol(next);
+    }
   }, 500);
 });
 el.sym.addEventListener("keydown", e => { if(e.key === "Enter") el.sym.blur(); });
+
+function applySharedContext(data){
+  if(!data||typeof data!=="object")return;
+  const nextTf=TIMEFRAMES.includes(data.timeframe)?data.timeframe:timeframe;
+  const nextSym=String(data.symbol||symbol).toUpperCase();
+  let changed=false;
+  if(nextTf!==timeframe){timeframe=nextTf;updateTimeframeControls();changed=true}
+  if(nextSym&&nextSym!==symbol){symbol=nextSym;el.sym.value=symbol;loadDrawings();loadPriceAlerts();updateWatchButton();changed=true}
+  if(changed){needsFit=true;syncUrl(false);load()}
+}
+if(contextChannel)contextChannel.onmessage=e=>applySharedContext(e.data);
+window.addEventListener("storage",e=>{
+  if(e.key==="leon_chart_symbol"||e.key==="leon_chart_tf"){
+    let shared={symbol,timeframe};try{shared={symbol:localStorage.getItem("leon_chart_symbol"),timeframe:localStorage.getItem("leon_chart_tf")}}catch(err){}applySharedContext(shared)
+  }
+});
 
 // Follow the hub's theme switch without a reload.
 new MutationObserver(() => {
@@ -403,11 +4178,27 @@ new MutationObserver(() => {
     borderUpColor:css("--up"), borderDownColor:css("--down"),
     wickUpColor:css("--up"), wickDownColor:css("--down"),
   });
+  // Histogram colors live on each data point, so applyOptions alone cannot
+  // recolor bars that are already mounted.
+  volume.setData(currentBars.map(volumeBar));
+  renderPriceAlerts();
+  scheduleDraw();
 }).observe(document.documentElement, {attributes:true, attributeFilter:["data-theme"]});
 
-// Refresh while the tab is visible; pause when it is not.
-setInterval(() => { if(!document.hidden) load(); }, 60000);
+// REST is the safety net, not a second live feed. Poll only when the socket is
+// absent or has stopped delivering; a healthy Binance stream never refetches
+// all 500 bars and never churns its own connection once a minute.
+setInterval(() => {
+  const healthy = ws && ws.readyState === WebSocket.OPEN && Date.now() - wsLastMessage < 90000;
+  if(!document.hidden && !healthy) load();
+}, 60000);
 
+loadCoinList();
+loadWatchlist();
+loadDrawings();
+loadPriceAlerts();
+loadIndicators();
+renderIndicatorList();
 load();
 </script>
 </body>

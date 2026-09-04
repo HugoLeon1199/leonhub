@@ -53,6 +53,10 @@ SECONDS_PER_TRADING_DAY = 86400 * 1.5
 # the live rows, wrecking momentum, z-scores and the 52-week range at once.
 PRICE_SCALE = 1000.0
 
+# Consecutive per-ticker failures that mean "the source stopped answering"
+# rather than "these tickers have no history". See the comment at the break.
+MAX_CONSECUTIVE_FAILURES = 40
+
 
 def fetch_history(client: HttpClient, symbol: str, bars: int) -> list[dict[str, Any]]:
     """Fetch one ticker's daily bars.
@@ -167,11 +171,17 @@ def collect(
                     "No warehouse yet. Run `python -m pipeline.sources.vn_equity "
                     "--what board` first so the ticker list exists."
                 )
-            # Only tickers that actually trade: the full listing includes funds
-            # and long-suspended shells that return empty histories.
+            # Every listed ticker, not only ones seen trading. `price > 0` was
+            # the filter here, and it excluded exactly the 850 tickers this
+            # backfill exists to fill: a thinly traded UPCOM name that has not
+            # matched during the days the board collector has run carries
+            # price 0.0 with a real ref_price, so it looks untraded to that
+            # test while having a perfectly good history at the source.
+            # Suspended shells and funds do return empty, but that costs one
+            # request each and is counted as `empty` rather than guessed at.
             symbols = [r[0] for r in probe.execute("""
-                SELECT DISTINCT symbol FROM eq_quote
-                WHERE price IS NOT NULL AND price > 0
+                SELECT DISTINCT symbol FROM eq_listing
+                WHERE symbol IS NOT NULL
                 ORDER BY symbol
             """).fetchall()]
             if probe is not con:
@@ -205,7 +215,16 @@ def collect(
                 # A run of failures means the source has stopped answering, not
                 # that these particular tickers are bad. Stop and keep what we
                 # have; --skip-existing resumes from here on the next run.
-                if consecutive_failures >= 15:
+                #
+                # The threshold was 15, and it fired on a healthy source: the
+                # backfill is ordered by market cap, so the tail is thin UPCOM
+                # tickers that legitimately have no history, and a long stretch
+                # of them looks identical to throttling. It stopped with 850 of
+                # 1,729 tickers holding a single session each -- which is why
+                # momentum and 52-week range were only ever computed for a third
+                # of the market. 40 clears the longest natural run observed
+                # while still catching a source that has actually gone quiet.
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                     log.warning(
                         "stopping after %d consecutive failures at %s — the "
                         "source appears to be throttling. Re-run later to resume.",
@@ -242,7 +261,12 @@ def collect(
 
         stats["elapsed_sec"] = round((wh.utcnow() - started).total_seconds(), 1)
         if con is not None:
-            wh.log_run(con, run_id, "vn_history", started, "ok",
+            # "ok" only when the pass actually reached the end of the universe.
+            # Logging a truncated run as ok is how the last one went unnoticed:
+            # run_log said the backfill succeeded while half the market held a
+            # single session, and the gap was only found by counting rows.
+            wh.log_run(con, run_id, "vn_history", started,
+                       "partial" if stats.get("stopped_early") else "ok",
                        rows_in=stats["rows"], rows_new=stats["written"], detail=stats)
         return stats
     finally:
