@@ -89,6 +89,39 @@ never touch this traffic.
 **One real backend.** `data.signals.turtletrading.vn` computes GEX, serves push
 notifications, and receives telemetry. Everything else is static hosting.
 
+## Stock-detail parity audit (2026-09-04)
+
+The clicked ticker experience is where the reference currently has the clearest
+presentation advantage. Its VIC page is a long-form company dossier: description
+and market context; 15-year fundamental charts; valuation method, scenarios,
+forecast cash flow and parameters; narrative quality/moat/risk/drivers;
+management, major shareholders and subsidiaries; a five-year technical chart;
+and four-year ratio tables. The page contains 19 Plotly chart calls and two
+tables in the downloaded snapshot.
+
+LEON's route is presently a trading/valuation snapshot. It has stronger price
+provenance, six ratios placed in the ticker's own eight-year history, foreign
+flow and room, momentum/52-week position, SSI depth, fully disclosed SMA signal
+outcomes and deterministically matched news. It also covers 1,751 rows versus
+the reference screener's 1,522. These are valuable differentiators, but they do
+not replace a company dossier.
+
+The current warehouse already contains enough data to add quarterly ratio
+charts and peer percentiles without a new vendor: 1,443,259 fundamental rows,
+1,722 symbols, 42 periods and 83 distinct metrics overall. VIC has 41 periods
+and 28 ratio metrics from 2018-Q1 through 2026-Q2. However, the VIC metrics are
+ratios rather than statement values. Revenue, net income, EPS, free cash flow,
+shares outstanding, company narrative, management, ownership and subsidiary
+data are absent and need dedicated ingestion.
+
+The reference's extra surface area also exposes correctness risks. The captured
+VIC page showed current price 256,100 while its displayed high was 236,000. Its
+DCF fallback used after-tax profit and returned fair value 2,803 VND (safe price
+1,962), about 98.8% below its displayed market price even in the good scenario.
+So copy the dossier structure, not its unguarded outputs: valuation methods must
+be industry-aware and should decline to print an intrinsic value when the model
+is unsuitable or the inputs fail sanity checks.
+
 ## What is worth copying
 
 1. **Cost structure.** Static hosting, free exchange APIs, BYOK inference. A

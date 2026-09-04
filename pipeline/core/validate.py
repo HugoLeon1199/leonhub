@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
+from pathlib import Path
 
 from pipeline.publish.emit import read_json, read_prev_json
 
@@ -344,6 +345,61 @@ def validate_gex(payload: dict[str, Any], previous: dict[str, Any] | None) -> Re
     return rep
 
 
+def validate_ticker_manifest(payload: dict[str, Any], previous: dict[str, Any] | None) -> Report:
+    """Check the lazy per-ticker history contract without loading every file."""
+    rep = Report()
+    symbols = payload.get("symbols") if isinstance(payload, dict) else None
+    count = payload.get("count") if isinstance(payload, dict) else None
+    if not isinstance(symbols, list) or not symbols:
+        rep.error("ticker manifest has no symbols")
+        return rep
+    if count != len(symbols):
+        rep.error(f"ticker manifest count {count} != {len(symbols)} symbols")
+    if len(symbols) < 1_500:
+        rep.error(f"only {len(symbols)} ticker detail files — expected broad-market coverage")
+    dossiers = payload.get("dossiers", 0)
+    statements = payload.get("statements", 0)
+    for label, value in (("dossiers", dossiers), ("statements", statements)):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0 or value > len(symbols):
+            rep.error(f"ticker manifest has invalid {label} count `{value}`")
+    if isinstance(dossiers, int) and dossiers < len(symbols) * 0.95:
+        rep.error(f"only {dossiers}/{len(symbols)} ticker dossiers — expected at least 95% coverage")
+    if isinstance(statements, int) and statements < len(symbols) * 0.90:
+        rep.error(f"only {statements}/{len(symbols)} statement payloads — expected at least 90% coverage")
+    data_dir = Path(__file__).resolve().parents[2] / "data" / "ticker"
+    missing = [symbol for symbol in symbols if not (data_dir / f"{symbol}.json").exists()]
+    if missing:
+        rep.error(f"{len(missing)} ticker detail files missing (first: {missing[0]})")
+    for symbol in [s for s in ("VIC", "VCB", "SSI", symbols[0]) if s in symbols]:
+        try:
+            item = json.loads((data_dir / f"{symbol}.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            rep.error(f"{symbol}: unreadable ticker detail: {exc}")
+            continue
+        if item.get("s") != symbol or not isinstance(item.get("m"), dict) or not item["m"]:
+            rep.error(f"{symbol}: malformed identity or metric map")
+        for key, groups in (item.get("m") or {}).items():
+            for cadence, points in groups.items():
+                if cadence not in {"q", "y"} or not isinstance(points, list):
+                    rep.error(f"{symbol}/{key}: invalid cadence `{cadence}`")
+                elif any(not isinstance(p, list) or len(p) != 2 for p in points):
+                    rep.error(f"{symbol}/{key}/{cadence}: malformed point")
+        if item.get("co") is not None:
+            if not isinstance(item["co"], dict) or not item["co"].get("profile"):
+                rep.error(f"{symbol}: company dossier has no profile")
+        if item.get("st") is not None:
+            if not isinstance(item["st"], dict) or not item["st"]:
+                rep.error(f"{symbol}: statement map is empty")
+            for field, statement in item.get("st", {}).items():
+                if not statement.get("label") or not any(k in statement for k in ("q", "y")):
+                    rep.error(f"{symbol}/{field}: malformed statement series")
+    rep.stats.update(
+        tickers=len(symbols), missing_files=len(missing),
+        dossiers=dossiers, statements=statements,
+    )
+    return rep
+
+
 VALIDATORS = {
     "stocks.json": validate_stocks,
     "bds.json": validate_bds,
@@ -352,12 +408,13 @@ VALIDATORS = {
     "news_ticker.json": validate_news,
     "gex_btc.json": validate_gex,
     "gex_eth.json": validate_gex,
+    "ticker/manifest.json": validate_ticker_manifest,
 }
 
 # Validators in this set take the raw payload (dict) rather than the unwrapped
 # `rows` list -- their artifacts have no single dominant array (flows keys by
 # asset, gex is a flat scalar surface, signals mixes rules/stats/trades).
-_TAKES_PAYLOAD = {"flows.json", "signals.json", "news_ticker.json", "gex_btc.json", "gex_eth.json"}
+_TAKES_PAYLOAD = {"flows.json", "signals.json", "news_ticker.json", "gex_btc.json", "gex_eth.json", "ticker/manifest.json"}
 
 
 def run(names: list[str] | None = None) -> int:

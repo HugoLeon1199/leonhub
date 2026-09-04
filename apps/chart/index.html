@@ -46,6 +46,9 @@ body{
   text-transform:uppercase;
 }
 .sym-input:focus{outline:2px solid var(--accent); outline-offset:-1px}
+.bar-action{appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
+  border-radius:7px;padding:6px 9px;cursor:pointer;font:12px inherit}
+.bar-action:hover,.bar-action[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
 .group{display:flex; gap:2px; background:var(--panel-2); padding:2px; border-radius:8px;
   flex:0 0 auto}
 .group button{
@@ -55,7 +58,11 @@ body{
 .group button:hover{color:var(--text)}
 .group button[aria-pressed="true"]{background:var(--accent); color:#04150f; font-weight:600}
 .group button:disabled{opacity:.35; cursor:not-allowed}
+.group .tf-more{appearance:none;border:0;background:transparent;color:var(--muted);font:12px inherit;
+  padding:4px 7px;border-radius:6px;cursor:pointer;max-width:66px}
+.group .tf-more.active{background:var(--accent);color:#04150f;font-weight:600}
 :root[data-theme="light"] .group button[aria-pressed="true"]{color:#fff}
+:root[data-theme="light"] .group .tf-more.active{color:#fff}
 .group button.danger:hover{color:var(--down)}
 .draw-count{min-width:18px; padding:0 4px; color:var(--muted); font-size:11px;
   display:grid; place-items:center; font-variant-numeric:tabular-nums}
@@ -114,13 +121,32 @@ body{
 .stat .v{font-size:13.5px; font-weight:600; font-variant-numeric:tabular-nums}
 
 /* ---- Chart ---- */
-main{flex:1; position:relative; min-height:0}
+.workspace{flex:1;display:flex;min-height:0;overflow:hidden}
+main{flex:1; position:relative; min-height:0;min-width:0}
 #chart{position:absolute; inset:0}
 #drawings{position:absolute; top:0; left:0; width:100%; height:100%; z-index:2;
   pointer-events:none; touch-action:none; outline:none}
 #drawings.active{pointer-events:auto; cursor:crosshair}
 #drawings.selecting{cursor:default}
 #drawings[hidden]{display:none}
+.market-side{width:278px;flex:0 0 278px;background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0}.market-side[hidden]{display:none}
+.side-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:6px;border-bottom:1px solid var(--line)}
+.side-tabs button{border:0;border-radius:5px;background:transparent;color:var(--muted);padding:6px 3px;
+  cursor:pointer;font:11px inherit}.side-tabs button[aria-pressed="true"]{background:var(--panel-2);color:var(--accent)}
+.side-pane{flex:1;overflow:auto;min-height:0;padding:5px}.side-pane[hidden]{display:none}
+.watch-row{display:grid;grid-template-columns:1fr auto auto;gap:7px;align-items:center;padding:8px 6px;
+  border-bottom:1px solid var(--line);cursor:pointer}.watch-row:hover{background:var(--panel-2)}
+.watch-row b{font-size:12px}.watch-row span{font-variant-numeric:tabular-nums;font-size:11px}.watch-rm{border:0;background:none;color:var(--muted);cursor:pointer;padding:2px}.watch-rm:hover{color:var(--down)}
+.side-summary{display:flex;justify-content:space-between;padding:7px 6px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--line)}
+.book-row{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:3px 6px;font-size:11px;
+  font-variant-numeric:tabular-nums}.book-row i{position:absolute;inset:1px auto 1px 0;opacity:.11;pointer-events:none}
+.book-row.ask i{background:var(--down)}.book-row.bid i{background:var(--up)}.book-row.ask span:first-of-type{color:var(--down)}.book-row.bid span:first-of-type{color:var(--up)}.book-row span:last-child{text-align:right}
+.tape-row{display:grid;grid-template-columns:64px 1fr 1fr;gap:6px;padding:5px 6px;border-bottom:1px solid var(--line);
+  font-size:10.5px;font-variant-numeric:tabular-nums}.tape-row span:nth-child(n+2){text-align:right}.tape-row.buy{color:var(--up)}.tape-row.sell{color:var(--down)}
+.level-card{padding:8px 7px;border-bottom:1px solid var(--line)}.level-head{display:flex;justify-content:space-between;gap:8px;font-size:11px}.level-head b{font-variant-numeric:tabular-nums}.level-head small{color:var(--muted)}.level-bar{display:flex;height:4px;margin:6px 0;border-radius:2px;overflow:hidden;background:var(--line)}.level-bar i:nth-child(1){background:var(--down)}.level-bar i:nth-child(2){background:#a78bfa}.level-bar i:nth-child(3){background:var(--warn)}.level-bar i:nth-child(4){background:var(--up)}.level-stats{display:flex;justify-content:space-between;color:var(--muted);font-size:9px}
+.side-empty{padding:22px 8px;text-align:center;color:var(--muted);font-size:11px}
+.side-closed .market-side{display:none}
 .msg{
   position:absolute; inset:0; display:grid; place-content:center; text-align:center;
   gap:8px; color:var(--muted); background:var(--bg); padding:24px; z-index:3;
@@ -185,6 +211,7 @@ footer{
   font-size:11px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap;
 }
 footer b{color:var(--text); font-weight:600}
+@media(max-width:820px){.market-side{position:absolute;right:0;top:0;bottom:0;z-index:12;box-shadow:-12px 0 30px #0008;width:min(300px,88vw);flex-basis:min(300px,88vw)}.workspace{position:relative}.side-closed .market-side{display:none}}
 </style>
 </head>
 <body>
@@ -193,6 +220,8 @@ footer b{color:var(--text); font-weight:600}
   <input id="sym" class="sym-input" value="BTC" maxlength="12" list="coins" aria-label="Mã coin"
          autocomplete="off" spellcheck="false">
   <datalist id="coins"></datalist>
+  <button id="watch-add" class="bar-action" type="button" aria-pressed="false" title="Thêm/bỏ mã khỏi watchlist">☆</button>
+  <button id="side-toggle" class="bar-action" type="button" aria-pressed="true" title="Ẩn/hiện bảng thị trường">Bảng</button>
   <div class="group" id="tfs" role="group" aria-label="Khung thời gian"></div>
   <div class="group" role="group" aria-label="Chỉ báo">
     <button id="ind-open" type="button" title="Thêm hoặc bỏ chỉ báo">Chỉ báo <span id="ind-count">0</span></button>
@@ -232,11 +261,25 @@ footer b{color:var(--text); font-weight:600}
 
 <div class="stats" id="stats"></div>
 
-<main>
-  <div id="chart"></div>
-  <canvas id="drawings" tabindex="0" aria-label="Lớp vẽ phân tích kỹ thuật"></canvas>
-  <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
-</main>
+<div class="workspace">
+  <main>
+    <div id="chart"></div>
+    <canvas id="drawings" tabindex="0" aria-label="Lớp vẽ phân tích kỹ thuật"></canvas>
+    <div class="msg" id="msg"><strong>Đang tải dữ liệu…</strong></div>
+  </main>
+  <aside class="market-side" id="market-side" aria-label="Watchlist và vi cấu trúc">
+    <div class="side-tabs">
+      <button type="button" data-side="watch" aria-pressed="true">Watchlist</button>
+      <button type="button" data-side="book" aria-pressed="false">Sổ lệnh</button>
+      <button type="button" data-side="tape" aria-pressed="false">Big Tape</button>
+      <button type="button" data-side="levels" aria-pressed="false">Levels</button>
+    </div>
+    <div class="side-pane" id="side-watch"></div>
+    <div class="side-pane" id="side-book" hidden></div>
+    <div class="side-pane" id="side-tape" hidden></div>
+    <div class="side-pane" id="side-levels" hidden></div>
+  </aside>
+</div>
 
 <div id="chart-menu" class="context-menu" role="menu" aria-label="Tùy chọn biểu đồ" hidden></div>
 <div id="chart-toast" class="chart-toast" role="status" aria-live="polite" hidden></div>
@@ -259,7 +302,11 @@ footer b{color:var(--text); font-weight:600}
 <script>
 "use strict";
 
-const TIMEFRAMES = ["5m","15m","1h","4h","1d"];
+// All intervals are supported by both Binance and Hyperliquid. Keep the most
+// common eight visible and put the rest in a compact overflow control.
+const TIMEFRAMES = ["1m","3m","5m","15m","30m","1h","2h","4h","8h","12h","1d","3d","1w","1M"];
+const PRIMARY_TIMEFRAMES = ["1m","5m","15m","30m","1h","4h","1d","1w"];
+const INTERVAL_MINUTES = {"1m":1,"3m":3,"5m":5,"15m":15,"30m":30,"1h":60,"2h":120,"4h":240,"8h":480,"12h":720,"1d":1440,"3d":4320,"1w":10080,"1M":43200};
 const LIMIT = 500;
 // How many bars may accumulate once older pages are pulled in. Separate from
 // LIMIT on purpose: LIMIT is the size of one fetch, this is the ceiling on the
@@ -278,6 +325,13 @@ const FALLBACK_COINS = [
 const el = {
   main: document.querySelector("main"),
   sym: document.getElementById("sym"),
+  watchAdd: document.getElementById("watch-add"),
+  sideToggle: document.getElementById("side-toggle"),
+  marketSide: document.getElementById("market-side"),
+  sideWatch: document.getElementById("side-watch"),
+  sideBook: document.getElementById("side-book"),
+  sideTape: document.getElementById("side-tape"),
+  sideLevels: document.getElementById("side-levels"),
   coins: document.getElementById("coins"),
   tfs: document.getElementById("tfs"),
   drawing: document.getElementById("drawings"),
@@ -301,9 +355,16 @@ const el = {
 };
 
 const params = new URLSearchParams(location.search);
-let symbol = (params.get("sym") || "BTC").toUpperCase();
-let timeframe = TIMEFRAMES.includes(params.get("tf")) ? params.get("tf") : "1h";
+let savedSymbol = "", savedTimeframe = "";
+try{ savedSymbol=localStorage.getItem("leon_chart_symbol")||""; savedTimeframe=localStorage.getItem("leon_chart_tf")||""; }catch(e){}
+let symbol = (params.get("sym") || savedSymbol || "BTC").toUpperCase();
+let timeframe = TIMEFRAMES.includes(params.get("tf")) ? params.get("tf") :
+  (TIMEFRAMES.includes(savedTimeframe) ? savedTimeframe : "1h");
 el.sym.value = symbol;
+
+const MARKET_CONTEXT = "leon_market_context_v1";
+let contextChannel;
+try{ contextChannel = new BroadcastChannel(MARKET_CONTEXT); }catch(e){}
 
 function storedBool(key, fallback){
   try{
@@ -354,6 +415,74 @@ async function loadCoinList(){
     }
   }catch(e){ /* the popular fallback keeps the field useful offline */ }
 }
+
+/* ---------- shared context + watchlist / microstructure ---------- */
+const WATCH_KEY="leon_chart_watchlists_v2";
+const DEFAULT_WATCH=["BTC","ETH","SOL","BNB","XRP","DOGE"];
+let watchlist=[];
+let watchLists={};
+let activeWatchList="Mặc định";
+let watchQuotes={};
+let bookTimer=null;
+let tradeWs=null;
+let tapeEvents=[];
+let tapeMin=500000;
+let gexLevels=[];
+let levelFrame=0;
+
+function loadWatchlist(){
+  try{watchLists=JSON.parse(localStorage.getItem(WATCH_KEY)||"null")}catch(e){}
+  if(!watchLists||Array.isArray(watchLists)||typeof watchLists!=="object")watchLists={"Mặc định":[...DEFAULT_WATCH]};
+  try{activeWatchList=localStorage.getItem("leon_chart_watch_active")||Object.keys(watchLists)[0]}catch(e){activeWatchList=Object.keys(watchLists)[0]}
+  if(!Array.isArray(watchLists[activeWatchList]))activeWatchList=Object.keys(watchLists)[0]||"Mặc định";
+  watchlist=watchLists[activeWatchList]||[];
+  watchlist=[...new Set(watchlist.map(x=>String(x).toUpperCase()).filter(Boolean))].slice(0,30);
+  watchLists[activeWatchList]=watchlist;
+  renderWatchlist();refreshWatchQuotes();
+}
+function saveWatchlist(){watchLists[activeWatchList]=watchlist;try{localStorage.setItem(WATCH_KEY,JSON.stringify(watchLists));localStorage.setItem("leon_chart_watch_active",activeWatchList)}catch(e){}renderWatchlist();refreshWatchQuotes()}
+function updateWatchButton(){const on=watchlist.includes(symbol);el.watchAdd.textContent=on?"★":"☆";el.watchAdd.setAttribute("aria-pressed",String(on))}
+function renderWatchlist(){
+  updateWatchButton();
+  const tools=`<div class="side-summary"><select id="watch-list-select" style="max-width:112px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px">${Object.keys(watchLists).map(n=>`<option${n===activeWatchList?" selected":""}>${n.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}</option>`).join("")}</select><span><button class="watch-rm" data-watch-new title="Danh sách mới">＋</button><button class="watch-rm" data-watch-export title="Xuất CSV">⇩</button><button class="watch-rm" data-watch-import title="Nhập CSV">⇧</button><input id="watch-file" type="file" accept=".csv,text/csv" hidden></span></div>`;
+  const rows=watchlist.length?watchlist.map(sym=>{const q=watchQuotes[sym]||{},tone=q.ch==null?"":q.ch>=0?"up":"down";return `<div class="watch-row" data-watch="${sym}"><b>${sym}</b><span class="${tone}">${q.p==null?"—":nf(q.p,q.p<1?5:2)}${q.ch==null?"":`<small style="display:block">${q.ch>=0?"+":""}${q.ch.toFixed(2)}%</small>`}</span><button class="watch-rm" type="button" data-remove="${sym}" title="Bỏ ${sym}">×</button></div>`}).join(""):'<div class="side-empty">Nhấn ☆ để thêm mã đang xem.</div>';
+  el.sideWatch.innerHTML=tools+rows;
+}
+async function refreshWatchQuotes(){
+  if(!watchlist.length)return;
+  const pairs=watchlist.map(x=>x+"USDT");
+  try{const r=await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(pairs))}`);if(!r.ok)throw Error(r.status);const data=await r.json();for(const x of data){watchQuotes[x.symbol.slice(0,-4)]={p:+x.lastPrice,ch:+x.priceChangePercent}}renderWatchlist()}catch(e){}
+}
+function selectSymbol(next,announce=true){next=String(next||"").trim().toUpperCase();if(!next||next===symbol)return;symbol=next;el.sym.value=symbol;needsFit=true;loadDrawings();loadPriceAlerts();syncUrl(announce);updateWatchButton();load()}
+function setSide(name){if(!["watch","book","tape","levels"].includes(name))name="watch";document.querySelectorAll("[data-side]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.side===name)));for(const key of ["watch","book","tape","levels"]){document.getElementById(`side-${key}`).hidden=key!==name}try{localStorage.setItem("leon_chart_side_tab",name)}catch(e){}}
+function closeMicrostructure(){clearInterval(bookTimer);bookTimer=null;if(tradeWs){tradeWs.onmessage=tradeWs.onclose=tradeWs.onerror=null;try{tradeWs.close()}catch(e){}tradeWs=null}}
+async function refreshBook(sym,token){
+  if(token!==inflight)return;
+  try{const r=await fetch(`https://api.binance.com/api/v3/depth?symbol=${sym}USDT&limit=20`);if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;renderBookData(d,sym)
+  }catch(e){if(token===inflight)el.sideBook.innerHTML='<div class="side-empty">Không tải được sổ lệnh Binance.</div>'}
+}
+function renderBookData(d,sym=symbol){const asks=(d.asks||[]).slice(0,10).reverse(),bids=(d.bids||[]).slice(0,10),all=[...asks,...bids],max=Math.max(1,...all.map(x=>+x[1])),bidVol=bids.reduce((a,x)=>a+(+x[1]),0),askVol=asks.reduce((a,x)=>a+(+x[1]),0),imb=(bidVol+askVol)?bidVol/(bidVol+askVol)*100:50;const rows=(arr,side)=>arr.map(x=>`<div class="book-row ${side}"><i style="width:${(+x[1])/max*100}%"></i><span>${nf(+x[0],+x[0]<1?6:2)}</span><span>${compact(+x[1])}</span></div>`).join("");el.sideBook.innerHTML=`<div class="side-summary"><span>Mua ${imb.toFixed(0)}%</span><span>Bán ${(100-imb).toFixed(0)}%</span></div>${rows(asks,"ask")}<div class="side-summary"><b>${sym}</b><span>WebSocket 100ms</span></div>${rows(bids,"bid")}`}
+function renderTape(){const rows=[...tapeEvents].reverse().filter(x=>x.notional>=tapeMin).slice(0,60);el.sideTape.innerHTML=`<div class="side-summary"><span>Ngưỡng USD</span><input id="tape-min" type="number" min="100000" step="100000" value="${tapeMin}" style="width:94px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px"></div>`+(rows.length?rows.map(x=>`<div class="tape-row ${x.side}"><span>${new Date(x.at).toLocaleTimeString("vi-VN",{hour12:false})}</span><span>${nf(x.price,x.price<1?6:2)}</span><span>$${compact(x.notional)}</span></div>`).join(""):`<div class="side-empty">Chờ giao dịch từ ${compact(tapeMin)} USD…</div>`)}
+function scheduleLevels(){if(levelFrame)return;levelFrame=setTimeout(()=>{levelFrame=0;renderLevels()},700)}
+function classifyLevel(level){const bars=currentBars.slice(-240),spot=bars.at(-1)?.close||level,tol=spot*.0008,counts={break:0,absorb:0,fake:0,respect:0};for(const bar of bars){if(bar.low>level+tol||bar.high<level-tol)continue;const broke=(bar.open<level-tol&&bar.close>level+tol)||(bar.open>level+tol&&bar.close<level-tol);if(broke){counts.break++;continue}const start=bar.time*1000,end=start+(INTERVAL_MINUTES[timeframe]||60)*60000,big=tapeEvents.filter(x=>x.at>=start&&x.at<end&&Math.abs(x.price-level)<=tol).reduce((a,x)=>a+x.notional,0);if(big>=100000){counts.absorb++;continue}const fake=(bar.high>level+tol&&bar.close<level+tol)||(bar.low<level-tol&&bar.close>level-tol);if(fake)counts.fake++;else counts.respect++}const total=Object.values(counts).reduce((a,b)=>a+b,0);return {counts,total,pct:Object.fromEntries(Object.entries(counts).map(([k,v])=>[k,total?v/total*100:0]))}}
+function roundedLevelPct(p){const keys=["break","absorb","fake","respect"],raw=keys.map(k=>p[k]||0),whole=raw.map(Math.floor),missing=100-whole.reduce((a,b)=>a+b,0);raw.map((v,i)=>({i,f:v-whole[i]})).sort((a,b)=>b.f-a.f).slice(0,Math.max(0,missing)).forEach(x=>whole[x.i]++);return Object.fromEntries(keys.map((k,i)=>[k,whole[i]]))}
+function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML='<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
+async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH"].includes(sym))return;try{const r=await fetch(`../../data/gex_${sym.toLowerCase()}.json`,{cache:"no-cache"});if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;gexLevels=Array.isArray(d.levels)?d.levels:[];renderLevels()}catch(e){}}
+function openMicrostructure(sym,token){
+  closeMicrostructure();tapeEvents=[];gexLevels=[];try{tapeMin=Math.max(100000,+(localStorage.getItem(`leon_tapemin_${sym}`)||500000))}catch(e){tapeMin=500000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);
+  const streamSym=sym.toLowerCase()+"usdt";
+  try{tradeWs=new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streamSym}@aggTrade/${streamSym}@depth20@100ms`)}catch(e){return}
+  tradeWs.onmessage=ev=>{if(token!==inflight)return;let x;try{const payload=JSON.parse(ev.data);x=payload.data||payload}catch(e){return}if(Array.isArray(x.bids)&&Array.isArray(x.asks)){renderBookData(x,sym);return}if(x.e!=="aggTrade")return;const price=+x.p,qty=+x.q,notional=price*qty;if(!isFinite(notional)||notional<100000)return;const event={at:+x.T,price,notional,side:x.m?"sell":"buy"};tapeEvents.push(event);if(tapeEvents.length>500)tapeEvents.shift();renderTape();scheduleLevels()};
+}
+
+el.watchAdd.addEventListener("click",()=>{const at=watchlist.indexOf(symbol);if(at>=0)watchlist.splice(at,1);else watchlist.unshift(symbol);saveWatchlist()});
+el.sideToggle.addEventListener("click",()=>{document.body.classList.toggle("side-closed");const open=!document.body.classList.contains("side-closed");el.sideToggle.setAttribute("aria-pressed",String(open));try{localStorage.setItem("leon_chart_side",open?"1":"0")}catch(e){}});
+el.sideWatch.addEventListener("click",e=>{const remove=e.target.closest("[data-remove]");if(remove){watchlist=watchlist.filter(x=>x!==remove.dataset.remove);saveWatchlist();e.stopPropagation();return}if(e.target.closest("[data-watch-new]")){const name=(prompt("Tên watchlist mới:","")||"").trim().slice(0,30);if(name&&!watchLists[name]){activeWatchList=name;watchlist=[];watchLists[name]=watchlist;saveWatchlist()}return}if(e.target.closest("[data-watch-export]")){const blob=new Blob(["symbol\n"+watchlist.join("\n")+"\n"],{type:"text/csv"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`watchlist-${activeWatchList}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);return}if(e.target.closest("[data-watch-import]")){document.getElementById("watch-file")?.click();return}const row=e.target.closest("[data-watch]");if(row)selectSymbol(row.dataset.watch)});
+el.sideWatch.addEventListener("change",async e=>{if(e.target.id==="watch-list-select"){activeWatchList=e.target.value;watchlist=watchLists[activeWatchList]||[];saveWatchlist()}else if(e.target.id==="watch-file"&&e.target.files?.[0]){const text=await e.target.files[0].text();const imported=text.split(/\r?\n/).map(x=>x.split(",")[0].trim().toUpperCase()).filter(x=>/^[A-Z0-9_-]{2,12}$/.test(x)&&x!=="SYMBOL");watchlist=[...new Set([...watchlist,...imported])].slice(0,30);saveWatchlist()}});
+document.querySelector(".side-tabs").addEventListener("click",e=>{const b=e.target.closest("[data-side]");if(b)setSide(b.dataset.side)});
+el.sideTape.addEventListener("change",e=>{if(e.target.id!=="tape-min")return;tapeMin=Math.max(100000,+e.target.value||500000);try{localStorage.setItem(`leon_tapemin_${symbol}`,String(tapeMin))}catch(err){}renderTape()});
+try{setSide(params.get("side")||localStorage.getItem("leon_chart_side_tab")||"watch")}catch(e){setSide("watch")}
+try{if(localStorage.getItem("leon_chart_side")==="0"){document.body.classList.add("side-closed");el.sideToggle.setAttribute("aria-pressed","false")}}catch(e){}
 
 /* ---------- theme-aware chart colors ---------- */
 const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
@@ -1761,7 +1890,7 @@ function applyMA(bars){ applyIndicators(bars); }
    Binance is fetched from the browser on purpose: it geo-blocks US datacenter
    IPs (451), so a server-side fetch from CI would fail while the reader's own
    browser succeeds. Hyperliquid is the fallback and needs no key either. */
-const HL_INTERVAL = {"5m":"5m","15m":"15m","1h":"1h","4h":"4h","1d":"1d"};
+const HL_INTERVAL = Object.fromEntries(TIMEFRAMES.map(tf => [tf, tf]));
 
 // endTime pages backwards: Binance returns the LIMIT bars ending there, which
 // is how scrolling left keeps finding more history instead of running out.
@@ -1779,7 +1908,7 @@ async function fromBinance(sym, tf, endTime){
 
 async function fromHyperliquid(sym, tf, endTime){
   const end = endTime || Date.now();
-  const spanMs = {"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440}[tf] * 60000 * LIMIT;
+  const spanMs = INTERVAL_MINUTES[tf] * 60000 * LIMIT;
   const res = await fetch("https://api.hyperliquid.xyz/info", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
@@ -1864,7 +1993,7 @@ function renderStats(items){
 // Bars per 24 hours, so the headline change means the same thing on every
 // timeframe. Measuring from the first loaded bar instead would quietly report
 // a 20-day move on the 1h chart and a 40-hour move on the 5m one.
-const BARS_PER_DAY = {"5m":288, "15m":96, "1h":24, "4h":6, "1d":1};
+const BARS_PER_DAY = {"1m":1440,"3m":480,"5m":288,"15m":96,"30m":48,"1h":24,"2h":12,"4h":6,"8h":3,"12h":2,"1d":1,"3d":1,"1w":1,"1M":1};
 
 function renderQuote(bars){
   const last = bars[bars.length - 1];
@@ -1875,9 +2004,9 @@ function renderQuote(bars){
 
   const span = BARS_PER_DAY[timeframe] || 24;
   const ref = bars[Math.max(0, bars.length - 1 - span)];
-  const base = timeframe === "1d" ? ref.close : ref.open;
+  const base = timeframe === "1d" ? ref.close : ["3d","1w","1M"].includes(timeframe) ? last.open : ref.open;
   const pct = (last.close - base) / base * 100;
-  const label = timeframe === "1d" ? "1d" : "24h";
+  const label = {"1d":"1d","3d":"3d","1w":"7d","1M":"1 tháng"}[timeframe] || "24h";
 
   el.chg.innerHTML =
     `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}% <span class="dim">${label}</span>`;
@@ -1980,6 +2109,7 @@ function openStream(sym, tf, token){
     renderQuote(currentBars);
     el.upd.textContent = new Date().toLocaleTimeString("vi-VN");
     scheduleDraw();
+    scheduleLevels();
   };
 
   socket.onerror = () => { try{ socket.close(); }catch(e){} };
@@ -2014,6 +2144,7 @@ async function load(){
     }catch(fallback){
       if(token !== inflight) return;
       closeStream();
+      closeMicrostructure();
       el.msg.innerHTML =
         `<strong>Không tải được ${symbol}</strong>` +
         `<small>Cả Binance lẫn Hyperliquid đều không trả dữ liệu cho mã này. ` +
@@ -2041,8 +2172,13 @@ async function load(){
 
   // Live updates ride on top of the history just loaded; Hyperliquid has no
   // equivalent public candle stream, so that path stays on the polling timer.
-  if(source === "Binance") openStream(symbol, timeframe, token);
-  else closeStream();
+  if(source === "Binance"){
+    openStream(symbol, timeframe, token);
+    openMicrostructure(symbol, token);
+  }else{
+    closeStream();
+    closeMicrostructure();
+  }
 
   renderQuote(bars);
   el.src.textContent = source;
@@ -2057,10 +2193,11 @@ async function load(){
   const last = bars[bars.length - 1];
   // On the daily chart a "24h range" would be a single candle, so widen the
   // window to a week and say so rather than showing one bar's own high and low.
-  const isDaily = timeframe === "1d";
-  const window = isDaily ? 7 : (BARS_PER_DAY[timeframe] || 24);
+  const isDaily = timeframe === "1d", isThreeDay=timeframe === "3d",
+    isWeekly=timeframe === "1w", isMonthly=timeframe === "1M";
+  const window = isDaily ? 7 : isThreeDay ? 4 : isWeekly ? 4 : isMonthly ? 12 : (BARS_PER_DAY[timeframe] || 24);
   const day = bars.slice(-window);
-  const rangeLabel = isDaily ? "7 ngày" : "24h";
+  const rangeLabel = isDaily ? "7 ngày" : isThreeDay ? "12 ngày" : isWeekly ? "4 tuần" : isMonthly ? "12 tháng" : "24h";
   renderStats([
     { label:`Cao ${rangeLabel}`, value: nf(Math.max(...day.map(b => b.high)), 2) },
     { label:`Thấp ${rangeLabel}`, value: nf(Math.min(...day.map(b => b.low)), 2) },
@@ -2168,6 +2305,8 @@ let previewPoint = null;
 let dragging = null;
 let brushing = null;      // freehand stroke in progress
 let drawFrame = 0;
+let drawTransformFrame = 0;
+let drawTransformSignature = "";
 // How close, in pixels, a candle price has to be before the magnet takes the
 // click. Roughly a fingertip: near enough that the reader was aiming at it.
 const MAGNET_RADIUS = 12;
@@ -2955,6 +3094,33 @@ function redraw(){
 
 function scheduleDraw(){
   if(!drawFrame) drawFrame = requestAnimationFrame(redraw);
+  if(!drawTransformFrame) drawTransformFrame = requestAnimationFrame(watchDrawingTransform);
+}
+
+/* Lightweight Charts publishes time-range events, but its price-scale API has
+   no equivalent subscription for a manual axis drag. An external canvas would
+   otherwise keep the previous Y transform until some unrelated event happened,
+   making drawings look delayed or detached from candles. Poll only the two
+   visible transforms while a drawing exists and repaint when either changes. */
+function watchDrawingTransform(){
+  drawTransformFrame = 0;
+  if(!drawingsVisible || (!drawings.length && !pendingPoints.length)){
+    drawTransformSignature = "";
+    return;
+  }
+  let priceRange = null, logicalRange = null, paneHeight = 0;
+  try{ priceRange = candles.priceScale().getVisibleRange(); }catch(e){}
+  try{ logicalRange = chart.timeScale().getVisibleLogicalRange(); }catch(e){}
+  try{ paneHeight = chart.panes()[0].getHeight(); }catch(e){}
+  const q = value => Number.isFinite(+value) ? (+value).toPrecision(10) : "";
+  const signature = [
+    priceRange && q(priceRange.from), priceRange && q(priceRange.to),
+    logicalRange && q(logicalRange.from), logicalRange && q(logicalRange.to),
+    paneHeight,
+  ].join("|");
+  if(drawTransformSignature && signature !== drawTransformSignature) scheduleDraw();
+  drawTransformSignature = signature;
+  if(!drawTransformFrame) drawTransformFrame = requestAnimationFrame(watchDrawingTransform);
 }
 
 function segmentDistance(p, a, b){
@@ -3156,7 +3322,7 @@ el.drawing.addEventListener("pointerdown", e => {
     const shape = {type:drawMode, a:here};
     if(drawMode === "text"){
       const note = (prompt("Ghi chú:", "") || "").trim().slice(0, 80);
-      if(!note){ undoStack.pop(); syncDrawControls(); setDrawMode("pan"); return; }
+      if(!note){ undoStack.pop(); syncDrawControls(); scheduleDraw(); return; }
       shape.text = note;
     }
     if(drawMode === "mark"){
@@ -3166,7 +3332,7 @@ el.drawing.addEventListener("pointerdown", e => {
     }
     drawings.push(shape);
     saveDrawings();
-    finishAndSelect();
+    finishAndContinue();
     scheduleDraw();
     return;
   }
@@ -3201,19 +3367,19 @@ el.drawing.addEventListener("pointerdown", e => {
     pendingPoints = [];
     pendingPoint = previewPoint = null;
     saveDrawings();
-    finishAndSelect();
+    finishAndContinue();
   }
   scheduleDraw();
 });
 
-/* A finished shape hands control back rather than arming the tool for another
-   one. The drawing the reader just placed is selected and the mode is select,
-   so it can be nudged, dragged by a handle or deleted straight away -- which
-   is the moment they are most likely to want to adjust it. Drawing several of
-   the same kind means picking the tool again, which is the cheaper mistake. */
-function finishAndSelect(){
-  selectedDrawing = drawings.length - 1;
-  setDrawMode("select");
+/* Keep the active tool armed so several levels/zones can be placed quickly.
+   The explicit Pan button, a second click on the active tool, right-click or
+   Escape all leave placement mode. Selection stays a separate deliberate
+   action, which prevents a completed shape from unexpectedly changing tools. */
+function finishAndContinue(){
+  selectedDrawing = -1;
+  pendingPoint = previewPoint = null;
+  pendingPoints = [];
   syncDrawControls();
 }
 
@@ -3276,7 +3442,7 @@ function finishDrag(e){
     }
     brushing = null;
     saveDrawings();
-    if(kept) finishAndSelect();
+    if(kept) finishAndContinue();
     scheduleDraw();
     return;
   }
@@ -3368,21 +3534,35 @@ const pricePaneElement = chart.panes()[0].getHTMLElement();
 if(pricePaneElement) drawResizeObserver.observe(pricePaneElement);
 
 /* ---------- controls ---------- */
-TIMEFRAMES.forEach(tf => {
+function updateTimeframeControls(){
+  [...el.tfs.querySelectorAll("button")].forEach(c => c.setAttribute("aria-pressed", String(c.dataset.tf === timeframe)));
+  const more = el.tfs.querySelector("select");
+  if(more){ more.value = PRIMARY_TIMEFRAMES.includes(timeframe) ? "" : timeframe; more.classList.toggle("active", !PRIMARY_TIMEFRAMES.includes(timeframe)); }
+}
+function selectTimeframe(tf){
+  if(!TIMEFRAMES.includes(tf) || tf === timeframe) return;
+  timeframe = tf;
+  needsFit = true;
+  updateTimeframeControls();
+  syncUrl();
+  load();
+}
+PRIMARY_TIMEFRAMES.forEach(tf => {
   const b = document.createElement("button");
   b.type = "button";
+  b.dataset.tf = tf;
   b.textContent = tf;
   b.setAttribute("aria-pressed", String(tf === timeframe));
-  b.addEventListener("click", () => {
-    if(tf === timeframe) return;
-    timeframe = tf;
-    needsFit = true;
-    [...el.tfs.children].forEach(c => c.setAttribute("aria-pressed", String(c.textContent === tf)));
-    syncUrl();
-    load();
-  });
+  b.addEventListener("click", () => selectTimeframe(tf));
   el.tfs.appendChild(b);
 });
+const tfMore=document.createElement("select");
+tfMore.className="tf-more";
+tfMore.setAttribute("aria-label","Khung thời gian khác");
+tfMore.innerHTML='<option value="">Khác</option>'+TIMEFRAMES.filter(tf=>!PRIMARY_TIMEFRAMES.includes(tf)).map(tf=>`<option value="${tf}">${tf}</option>`).join("");
+if(!PRIMARY_TIMEFRAMES.includes(timeframe)){tfMore.value=timeframe;tfMore.classList.add("active")}
+tfMore.addEventListener("change",()=>{if(tfMore.value)selectTimeframe(tfMore.value)});
+el.tfs.appendChild(tfMore);
 
 /* ---------- indicator panel ---------- */
 const indEl = {
@@ -3942,11 +4122,16 @@ document.addEventListener("pointerdown", e => {
 });
 window.addEventListener("resize", closeChartMenu);
 
-function syncUrl(){
+function syncUrl(announce=true){
   const p = new URLSearchParams(location.search);
   p.set("sym", symbol);
   p.set("tf", timeframe);
   history.replaceState(null, "", "?" + p.toString());
+  try{
+    localStorage.setItem("leon_chart_symbol",symbol);
+    localStorage.setItem("leon_chart_tf",timeframe);
+  }catch(e){}
+  if(announce)try{contextChannel?.postMessage({symbol,timeframe})}catch(e){}
 }
 
 let symTimer;
@@ -3955,16 +4140,27 @@ el.sym.addEventListener("input", () => {
   symTimer = setTimeout(() => {
     const next = el.sym.value.trim().toUpperCase();
     if(next && next !== symbol){
-      symbol = next;
-      needsFit = true;
-      loadDrawings();
-      loadPriceAlerts();
-      syncUrl();
-      load();
+      selectSymbol(next);
     }
   }, 500);
 });
 el.sym.addEventListener("keydown", e => { if(e.key === "Enter") el.sym.blur(); });
+
+function applySharedContext(data){
+  if(!data||typeof data!=="object")return;
+  const nextTf=TIMEFRAMES.includes(data.timeframe)?data.timeframe:timeframe;
+  const nextSym=String(data.symbol||symbol).toUpperCase();
+  let changed=false;
+  if(nextTf!==timeframe){timeframe=nextTf;updateTimeframeControls();changed=true}
+  if(nextSym&&nextSym!==symbol){symbol=nextSym;el.sym.value=symbol;loadDrawings();loadPriceAlerts();updateWatchButton();changed=true}
+  if(changed){needsFit=true;syncUrl(false);load()}
+}
+if(contextChannel)contextChannel.onmessage=e=>applySharedContext(e.data);
+window.addEventListener("storage",e=>{
+  if(e.key==="leon_chart_symbol"||e.key==="leon_chart_tf"){
+    let shared={symbol,timeframe};try{shared={symbol:localStorage.getItem("leon_chart_symbol"),timeframe:localStorage.getItem("leon_chart_tf")}}catch(err){}applySharedContext(shared)
+  }
+});
 
 // Follow the hub's theme switch without a reload.
 new MutationObserver(() => {
@@ -3990,6 +4186,7 @@ setInterval(() => {
 }, 60000);
 
 loadCoinList();
+loadWatchlist();
 loadDrawings();
 loadPriceAlerts();
 loadIndicators();

@@ -44,6 +44,8 @@ python -m pipeline.sources.ssi_board --with-depth         # depth + foreign room
 python -m pipeline.sources.vn_history                     # daily OHLC backfill
 python -m pipeline.sources.vci_direct                     # ~7 min full market
 python -m pipeline.sources.vci_direct --skip-existing     # resume
+python -m pipeline.sources.vci_company --delay 0.2        # slow monthly dossier/BCTC snapshot
+python -m pipeline.sources.vci_company --scope profile,statements --skip-existing
 python -m pipeline.sources.news_link --qa-sample 20       # deterministic, no AI
 
 # Crypto
@@ -53,6 +55,8 @@ python -m pipeline.sources.deribit_gex --symbol ETH
 
 # Build, then gate
 python -m pipeline.transform.stocks_build
+python -m pipeline.transform.ticker_details_build
+python -m pipeline.sources.vci_company --symbols VIC,VCB,SSI --dry-run
 python -m pipeline.transform.bds_aggregate
 python -m pipeline.transform.flows_build
 python -m pipeline.transform.signals_build
@@ -102,7 +106,7 @@ out of git, commit compact JSON only, never images or candle history.
 
 | File | Read it when |
 |---|---|
-| `docs/source-gotchas.md` | Touching any collector. 25 failure modes that produce plausible wrong numbers rather than errors — geo-blocks, unit conventions, zero-fill, pagination limits, computation traps |
+| `docs/source-gotchas.md` | Touching any collector. Failure modes that produce plausible wrong numbers rather than errors — geo-blocks, unit conventions, zero-fill, pagination limits, computation traps |
 | `docs/teardown-turtletrading.md` | Deciding what to build next, or why something is built this way |
 | `docs/session-log.md` | Picking up unfinished work. Latest entry only |
 

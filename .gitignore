@@ -17,6 +17,7 @@ Thumbs.db
 # Scratch output from local runs
 *.tmp
 .tmp_*
+.tmp-*/
 regions.json
 
 # Pre-build snapshot of each published artifact, kept by emit.write_json()

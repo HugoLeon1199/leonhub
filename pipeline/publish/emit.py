@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,22 @@ DATA_DIR = REPO_ROOT / "data"
 PREV_DIR = DATA_DIR / ".prev"
 
 
+def _json_safe(value: Any) -> Any:
+    """Replace non-finite floats with null before publishing browser JSON.
+
+    Python's JSON encoder accepts NaN by default, but JSON.parse in every
+    browser rejects it. DuckDB can legitimately return float NaN for a missing
+    quote field, so the publication boundary has to normalize it explicitly.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def write_json(
     name: str,
     payload: Any,
@@ -38,10 +55,12 @@ def write_json(
     """Write a compact JSON artifact into data/ and report its size."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = DATA_DIR / name
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     if path.exists():
-        PREV_DIR.mkdir(parents=True, exist_ok=True)
-        (PREV_DIR / name).write_bytes(path.read_bytes())
+        previous = PREV_DIR / name
+        previous.parent.mkdir(parents=True, exist_ok=True)
+        previous.write_bytes(path.read_bytes())
 
     if meta is not None or isinstance(payload, dict):
         body: Any = payload if isinstance(payload, dict) else {"rows": payload}
@@ -51,7 +70,11 @@ def write_json(
     else:
         body = payload
 
-    text = json.dumps(body, ensure_ascii=False, separators=(",", ":"), default=str)
+    body = _json_safe(body)
+    text = json.dumps(
+        body, ensure_ascii=False, separators=(",", ":"), default=str,
+        allow_nan=False,
+    )
     path.write_text(text, encoding="utf-8")
     log.info("wrote %s (%.1f KB)", path.name, len(text.encode()) / 1024)
     return path

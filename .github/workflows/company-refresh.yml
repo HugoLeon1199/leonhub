@@ -1,0 +1,73 @@
+name: VN company dossiers
+
+# Company identity/governance changes slowly and the full direct-Vietcap pass
+# is thousands of requests. Keep it out of the daily close workflow; refresh
+# monthly. The scheduled run intentionally takes a complete fresh snapshot;
+# manual maintenance can add --skip-existing when only durable data is needed.
+on:
+  schedule:
+    - cron: "20 3 2 * *" # 10:20 ICT on the second day of each month
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "profile,governance,statements or a comma-separated subset"
+        default: "profile,governance,statements"
+        type: string
+
+concurrency:
+  group: warehouse-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Restore warehouse
+        uses: actions/cache/restore@v4
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+          restore-keys: warehouse-
+      # Make the workflow self-bootstrapping when the shared cache has expired.
+      # On a warm cache vci_direct is still the current-quarter refresh that the
+      # dossier payload needs for ratio and peer panels.
+      - name: Refresh listing universe
+        run: python -m pipeline.sources.vn_equity --what board
+      - name: Refresh current fundamentals
+        run: python -m pipeline.sources.vci_direct --skip-existing --delay 0.3
+      - name: Collect company dossiers directly from Vietcap
+        run: >-
+          python -m pipeline.sources.vci_company
+          --scope "${{ inputs.scope || 'profile,governance,statements' }}"
+          --delay 0.2
+      - name: Rebuild lazy ticker payloads
+        run: python -m pipeline.transform.ticker_details_build
+      - name: Validate payloads
+        run: python -m pipeline.core.validate ticker/manifest.json
+      - name: Save warehouse
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: warehouse/leonhub.duckdb
+          key: warehouse-${{ github.run_id }}
+      - name: Commit published dossiers
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ticker/
+          if git diff --staged --quiet; then
+            echo "No dossier change."
+          else
+            git commit -m "data: VN company dossiers $(date -u +%Y-%m-%d)"
+            git push
+          fi

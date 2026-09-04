@@ -22,6 +22,14 @@ CI. `core/http.py` enforces this via `BROWSER_ONLY_HOSTS` and refuses when
 400 — reads like a broken endpoint rather than a refused client. `core/http.py`
 sets a UA without that token.
 
+**The Vietcap company dossier is a family of endpoints, not one response.**
+`sources/vci_company.py` joins details, shareholder, relationship, events,
+statement metrics and all three statement sections. The public responses expose
+processed data, but not Turtle's private exporter, valuation model or licence;
+store Vietcap as the source and never describe this collector as copied Turtle
+backend code. A market-wide pass is thousands of requests, so it belongs in the
+monthly single-writer workflow rather than the daily quote refresh.
+
 **Vietcap's chart endpoint stops answering after a sustained backfill.** Not a
 429 or 403: silence, while their fundamentals endpoint on another host keeps
 serving. Price history comes from VPS instead (`histdatafeed.vps.com.vn`,
@@ -73,6 +81,19 @@ bank-only ratios are 0.0 for every non-financial. Published raw these state
 "this bank earns no return on capital" and "Vinamilk pays no dividend".
 `stocks_build.py` drops them; dividend yield falls back to the last quarter that
 reported one.
+
+**VCI statement field IDs only have meaning with their metrics metadata.**
+Persist `field`, bilingual label, hierarchy level, section, period type and
+public date together. Do not map rows by display position: bank, securities,
+insurance and ordinary-company forms have different applicable lines, while
+the API can fill irrelevant form cells with zero.
+
+**VCI's bank CIR carries the accounting sign of operating costs.** The source
+ratio is negative even though cost/income is conventionally displayed as a
+positive percentage. `ticker_details_build.py` takes its absolute value and
+drops a whole annual/quarterly cadence when every observation is a source
+placeholder zero; it does not erase isolated zero observations in a populated
+series.
 
 **Margins are ratios to revenue**, so a company with almost none produces valid
 nonsense (PTC: 75,592% net margin). `SANE_RANGE` suppresses rather than clamps —

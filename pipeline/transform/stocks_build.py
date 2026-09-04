@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from typing import Any
 
 from pipeline.core import warehouse as wh
@@ -124,6 +125,12 @@ SELECT
         FILTER (WHERE price IS NOT NULL AND price > 0)           AS price,
     arg_max(ref_price, row(as_of, fetched_at))
         FILTER (WHERE ref_price IS NOT NULL)                     AS ref_price,
+    arg_max(open_price, row(as_of, fetched_at))
+        FILTER (WHERE open_price IS NOT NULL AND open_price > 0) AS open_price,
+    arg_max(high, row(as_of, fetched_at))
+        FILTER (WHERE high IS NOT NULL AND high > 0)             AS high,
+    arg_max(low, row(as_of, fetched_at))
+        FILTER (WHERE low IS NOT NULL AND low > 0)               AS low,
     arg_max(volume, row(as_of, fetched_at))
         FILTER (WHERE volume IS NOT NULL)                        AS volume,
     arg_max(value, row(as_of, fetched_at))
@@ -429,12 +436,17 @@ def build(dry_run: bool = False) -> dict[str, Any]:
                 row["pd"] = str(price_date)
         if quote.get("volume"):
             row["v"] = int(quote["volume"])
+        for source, key in (("open_price", "o"), ("high", "h"), ("low", "l")):
+            if quote.get(source):
+                row[key] = round(quote[source], 1)
         for key, value in (depth.get(symbol) or {}).items():
             row[key] = int(value) if key.endswith("v") else round(value, 1)
         share_count = shares.get(symbol)
         if price and share_count:
             # Market cap in billion VND, matching the fundamental panel's unit.
             row["mc"] = round(price * share_count / 1e9, 1)
+        if share_count:
+            row["sh"] = int(share_count)
 
         # Room as a share of the float, not the raw count: "362 million shares"
         # means nothing without knowing the company's size, while "24% of the
@@ -460,6 +472,9 @@ def build(dry_run: bool = False) -> dict[str, Any]:
                 # low. More useful than the two prices, which need mental
                 # arithmetic before they say anything.
                 row["pos52"] = round((last - low) / (high - low) * 100)
+                row["h52"] = round(high, 1)
+                row["l52"] = round(low, 1)
+            row["days"] = int(hist.get("days") or 0)
 
             # Today's move in standard deviations of this ticker's own daily
             # returns. A 3% day is noise for a small cap and an event for VCB;
@@ -540,6 +555,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build stocks.json from the warehouse")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print(json.dumps(build(args.dry_run), ensure_ascii=False, indent=2, default=str))
 
