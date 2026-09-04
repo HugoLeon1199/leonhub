@@ -108,7 +108,10 @@ const TABS = [
   { key:"signals", name:"Tín hiệu",  icon:"◭", src:"../apps/signals/" },
   { key:"gex",     name:"Gamma",     icon:"◎", src:"../apps/gex/" },
   { key:"flows",   name:"Dòng tiền", icon:"⇄", src:"../apps/flows/" },
-  { key:"news",    name:"Tin tức",   icon:"❏", src:"https://leonquant.com/" },
+  // Served from here rather than framed from leonquant.com, so it inherits the
+  // hub's theme and survives that domain being unreachable. Its feeds are still
+  // fetched from there -- see the note in apps/news/index.html.
+  { key:"news",    name:"Tin tức",   icon:"❏", src:"../apps/news/" },
   // Child route: reachable from the screener/deep links, intentionally absent
   // from the primary tab bar so 1,751 ticker pages do not become a ninth silo.
   { key:"ticker",  name:"Chi tiết mã", icon:"", src:"../apps/ticker/", hidden:true },
