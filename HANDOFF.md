@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-04 by Codex. Read `CLAUDE.md` and
+Updated 2026-09-05 by Codex. Read `CLAUDE.md` and
 `docs/source-gotchas.md` before touching collectors. The Claude plan is:
 
 `C:\Users\LEON_RM\.claude\plans\nh-gi-ho-n-calm-newell.md`
@@ -13,6 +13,28 @@ Updated 2026-09-04 by Codex. Read `CLAUDE.md` and
 - Ticker dossier: `http://127.0.0.1:8811/apps/ticker/?s=VIC`.
 - Do not reset the worktree. Use `git log -1` for the latest local commit; this
   handoff deliberately does not self-reference a commit hash.
+
+## 2026-09-05 map repair and interrupted-work check
+
+- `apps/bds/index.html` now renders the 63 legacy source geometries as exactly
+  34 interactive post-merger provinces. Non-canonical Highcharts labels
+  (`Southeast`, `Haiphong`, `Ho Chi Minh city`) are normalized, and shared
+  legacy edges inside a merged province are removed from its visible outline.
+- The map is top-aligned in its grid cell. A long province narrative no longer
+  vertically centers the fixed-height SVG and pushes the country silhouette
+  below the fold. Each province group also has keyboard activation and an
+  accessible value label.
+- Fresh Chrome QA at 1900x1000 reviewed the real hub route `?tab=bds`. Runtime
+  inspection found 34 unique groups, zero unmapped legacy labels, 34 fill paths
+  and 34 outline paths; Hồ Chí Minh was the selected merged group.
+- The pre-existing uncommitted `hub/index.html` + `sw.js` change is Claude's
+  cache-staleness repair, not part of the map patch. It was inspected and left
+  intact. A clean Chrome profile registered `/sw.js` at root scope, activated
+  `leon-v5`, controlled the page and created only the `leon-v5` cache.
+- Verification: all 35 inline app scripts parse, all published-data validators
+  pass (expected `npm`/`ebitm` tail warnings only), and `git diff --check`
+  passes. Uncommitted files are `apps/bds/index.html`, `hub/index.html`,
+  `sw.js`, and this handoff.
 
 ## Completed in this round
 

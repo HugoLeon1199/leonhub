@@ -282,6 +282,22 @@ document.getElementById("home").addEventListener("click", () => {
 if("serviceWorker" in navigator && location.protocol !== "file:"){
   const root = new URL("../", location.href);
   navigator.serviceWorker.register(new URL("sw.js", root), {scope: root.pathname})
+    .then(reg => {
+      // Ask for a fresh worker on every load. The browser only re-checks
+      // sw.js on its own schedule, and the file is served with a ten-minute
+      // max-age, so a reader can otherwise sit on a superseded worker long
+      // after a deploy -- which is how eleven app updates went unseen.
+      reg.update();
+      // A worker that takes over mid-session leaves the page it replaced
+      // showing the old markup. Reload once, guarded so a controller change
+      // cannot loop.
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if(reloaded) return;
+        reloaded = true;
+        location.reload();
+      });
+    })
     .catch(() => {});
 }
 </script>
