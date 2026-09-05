@@ -265,6 +265,7 @@ footer b{color:var(--text); font-weight:600}
   <datalist id="coins"></datalist>
   <button id="watch-add" class="bar-action" type="button" aria-pressed="false" title="Thêm/bỏ mã khỏi watchlist">☆</button>
   <button id="side-toggle" class="bar-action" type="button" aria-pressed="true" title="Ẩn/hiện bảng thị trường">Bảng</button>
+  <button id="gex-toggle" class="bar-action" type="button" aria-pressed="true" title="Vẽ tường gamma, flip, max pain và biên 1σ lên chart (chỉ BTC/ETH)">GEX</button>
   <div class="group" id="tfs" role="group" aria-label="Khung thời gian"></div>
   <div class="group" role="group" aria-label="Chỉ báo">
     <button id="ind-open" type="button" title="Thêm hoặc bỏ chỉ báo">Chỉ báo <span id="ind-count">0</span></button>
@@ -377,6 +378,7 @@ const el = {
   sideBook: document.getElementById("side-book"),
   sideTape: document.getElementById("side-tape"),
   sideNet: document.getElementById("side-net"),
+  gexToggle: document.getElementById("gex-toggle"),
   sideLevels: document.getElementById("side-levels"),
   coins: document.getElementById("coins"),
   tfs: document.getElementById("tfs"),
@@ -483,6 +485,11 @@ let netDollar=new Map();
 let netBucket=0;
 let netFrame=0;
 let gexLevels=[];
+/* The whole GEX artifact, not just its level list: the flip, max pain and
+   expected-move band are drawn on the chart too, and they live at the top of
+   the payload rather than inside `levels`. */
+let gexMeta=null;
+let gexOverlay=true;
 let levelFrame=0;
 
 function loadWatchlist(){
@@ -597,15 +604,23 @@ function scheduleLevels(){if(levelFrame)return;levelFrame=setTimeout(()=>{levelF
 function classifyLevel(level){const bars=currentBars.slice(-240),spot=bars.at(-1)?.close||level,tol=spot*.0008,counts={break:0,absorb:0,fake:0,respect:0};for(const bar of bars){if(bar.low>level+tol||bar.high<level-tol)continue;const broke=(bar.open<level-tol&&bar.close>level+tol)||(bar.open>level+tol&&bar.close<level-tol);if(broke){counts.break++;continue}const start=bar.time*1000,end=start+(INTERVAL_MINUTES[timeframe]||60)*60000,big=tapeEvents.filter(x=>x.at>=start&&x.at<end&&Math.abs(x.price-level)<=tol).reduce((a,x)=>a+x.notional,0);if(big>=100000){counts.absorb++;continue}const fake=(bar.high>level+tol&&bar.close<level+tol)||(bar.low<level-tol&&bar.close>level-tol);if(fake)counts.fake++;else counts.respect++}const total=Object.values(counts).reduce((a,b)=>a+b,0);return {counts,total,pct:Object.fromEntries(Object.entries(counts).map(([k,v])=>[k,total?v/total*100:0]))}}
 function roundedLevelPct(p){const keys=["break","absorb","fake","respect"],raw=keys.map(k=>p[k]||0),whole=raw.map(Math.floor),missing=100-whole.reduce((a,b)=>a+b,0);raw.map((v,i)=>({i,f:v-whole[i]})).sort((a,b)=>b.f-a.f).slice(0,Math.max(0,missing)).forEach(x=>whole[x.i]++);return Object.fromEntries(keys.map((k,i)=>[k,whole[i]]))}
 function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML='<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm${x.touch_24h!=null?` · chạm 24h ${Math.round(x.touch_24h*100)}%`:""}</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
-async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH"].includes(sym))return;try{const r=await fetch(`../../data/gex_${sym.toLowerCase()}.json`,{cache:"no-cache"});if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;gexLevels=Array.isArray(d.levels)?d.levels:[];renderLevels()}catch(e){}}
+async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH"].includes(sym))return;try{const r=await fetch(`../../data/gex_${sym.toLowerCase()}.json`,{cache:"no-cache"});if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;gexLevels=Array.isArray(d.levels)?d.levels:[];gexMeta=d;renderLevels();scheduleDraw()}catch(e){}}
 function openMicrostructure(sym,token){
-  closeMicrostructure();tapeEvents=[];gexLevels=[];netDollar=new Map();netBucket=0;try{tapeMin=Math.max(100000,+(localStorage.getItem(`leon_tapemin_${sym}`)||500000))}catch(e){tapeMin=500000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);
+  closeMicrostructure();tapeEvents=[];gexLevels=[];gexMeta=null;netDollar=new Map();netBucket=0;try{tapeMin=Math.max(100000,+(localStorage.getItem(`leon_tapemin_${sym}`)||500000))}catch(e){tapeMin=500000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);
   const streamSym=sym.toLowerCase()+"usdt";
   try{tradeWs=new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streamSym}@aggTrade/${streamSym}@depth20@100ms`)}catch(e){return}
   tradeWs.onmessage=ev=>{if(token!==inflight)return;let x;try{const payload=JSON.parse(ev.data);x=payload.data||payload}catch(e){return}if(Array.isArray(x.bids)&&Array.isArray(x.asks)){renderBookData(x,sym);return}if(x.e!=="aggTrade")return;const price=+x.p,qty=+x.q,notional=price*qty;if(!isFinite(notional)||notional<=0)return;addNetDollar(price,notional,x.m?"sell":"buy");if(notional<100000)return;const event={at:+x.T,price,notional,side:x.m?"sell":"buy"};tapeEvents.push(event);if(tapeEvents.length>500)tapeEvents.shift();renderTape();scheduleLevels()};
 }
 
 el.watchAdd.addEventListener("click",()=>{const at=watchlist.indexOf(symbol);if(at>=0)watchlist.splice(at,1);else watchlist.unshift(symbol);saveWatchlist()});
+try{gexOverlay=(localStorage.getItem("leon_gex_overlay")||"1")==="1"}catch(e){}
+el.gexToggle.setAttribute("aria-pressed",String(gexOverlay));
+el.gexToggle.addEventListener("click",()=>{
+  gexOverlay=!gexOverlay;
+  el.gexToggle.setAttribute("aria-pressed",String(gexOverlay));
+  try{localStorage.setItem("leon_gex_overlay",gexOverlay?"1":"0")}catch(e){}
+  scheduleDraw();
+});
 el.sideToggle.addEventListener("click",()=>{document.body.classList.toggle("side-closed");const open=!document.body.classList.contains("side-closed");el.sideToggle.setAttribute("aria-pressed",String(open));try{localStorage.setItem("leon_chart_side",open?"1":"0")}catch(e){}});
 el.sideWatch.addEventListener("click",e=>{const remove=e.target.closest("[data-remove]");if(remove){watchlist=watchlist.filter(x=>x!==remove.dataset.remove);saveWatchlist();e.stopPropagation();return}if(e.target.closest("[data-watch-new]")){const name=(prompt("Tên watchlist mới:","")||"").trim().slice(0,30);if(name&&!watchLists[name]){activeWatchList=name;watchlist=[];watchLists[name]=watchlist;saveWatchlist()}return}if(e.target.closest("[data-watch-export]")){const blob=new Blob(["symbol\n"+watchlist.join("\n")+"\n"],{type:"text/csv"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`watchlist-${activeWatchList}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);return}if(e.target.closest("[data-watch-import]")){document.getElementById("watch-file")?.click();return}const row=e.target.closest("[data-watch]");if(row)selectSymbol(row.dataset.watch)});
 el.sideWatch.addEventListener("change",async e=>{if(e.target.id==="watch-list-select"){activeWatchList=e.target.value;watchlist=watchLists[activeWatchList]||[];saveWatchlist()}else if(e.target.id==="watch-file"&&e.target.files?.[0]){const text=await e.target.files[0].text();const imported=text.split(/\r?\n/).map(x=>x.split(",")[0].trim().toUpperCase()).filter(x=>/^[A-Z0-9_-]{2,12}$/.test(x)&&x!=="SYMBOL");watchlist=[...new Set([...watchlist,...imported])].slice(0,30);saveWatchlist()}});
@@ -3184,6 +3199,90 @@ function syncDrawingPaneHeight(){
     el.drawing.style.height = `${height}px`;
 }
 
+/* Option positioning drawn onto the price pane.
+   These are horizontal price levels, so they are painted straight onto the
+   existing drawing canvas rather than added as chart series: the canvas is
+   already redrawn on every transform change, which is what keeps a level glued
+   to its price while the axis is dragged. Anything price-anchored gets that
+   behaviour for free by living here.
+   Drawn beneath user shapes, because a wall is context and a trendline someone
+   placed by hand is intent. */
+function paintGexLevels(ctx, w, h){
+  if(!gexOverlay || !gexMeta || !gexLevels.length) return;
+  const priceToY = price => {
+    try{ const y = candles.priceToCoordinate(price); return Number.isFinite(y) ? y : null; }
+    catch(e){ return null; }
+  };
+  const label = (text, y, colour, align) => {
+    ctx.font = "10px -apple-system,Segoe UI,Roboto,sans-serif";
+    const pad = 3, tw = ctx.measureText(text).width;
+    const x = align === "left" ? 4 : w - tw - pad * 2 - 4;
+    ctx.fillStyle = "rgba(13,17,23,.78)";
+    ctx.fillRect(x, y - 7, tw + pad * 2, 13);
+    ctx.fillStyle = colour;
+    ctx.fillText(text, x + pad, y + 3);
+  };
+
+  ctx.save();
+  ctx.lineWidth = 1;
+
+  // Expected-move band first, as a filled region: it is an area the price is
+  // likely to stay inside, not a line it might touch, and drawing it as a band
+  // stops it competing with the walls for attention.
+  if(gexMeta.em_up1 != null && gexMeta.em_dn1 != null){
+    const yTop = priceToY(gexMeta.em_up1), yBot = priceToY(gexMeta.em_dn1);
+    if(yTop != null && yBot != null){
+      ctx.fillStyle = "rgba(139,152,168,.07)";
+      ctx.fillRect(0, Math.min(yTop, yBot), w, Math.abs(yBot - yTop));
+      ctx.strokeStyle = "rgba(139,152,168,.30)";
+      ctx.setLineDash([2, 4]);
+      [yTop, yBot].forEach(y => { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); });
+      ctx.setLineDash([]);
+      label("1σ " + nf(gexMeta.em_up1, gexMeta.em_up1 < 10 ? 3 : 0), yTop, "#8b98a8", "left");
+    }
+  }
+
+  // Gamma walls. Opacity carries weight so the eye ranks them without reading
+  // a number, and the strongest strike is never the same width as a marginal
+  // one just because both cleared the top-12 cut.
+  const peak = Math.max(...gexLevels.map(l => Math.abs(l.gex || 0)), 1);
+  for(const level of gexLevels){
+    const y = priceToY(+level.strike);
+    if(y == null || y < 0 || y > h) continue;
+    const weight = Math.abs(level.gex || 0) / peak;
+    const call = (level.gex || 0) >= 0;
+    ctx.strokeStyle = call
+      ? `rgba(56,211,159,${0.22 + weight * 0.55})`
+      : `rgba(240,101,90,${0.22 + weight * 0.55})`;
+    ctx.lineWidth = 1 + weight * 1.6;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    if(weight > 0.18){
+      const touch = level.touch_24h != null ? ` ${Math.round(level.touch_24h * 100)}%` : "";
+      label(`${call ? "C" : "P"} ${compact(Math.abs(level.gex))}${touch}`,
+            y, call ? "#38d39f" : "#f0655a", "right");
+    }
+  }
+
+  // Flip and max pain are single, named prices rather than a family, so they
+  // get a distinct dash and always carry their label.
+  const marks = [
+    {v: gexMeta.gamma_flip, colour: "#e0a83c", text: "Flip"},
+    {v: gexMeta.max_pain, colour: "#a78bfa", text: "Max pain"},
+  ];
+  ctx.lineWidth = 1.4;
+  for(const mark of marks){
+    if(mark.v == null) continue;
+    const y = priceToY(mark.v);
+    if(y == null || y < 0 || y > h) continue;
+    ctx.strokeStyle = mark.colour;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.setLineDash([]);
+    label(`${mark.text} ${nf(mark.v, mark.v < 10 ? 3 : 0)}`, y, mark.colour, "left");
+  }
+  ctx.restore();
+}
+
 function redraw(){
   drawFrame = 0;
   if(!drawingsVisible) return;
@@ -3198,6 +3297,7 @@ function redraw(){
   }
   drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawCtx.clearRect(0, 0, rect.width, rect.height);
+  paintGexLevels(drawCtx, rect.width, rect.height);
   drawings.forEach((d, i) => paintDrawing(d, i, drawCtx, rect.width, rect.height));
   // Preview the shape mid-placement. Index -2 never matches selectedDrawing,
   // so it draws in the unselected style without claiming to be a real shape.
