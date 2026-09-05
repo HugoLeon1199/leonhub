@@ -4,7 +4,51 @@
 "use strict";const ARTICLES=[
 {id:"price-action",cat:"Chart",t:"Price action và cấu trúc xu hướng",s:"Đọc đỉnh đáy trước khi thêm chỉ báo.",body:`<p class="lead">Xu hướng tăng là chuỗi đỉnh cao hơn và đáy cao hơn; xu hướng giảm thì ngược lại. Chỉ báo chỉ nên xác nhận điều giá đã thể hiện.</p><h2>Quy trình ngắn</h2><ol><li>Xác định cấu trúc trên khung lớn.</li><li>Đánh dấu vùng cung/cầu, không coi một pixel là mức tuyệt đối.</li><li>Xuống khung vào lệnh và xác định điểm vô hiệu trước khi tính lợi nhuận.</li></ol><div class="box">Một setup không có điểm vô hiệu thì chưa phải kế hoạch giao dịch.</div>`},
 {id:"rsi",cat:"Chỉ báo",t:"RSI: động lượng, không phải nút mua bán",s:"Vì sao RSI >70 chưa đồng nghĩa phải short.",body:`<p class="lead">RSI đo tỷ lệ mức tăng và giảm trong một cửa sổ. Trong xu hướng mạnh, nó có thể ở vùng cao/thấp rất lâu.</p><h2>Cách dùng</h2><p>Quan sát regime, failure swing và phân kỳ cùng cấu trúc giá. Luôn ghi rõ chu kỳ (thường 14) và timeframe; RSI 14 ngày khác hoàn toàn RSI 14 phút.</p>`},
-{id:"gex",cat:"Phái sinh",t:"Gamma Exposure (GEX)",s:"Tường gamma, gamma flip và giới hạn của dữ liệu option.",body:`<p class="lead">GEX ước lượng độ nhạy hedge của dealer khi giá cơ sở thay đổi. Vùng gamma lớn có thể hút hoặc đẩy giá tùy dấu vị thế.</p><h2>Gamma flip</h2><p>Phải định giá lại toàn bộ book ở từng mức spot rồi tìm điểm tổng gamma đổi dấu. Cộng dồn strike không trả lời cùng câu hỏi.</p><div class="box">GEX là mô hình từ open interest và giả định dealer positioning; không phải lệnh mua/bán quan sát trực tiếp.</div>`},
+{id:"gex",cat:"Phái sinh",t:"Gamma Exposure (GEX) — vì sao dealer buộc phải hedge",s:"Gốc rễ của mọi con số trên tab Market Structure.",body:`<p class="lead">Khi bạn mua quyền chọn, có người bán cho bạn — thường là market maker. Họ không cược hướng giá, họ kiếm phí. Nên sau khi bán, họ <b>buộc phải</b> hedge để trung hòa rủi ro. Chữ "buộc phải" là toàn bộ giá trị của GEX: đây không phải dự đoán ai nghĩ gì, mà là ràng buộc cơ học — không hedge thì cháy tài khoản.</p>
+<h2>Gamma là gì</h2><p><b>Delta</b> đo quyền chọn nhạy bao nhiêu với giá cơ sở. <b>Gamma</b> đo delta đó thay đổi nhanh cỡ nào. Nếu delta là vận tốc thì gamma là gia tốc. Gamma càng lớn, dealer càng phải hedge nhiều mỗi khi giá nhúc nhích.</p>
+<h2>Dấu quyết định tất cả</h2>
+<table><thead><tr><th>Trạng thái</th><th>Dealer làm gì</th><th>Hệ quả</th></tr></thead><tbody>
+<tr><td><b>Gamma dương</b><br><small>net GEX &gt; 0</small></td><td>Giá tăng thì <b>bán</b><br>Giá giảm thì <b>mua</b></td><td>Nén biến động. Giá bị ghìm trong biên, hợp đánh đảo chiều quanh tường.</td></tr>
+<tr><td><b>Gamma âm</b><br><small>net GEX &lt; 0</small></td><td>Giá tăng thì <b>mua thêm</b><br>Giá giảm thì <b>bán thêm</b></td><td>Khuếch đại. Giá chạy xa, phá cản dễ thật — hạn chế bắt đỉnh đáy sớm.</td></tr>
+</tbody></table>
+<p>Đọc <code>net_gex</code> như sau: giá nhích 1%, dealer phải mua hoặc bán chừng đó tiền để hedge.</p>
+<h2>Ba mốc giá</h2>
+<p><b>Gamma Flip</b> — mức giá mà tổng gamma đổi dấu. Trên flip là vùng ổn định; thủng xuống dưới, thị trường chuyển sang chế độ khuếch đại và biến động tăng vọt.</p>
+<p><b>Max Pain</b> — mức giá khiến tổng tiền người mua quyền chọn mất nhiều nhất khi đáo hạn. Có xu hướng hút giá về gần ngày đáo hạn. Đây là chỉ báo <b>yếu nhất</b> nhóm này: nó mô tả cấu trúc vị thế, không có cơ chế cưỡng bức nào thực sự kéo giá về đó.</p>
+<p><b>Pin Risk</b> — tỉ trọng gamma tập trung vào một strike duy nhất. Cao (trên 40%) cộng gamma dương là cấu hình ghim giá chặt nhất.</p>
+<div class="box">GEX dựng từ open interest cộng giả định dealer bán ròng quyền chọn. Đó là <b>mô hình</b>, không phải lệnh quan sát trực tiếp. Khi giả định sai — ví dụ tổ chức lớn mua ròng gamma — dấu có thể ngược.</div>`},
+{id:"greeks",cat:"Phái sinh",t:"Vanna và Charm — hai chữ Hy Lạp bậc hai",s:"Vì sao hedge thay đổi cả khi giá đứng yên.",body:`<p class="lead">Gamma nói dealer phải hedge bao nhiêu khi <i>giá</i> đổi. Nhưng lượng hedge còn đổi theo hai thứ khác: biến động và thời gian. Đó là vanna và charm.</p>
+<h2>Vanna</h2><p>Gamma thay đổi khi <b>biến động ngụ ý</b> thay đổi. IV tăng thì lượng hedge cần thiết đổi theo, dù giá chưa đi đâu cả. Vanna lớn nghĩa là vị thế rất nhạy với cú sốc biến động — tin bất ngờ có thể tạo dòng hedge lớn mà không cần giá chạy trước.</p>
+<h2>Charm</h2><p>Delta trôi theo <b>thời gian</b>, còn gọi delta decay. Chỉ cần thời gian trôi qua, không cần giá đổi, dealer vẫn phải điều chỉnh hedge. Đây là gốc rễ của hiệu ứng ngày đáo hạn — dòng hedge dồn vào phiên cuối vì charm buộc phải cân lại.</p>
+<div class="box">Hai số này không dùng để vào lệnh. Chúng giải thích <i>vì sao</i> dòng hedge xuất hiện ở thời điểm tưởng như không có lý do.</div>`},
+{id:"expected-move",cat:"Phái sinh",t:"IV, Expected Move và xác suất chạm",s:"Biến động ngụ ý dịch thành biên giá thế nào.",body:`<p class="lead">ATM IV (<i>at-the-money implied volatility</i>) là biến động mà thị trường <b>đang định giá</b>, suy ngược từ giá quyền chọn. Chữ ngụ ý rất quan trọng: đây là kỳ vọng, không phải biến động đã xảy ra.</p>
+<h2>Từ IV ra biên giá</h2><p>Công thức: <code>biên = giá × IV × căn(thời gian tính theo năm)</code>. Kết quả gọi là <b>expected move</b>. Một độ lệch chuẩn bao khoảng 68% khả năng; hai độ lệch chuẩn khoảng 95%.</p>
+<p>LEON công bố <b>hai cửa sổ</b>: theo đáo hạn gần nhất, và cố định 24 giờ. Lý do: sát ngày đáo hạn, cửa sổ có thể co còn vài giờ — lúc đó mọi strike xa đều hiện 0% và cột mất khả năng phân biệt. Cửa sổ 24h giữ cho phép so sánh vẫn có nghĩa.</p>
+<h2>Chạm khác với đóng cửa vượt qua</h2><p>Xác suất <b>chạm</b> một mức lớn gấp đôi xác suất <b>đóng cửa bên kia</b> mức đó. Lý do là nguyên lý phản xạ: mọi đường giá kết thúc bên kia đều đã phải chạm qua, và mỗi đường như vậy ghép cặp với một đường đã chạm rồi quay lại.</p>
+<div class="box">Một bức tường không ai chạm tới thì không phải tường. Cột Chạm 24h tồn tại để lọc chính điều đó — strike xa có thể mang gamma rất lớn mà xác suất chạm hôm nay bằng không.</div>`},
+{id:"orderflow",cat:"Phái sinh",t:"Dòng lệnh: taker, CVD, footprint, hấp thụ",s:"Ai chủ động, và tiền thật đi đâu.",body:`<p class="lead">GEX nói giá <i>có thể</i> ở đâu. Dòng lệnh nói điều đó <i>có thật không</i>. Hai lớp trả lời hai câu hỏi khác nhau và chỉ đáng tin khi đồng ý với nhau.</p>
+<h2>Taker và maker</h2><p><b>Taker</b> là bên chủ động khớp vào giá thị trường. <b>Maker</b> là bên đặt lệnh chờ. Big Tape chỉ đếm taker, vì đó mới là bên chịu trả giá để được khớp ngay — tín hiệu ý chí rõ hơn nhiều so với lệnh chờ có thể hủy bất cứ lúc nào.</p>
+<h2>CVD — Cumulative Volume Delta</h2><p>Cộng dồn khối lượng mua chủ động trừ bán chủ động. Đường đi lên nghĩa là phe mua áp đảo. Giá trị lớn nhất nằm ở <b>phân kỳ</b>: giá tạo đỉnh mới nhưng CVD không theo, nghĩa là đợt tăng thiếu lệnh mua chủ động đứng sau.</p>
+<h2>Footprint và POC</h2><p>Footprint là số mua và bán tại <b>từng mức giá trong từng nến</b>. <b>POC</b> (<i>point of control</i>) là mức khớp nhiều nhất. <b>LVN</b> (<i>low volume node</i>) là vùng ít giao dịch — giá thường phi nhanh qua vì không ai cản, rồi hay quay lại lấp.</p>
+<h2>Hấp thụ</h2><p>Lệnh lớn đập vào nhưng giá <b>không nhúc nhích</b> — có người âm thầm nuốt hết. Đây là dấu hiệu tường mạnh thật, và nó chỉ đo được khi có dữ liệu lệnh lớn thật, không suy ra được từ hình nến.</p>
+<div class="box">Net Dollar của LEON gom <b>mọi</b> lệnh khớp theo mức giá, không chỉ lệnh lớn. Một bức tường do cả đám đông xây, không phải do vài lệnh đủ to để đáng liệt kê.</div>`},
+{id:"liquidation",cat:"Phái sinh",t:"Ba lớp thanh lý — đừng đọc như nhau",s:"Ước lượng, sắp xảy ra, và đã xảy ra.",body:`<p class="lead">Thanh lý là khi sàn đóng cưỡng bức vị thế đòn bẩy vì ký quỹ không đủ. Nó tạo lệnh thị trường bắt buộc, nên hay thành nam châm kéo giá tới. Nhưng có ba nguồn với độ tin cậy rất khác nhau.</p>
+<table><thead><tr><th>Lớp</th><th>Bản chất</th><th>Tin được?</th></tr></thead><tbody>
+<tr><td><b>Liq Zones</b></td><td>Ước lượng từ open interest và đòn bẩy giả định</td><td>Yếu — là suy đoán, không phải vị thế thật</td></tr>
+<tr><td><b>HL Liq</b></td><td>Vị thế thật on-chain của Hyperliquid, có giá thanh lý thật</td><td>Mạnh — dữ liệu thật, sắp xảy ra</td></tr>
+<tr><td><b>Liq đã xảy ra</b></td><td>Sự kiện thanh lý trong quá khứ</td><td>Thật, nhưng đã rồi</td></tr>
+</tbody></table>
+<div class="box">Gộp ba lớp này thành một con số là sai lầm phổ biến nhất. Một vùng ước lượng và một vùng vị thế thật đang mở khác nhau về chất, không phải về độ chính xác.</div>`},
+{id:"context-not-signal",cat:"Phương pháp",t:"Bối cảnh không phải tín hiệu — số liệu chứng minh",s:"Lớp xác nhận lọc lệnh tồi, không sinh lợi nhuận.",body:`<p class="lead">Câu hỏi đáng tiền nhất về Market Structure: nó có dùng để mua bán được không? Câu trả lời trung thực là <b>không trực tiếp</b> — và LEON có số đo cho điều đó, không phải ý kiến.</p>
+<h2>Quy tắc vàng</h2><p>GEX cho biết giá <b>có thể</b> ở đâu. Dòng tiền thật xác nhận điều đó <b>có thật không</b>. Cả hai đồng ý thì độ tin cậy cao. Nhưng GEX không nói tường sẽ giữ hay vỡ — thống kê Level Behavior thường cho thấy tỉ lệ phá tường quanh một phần ba.</p>
+<h2>Bằng chứng từ chính hệ thống này</h2><p>Trang Tín hiệu chạy cùng một quy tắc với số lớp xác nhận dòng tiền khác nhau, trên cùng dữ liệu point-in-time:</p>
+<table><thead><tr><th>Số lớp xác nhận</th><th>Số lệnh</th><th>Tổng R</th></tr></thead><tbody>
+<tr><td>0 — chỉ SMA cắt</td><td>220</td><td><b>−79,9</b></td></tr>
+<tr><td>2</td><td>104</td><td>−24,9</td></tr>
+<tr><td>3</td><td>87</td><td><b>−4,5</b></td></tr>
+</tbody></table>
+<p>Thêm lớp xác nhận cải thiện <b>đều trên mọi cột</b> — nhưng kết quả vẫn âm, trong một thị trường giảm 10,3% cùng kỳ.</p>
+<div class="box">Kết luận đọc được từ bảng trên: lớp bối cảnh <b>lọc bớt lệnh tồi</b>, chứ không tự sinh ra lợi nhuận. Bất kỳ ai nói ngược lại đều đang bán kỳ vọng, không phải kết quả đo được.</div>`},
 {id:"funding",cat:"Phái sinh",t:"Funding và vị thế crowded",s:"Ai trả phí cho ai trên perpetual futures.",body:`<p class="lead">Funding dương nghĩa là long trả short; funding âm nghĩa là short trả long. Cực trị kéo dài gợi ý một phía đang đông.</p><p>Kết hợp với open interest, basis, liquidation và giá. Funding cao nhưng OI giảm có ý nghĩa khác funding cao khi OI tăng nhanh.</p>`},
 {id:"yield",cat:"BĐS",t:"Lợi suất cho thuê gộp",s:"Cách tính và những chi phí con số bỏ sót.",body:`<p class="lead"><code>Yield gộp = tiền thuê tháng × 12 / giá mua</code>.</p><p>LEON ghép trung vị thuê/m² và bán/m² cùng khu vực, cùng loại hình. Chưa trừ thời gian trống, thuế, môi giới, bảo trì và phí quản lý nên không phải lợi suất ròng.</p>`},
 {id:"median",cat:"Dữ liệu",t:"Vì sao BĐS dùng median và P25–P75",s:"Giá rao có ngoại lệ lớn và phân phối lệch.",body:`<p class="lead">Mean dễ bị một căn villa hoặc lỗi nhập giá kéo lệch. Median cho biết tin đứng giữa; P25–P75 cho biết nửa số tin tập trung trong dải nào.</p><div class="box">Dải rộng nghĩa là một quận chứa nhiều phân khúc/đường phố khác nhau; median không thay thế việc so sánh căn tương đồng.</div>`},
@@ -14,5 +58,44 @@
 {id:"valuation",cat:"Cổ phiếu",t:"Chọn mô hình định giá đúng ngành",s:"DCF không phải lựa chọn mặc định cho mọi doanh nghiệp.",body:`<p>Doanh nghiệp thường chỉ phù hợp DCF khi FCF đủ ổn định. Ngân hàng/chứng khoán/bảo hiểm phù hợp residual income hơn. Holding BĐS cần NAV/SOTP và dữ liệu tài sản.</p><div class="box">Thiếu input thì kết quả đúng là “chưa thể định giá”, không phải một con số có thêm dấu cảnh báo.</div>`},
 {id:"risk",cat:"Quản trị vốn",t:"Risk per trade và R-multiple",s:"Quy mô lệnh bắt đầu từ điểm dừng lỗ.",body:`<p><code>Khối lượng = số tiền chấp nhận mất / khoảng cách entry–SL</code>. R-multiple là P&amp;L chia rủi ro ban đầu.</p><p>Giới hạn rủi ro mỗi lệnh giúp các setup khác nhau so sánh được và tránh một lệnh làm hỏng cả chuỗi.</p>`},
 {id:"sources",cat:"Phương pháp",t:"Provenance: số liệu đến từ đâu",s:"Nguồn, timestamp, sample size và null là một phần của dữ liệu.",body:`<p>Một con số thiếu nguồn và thời điểm không thể kiểm tra. LEON giữ <code>as_of</code> (khi sự kiện đúng) tách khỏi <code>fetched_at</code> (khi hệ thống biết).</p><p>Missing phải là null, không điền zero. Mỗi aggregate cần số mẫu và quy tắc loại ngoại lệ.</p>`}
-];let selected=ARTICLES[0];const $=id=>document.getElementById(id),esc=s=>{const e=document.createElement("div");e.textContent=s;return e.innerHTML};function renderList(){const q=$("q").value.toLowerCase(),a=ARTICLES.filter(x=>`${x.t} ${x.s} ${x.cat}`.toLowerCase().includes(q));$("count").textContent=`${a.length} bài`;$("list").innerHTML=a.length?a.map(x=>`<div class="item ${x===selected?"on":""}" data-id="${x.id}"><small>${x.cat}</small><b>${esc(x.t)}</b><small>${esc(x.s)}</small></div>`).join(""):'<div class="empty">Không tìm thấy</div>';$("list").querySelectorAll("[data-id]").forEach(e=>e.onclick=()=>{selected=ARTICLES.find(x=>x.id===e.dataset.id);renderList();renderArticle()})}function renderArticle(){$("main").innerHTML=`<article class="article"><span class="tag">${selected.cat}</span><h1>${selected.t}</h1>${selected.body}<div class="links"><a href="../../hub/?tab=chart">Mở Chart</a><a href="../../hub/?tab=training">Mở Training</a><a href="../../hub/?tab=quant">Mở Quant Lab</a></div></article>`}$("q").oninput=renderList;renderList();renderArticle();
+];let selected=ARTICLES[0];/* Reads the published GEX artifact so the worked example below the definitions
+   shows the market as it is right now. A number typed into prose goes stale
+   silently; this one cannot. Absent file means the block is skipped, never a
+   broken article. */
+let LIVE_GEX = null;
+fetch("../../data/gex_btc.json", {cache: "no-cache"})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { LIVE_GEX = d; if (selected && selected.id === "gex") renderArticle(); })
+  .catch(() => {});
+
+function liveGexBlock(){
+  const d = LIVE_GEX;
+  if (!d || d.net_gex == null) return "";
+  const money = v => {
+    const a = Math.abs(v), sign = v < 0 ? "−" : "";
+    if (a >= 1e9) return `${sign}$${(a / 1e9).toFixed(2)} tỷ`;
+    if (a >= 1e6) return `${sign}$${(a / 1e6).toFixed(1)} triệu`;
+    return `${sign}$${Math.round(a).toLocaleString("vi-VN")}`;
+  };
+  const num = v => v == null ? "—" : Number(v).toLocaleString("vi-VN", {maximumFractionDigits: 0});
+  const positive = d.net_gex >= 0;
+  const aboveFlip = d.gamma_flip != null && d.spot > d.gamma_flip;
+  const gap = d.gamma_flip ? ((d.spot / d.gamma_flip - 1) * 100).toFixed(1) : null;
+  return `<h2>Đọc thử trên số thật của LEON</h2>` +
+    `<p class="lead">Bảng dưới lấy trực tiếp từ <code>data/gex_btc.json</code>, cập nhật cùng nhịp với tab Market Structure.</p>` +
+    `<table><tbody>` +
+    `<tr><td>Giá hiện tại</td><td><b>${num(d.spot)}</b></td></tr>` +
+    `<tr><td>Net GEX</td><td><b>${money(d.net_gex)}</b> — giá nhích 1%, dealer phải cân chừng đó tiền</td></tr>` +
+    `<tr><td>Trạng thái</td><td><b>${positive ? "Gamma dương" : "Gamma âm"}</b> — ${positive ? "biến động bị nén" : "biến động bị khuếch đại"}</td></tr>` +
+    `<tr><td>Gamma flip</td><td><b>${num(d.gamma_flip)}</b>${gap ? ` — giá đang ${aboveFlip ? "trên" : "dưới"} flip ${Math.abs(gap)}%` : ""}</td></tr>` +
+    `<tr><td>Max pain</td><td><b>${num(d.max_pain)}</b></td></tr>` +
+    `<tr><td>Pin risk</td><td><b>${d.pin_risk != null ? Math.round(d.pin_risk * 100) + "%" : "—"}</b>${(d.pin_risk || 0) >= 0.4 ? " — cao, một strike đang hút phần lớn gamma" : ""}</td></tr>` +
+    `<tr><td>ATM IV</td><td><b>${d.atm_iv != null ? (d.atm_iv * 100).toFixed(2) + "%" : "—"}</b> mỗi năm</td></tr>` +
+    `<tr><td>Biên 1σ (24h)</td><td><b>±${num(d.em_day)}</b> — 68% khả năng đóng cửa trong vùng này</td></tr>` +
+    `</tbody></table>` +
+    `<div class="box">Cách đọc gộp: ${positive ? "gamma dương" : "gamma âm"} cộng pin risk ${d.pin_risk != null ? Math.round(d.pin_risk * 100) + "%" : "—"} ` +
+    `nghĩa là ${positive && (d.pin_risk || 0) >= 0.4 ? "giá đang bị ghìm quanh một strike — biên hẹp, hợp đánh đảo chiều hơn đánh phá vỡ" : positive ? "biến động bị nén nhưng chưa ghim vào một mức cụ thể" : "dealer đang đẩy theo đà, phá cản dễ thành thật"}. ` +
+    `Đây là mô tả bối cảnh, không phải khuyến nghị vào lệnh.</div>`;
+}
+const $=id=>document.getElementById(id),esc=s=>{const e=document.createElement("div");e.textContent=s;return e.innerHTML};function renderList(){const q=$("q").value.toLowerCase(),a=ARTICLES.filter(x=>`${x.t} ${x.s} ${x.cat}`.toLowerCase().includes(q));$("count").textContent=`${a.length} bài`;$("list").innerHTML=a.length?a.map(x=>`<div class="item ${x===selected?"on":""}" data-id="${x.id}"><small>${x.cat}</small><b>${esc(x.t)}</b><small>${esc(x.s)}</small></div>`).join(""):'<div class="empty">Không tìm thấy</div>';$("list").querySelectorAll("[data-id]").forEach(e=>e.onclick=()=>{selected=ARTICLES.find(x=>x.id===e.dataset.id);renderList();renderArticle()})}function renderArticle(){const extra=selected.id==="gex"?liveGexBlock():"";$("main").innerHTML=`<article class="article"><span class="tag">${selected.cat}</span><h1>${selected.t}</h1>${selected.body}${extra}<div class="links"><a href="../../hub/?tab=chart">Mở Chart</a><a href="../../hub/?tab=training">Mở Training</a><a href="../../hub/?tab=quant">Mở Quant Lab</a></div></article>`}$("q").oninput=renderList;renderList();renderArticle();
 </script></body></html>
