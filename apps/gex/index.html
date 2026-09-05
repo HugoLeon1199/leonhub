@@ -96,6 +96,9 @@ tr:last-child td{border-bottom:0}
 footer{border-top:1px solid var(--line); padding-top:12px; font-size:11px; color:var(--muted);
        display:flex; gap:14px; flex-wrap:wrap}
 footer b{color:var(--text); font-weight:600}
+.oi-bar{display:inline-flex;height:11px;min-width:2px;border-radius:2px;overflow:hidden;vertical-align:middle}
+.oi-bar i{display:block;height:100%}
+.oi-call{background:var(--pos)} .oi-put{background:var(--neg)}
 </style>
 </head>
 <body>
@@ -322,9 +325,23 @@ function render(d){
      n:"tỉ lệ open interest"},
     {k:"IV at-the-money", v:d.atm_iv != null ? (d.atm_iv * 100).toFixed(1) + "%" : "—",
      n:"biến động ngụ ý"},
+    // The expected move turns IV into the unit the levels beside it use --
+    // a price band -- so the reader is not asked to convert a percentage in
+    // their head before deciding whether a wall is even reachable.
+    {k:"Biên 1σ", v:d.em1 != null ? "±" + fmt(d.em1) : "—",
+     n:d.horizon_h != null ? `trong ${d.horizon_h}h tới` : "một độ lệch chuẩn"},
+    {k:"Vùng 1σ", v:d.em_dn1 != null ? `${fmt(d.em_dn1)} – ${fmt(d.em_up1)}` : "—",
+     n:"68% xác suất đóng trong vùng này"},
+    // Pin risk says whether one strike dominates the hedging flow nearby. High
+    // pin with positive gamma is the configuration that holds price still.
+    {k:"Pin risk", v:d.pin_risk != null ? Math.round(d.pin_risk * 100) + "%" : "—",
+     cls:(d.pin_risk || 0) >= 0.4 ? "warn" : "",
+     n:"tỉ trọng gamma ở một strike"},
     // Vanna and charm are the two ways a hedge drifts without the price
     // moving at all -- one with implied volatility, one with the calendar.
     // Both are computed already; neither was shown.
+    {k:"Charm", v:usd(d.charm), cls:(d.charm || 0) >= 0 ? "pos" : "neg",
+     n:"gamma trôi theo thời gian"},
     {k:"Vanna", v:usd(d.vanna), cls:d.vanna >= 0 ? "pos" : "neg",
      n:"phòng hộ đổi khi IV đổi"},
     {k:"Charm", v:usd(d.charm), cls:d.charm >= 0 ? "pos" : "neg",
@@ -354,10 +371,53 @@ function render(d){
     `<section><h2>Các mức tập trung gamma nhiều nhất</h2>` +
     `<p class="cap">Những strike này hút dòng phòng hộ mạnh nhất, nên thường hoạt động ` +
     `như mức cản hoặc mức hút giá cho tới khi hết hạn.</p>` +
-    `<div class="card" id="levels"></div></section>`;
+    `<div class="card" id="levels"></div></section>` +
+    `<section><h2>Phân bố open interest theo strike</h2>` +
+    `<p class="cap">Số hợp đồng đang mở ở mỗi mức giá, tách call và put. ` +
+    `Gamma đo lực phòng hộ; open interest đo có bao nhiêu vị thế thật đứng sau lực đó. ` +
+    `Một strike gamma lớn nhưng OI mỏng là tường hẹp hơn vẻ ngoài.</p>` +
+    `<div class="card" id="strikes"></div></section>`;
 
   drawProfile(el("profile"), d);
   drawLevels(el("levels"), d);
+  drawStrikes(el("strikes"), d);
+}
+
+/* Open interest per strike, call against put. The GEX table above ranks by
+   hedging force; this ranks by how many contracts actually sit there, which is
+   a different question and occasionally disagrees. Bars rather than bare
+   numbers because the comparison that matters -- call side versus put side at
+   one strike -- reads as two lengths faster than as two figures. */
+function drawStrikes(host, d){
+  const rows = (d.levels || [])
+    .map(r => ({...r, oi: (r.call_oi || 0) + (r.put_oi || 0)}))
+    .filter(r => r.oi > 0)
+    .sort((a, b) => b.oi - a.oi);
+  if(!rows.length){ host.innerHTML = '<div class="msg">Không có dữ liệu open interest.</div>'; return; }
+
+  const peak = Math.max(...rows.map(r => r.oi), 1);
+  const spot = d.spot || 0;
+  host.innerHTML =
+    "<table><thead><tr>" +
+    ["Strike","Cách giá","Phân bố call / put","OI call","OI put","Tổng OI"]
+      .map(t => `<th>${t}</th>`).join("") +
+    "</tr></thead><tbody>" +
+    rows.map(r => {
+      const callPct = r.oi ? (r.call_oi || 0) / r.oi * 100 : 0;
+      const width = r.oi / peak * 100;
+      const near = spot && Math.abs(r.strike / spot - 1) < 0.01;
+      return "<tr>" +
+        `<td style="text-align:left"><b>${fmt(r.strike)}</b>` +
+        `${near ? ' <span class="dim">← giá</span>' : ""}</td>` +
+        `<td class="dim">${r.dist >= 0 ? "+" : ""}${r.dist.toFixed(2)}%</td>` +
+        `<td style="text-align:left"><span class="oi-bar" style="width:${width.toFixed(1)}%">` +
+        `<i class="oi-call" style="width:${callPct.toFixed(1)}%"></i>` +
+        `<i class="oi-put" style="width:${(100 - callPct).toFixed(1)}%"></i></span></td>` +
+        `<td class="pos">${fmt(r.call_oi)}</td>` +
+        `<td class="neg">${fmt(r.put_oi)}</td>` +
+        `<td>${fmt(r.oi)}</td></tr>`;
+    }).join("") +
+    "</tbody></table>";
 }
 
 function drawProfile(host, d){
@@ -431,13 +491,16 @@ function drawLevels(host, d){
   if(!rows.length){ host.innerHTML = '<div class="msg">Không có dữ liệu.</div>'; return; }
   host.innerHTML =
     "<table><thead><tr>" +
-    ["Strike","Vị trí","Cách giá","Gamma","OI call","OI put"].map(t => `<th>${t}</th>`).join("") +
+    ["Strike","Vị trí","Cách giá","Chạm 24h","Gamma","OI call","OI put"]
+      .map(t => `<th>${t}</th>`).join("") +
     "</tr></thead><tbody>" +
     rows.map(r =>
       "<tr>" +
       `<td style="text-align:left"><b>${fmt(r.strike)}</b></td>` +
       `<td style="text-align:left" class="dim">${r.rel === "above" ? "trên giá" : "dưới giá"}</td>` +
       `<td class="${r.dist >= 0 ? "dim" : "dim"}">${r.dist >= 0 ? "+" : ""}${r.dist.toFixed(2)}%</td>` +
+      `<td class="${(r.touch_24h || 0) >= 0.3 ? "warn" : "dim"}">` +
+      `${r.touch_24h != null ? Math.round(r.touch_24h * 100) + "%" : "—"}</td>` +
       `<td class="${r.gex >= 0 ? "pos" : "neg"}">${usd(r.gex)}</td>` +
       `<td class="dim">${fmt(r.call_oi)}</td>` +
       `<td class="dim">${fmt(r.put_oi)}</td>` +
