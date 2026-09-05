@@ -120,11 +120,17 @@ const COLS=[
   ["_spread","P25–P75","num"],["tp","Giá tin trung vị (tỷ)","num"],["dom","Ngày rao trung vị","num"],["n","Mẫu bán","num"]
 ];
 
+/* Province write-ups load on their own rather than inside the Promise.all
+   below: they are commentary, and a page that renders no prices because a
+   narrative file 404'd would be a worse failure than a table with no prose.
+   The panel re-renders when they arrive. */
+fetch("../../data/province_profiles.json",{cache:"no-cache"})
+  .then(r=>r.ok?r.json():null)
+  .then(d=>{PROFILES=d?.provinces||{};PROFILE_META=d||{};if(DATA.provinces.length)renderProfile()})
+  .catch(()=>{});
+
 Promise.all([
   fetch("../../data/bds.json",{cache:"no-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}),
-  fetch("../../data/province_profiles.json",{cache:"no-cache"})
-    .then(r=>r.ok?r.json():null).then(d=>{PROFILES=d?.provinces||{};PROFILE_META=d||{};renderProfile()})
-    .catch(()=>{});
   fetch("../../data/vn-map.json",{cache:"force-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()})
 ]).then(([data,map])=>{DATA=Array.isArray(data)?{rows:data,provinces:[],history:[]}:data;MAP=map;init()}).catch(err=>{
   $("updated").textContent="Không tải được dữ liệu";$("tbody").innerHTML=`<tr><td colspan="12">Chạy pipeline BĐS rồi mở bằng HTTP server (${String(err)})</td></tr>`;
