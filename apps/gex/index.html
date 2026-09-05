@@ -8,6 +8,7 @@
 <meta name="description" content="Gamma exposure của quyền chọn Bitcoin và Ethereum: vùng gamma dương/âm, gamma flip, max pain và các mức strike tập trung dòng phòng hộ.">
 
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
 :root{
@@ -99,6 +100,13 @@ footer b{color:var(--text); font-weight:600}
 .oi-bar{display:inline-flex;height:11px;min-width:2px;border-radius:2px;overflow:hidden;vertical-align:middle}
 .oi-bar i{display:block;height:100%}
 .oi-call{background:var(--pos)} .oi-put{background:var(--neg)}
+.pricewrap{position:relative;height:420px;width:100%}
+#pricechart{position:absolute;inset:0}
+.priceloading{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:12px;pointer-events:none}
+.tfbar{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.tfbar button{appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
+  font:inherit;font-size:11.5px;padding:3px 9px;border-radius:99px;cursor:pointer}
+.tfbar button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#04150f;font-weight:600}
 </style>
 </head>
 <body>
@@ -359,6 +367,13 @@ function render(d){
     : "";
 
   el("body").innerHTML =
+    `<section><h2>Giá và các mức quyền chọn</h2>` +
+    `<p class="cap">Nến từ Binance, các mức vẽ đè lên đúng giá của chúng. ` +
+    `Xanh là tường call (cản), đỏ là tường put (đỡ); nét đứt là gamma flip và max pain; ` +
+    `chấm mờ là biên một độ lệch chuẩn. Nhãn kèm xác suất chạm trong 24 giờ.</p>` +
+    `<div class="card"><div class="tfbar" id="tfbar"></div>` +
+    `<div class="pricewrap"><div id="pricechart"></div>` +
+    `<div class="priceloading" id="priceloading">Đang tải nến…</div></div></div></section>` +
     `<section><h2>Phân bố gamma theo mức giá</h2>` +
     `<p class="cap">Mỗi cột là tổng gamma tại một strike. Cột xanh là nơi nhà tạo lập ` +
     `phòng hộ ngược chiều thị trường (nén biến động), cột đỏ là nơi họ phòng hộ thuận chiều ` +
@@ -378,6 +393,10 @@ function render(d){
     `Một strike gamma lớn nhưng OI mỏng là tường hẹp hơn vẻ ngoài.</p>` +
     `<div class="card" id="strikes"></div></section>`;
 
+  // The chart is recreated with the pane, so the cached handles are stale.
+  priceChart = null; priceSeries = null;
+  buildTfBar(d);
+  drawPriceChart(d);
   drawProfile(el("profile"), d);
   drawLevels(el("levels"), d);
   drawStrikes(el("strikes"), d);
@@ -418,6 +437,114 @@ function drawStrikes(host, d){
         `<td>${fmt(r.oi)}</td></tr>`;
     }).join("") +
     "</tbody></table>";
+}
+
+/* Price with the option levels on it.
+   The tables above say where the walls are; this says where price is relative
+   to them, which is the question a table cannot answer. Levels are drawn as
+   price lines rather than as a second series: they are horizontal by nature and
+   the library keeps them pinned to their price through zoom and pan for free.
+   Only BTC and ETH have an options chain here, so the panel is skipped for the
+   VN breadth mode rather than shown empty. */
+const TF = ["15m", "1h", "4h", "1d"];
+let priceChart = null, priceSeries = null, priceTf = "1h";
+try{ priceTf = localStorage.getItem("leon_ms_tf") || "1h"; }catch(e){}
+if(!TF.includes(priceTf)) priceTf = "1h";
+
+function cssVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+async function drawPriceChart(d){
+  const host = el("pricechart");
+  if(!host || typeof LightweightCharts === "undefined") return;
+  const sym = (d.sym || current).toUpperCase();
+
+  let bars = [];
+  try{
+    const url = `https://api.binance.com/api/v3/klines?symbol=${sym}USDT&interval=${priceTf}&limit=200`;
+    const rows = await fetch(url).then(r => { if(!r.ok) throw new Error(r.status); return r.json(); });
+    bars = rows.map(r => ({
+      time: r[0] / 1000, open: +r[1], high: +r[2], low: +r[3], close: +r[4],
+    }));
+  }catch(e){
+    // Binance is unreachable from some networks. The tables above still carry
+    // the whole analysis, so say what is missing instead of blanking the tab.
+    const note = el("priceloading");
+    if(note) note.textContent = "Không tải được nến từ Binance. Các bảng phía dưới vẫn dùng bình thường.";
+    return;
+  }
+  if(!bars.length) return;
+
+  const note = el("priceloading");
+  if(note) note.remove();
+
+  if(!priceChart){
+    priceChart = LightweightCharts.createChart(host, {
+      layout: {background: {color: "transparent"}, textColor: cssVar("--muted"), attributionLogo: false},
+      grid: {vertLines: {color: cssVar("--line")}, horzLines: {color: cssVar("--line")}},
+      rightPriceScale: {borderColor: cssVar("--line")},
+      timeScale: {borderColor: cssVar("--line"), timeVisible: true},
+      crosshair: {mode: LightweightCharts.CrosshairMode.Normal},
+      autoSize: true,
+    });
+    priceSeries = priceChart.addSeries(LightweightCharts.CandlestickSeries, {
+      upColor: cssVar("--pos"), downColor: cssVar("--neg"),
+      borderUpColor: cssVar("--pos"), borderDownColor: cssVar("--neg"),
+      wickUpColor: cssVar("--pos"), wickDownColor: cssVar("--neg"),
+    });
+  }
+  priceSeries.setData(bars);
+
+  // Rebuild the lines on every draw: a symbol or timeframe change brings a
+  // different chain, and a stale line pinned to an old strike is worse than
+  // none because it still looks authoritative.
+  (priceSeries._leonLines || []).forEach(line => { try{ priceSeries.removePriceLine(line); }catch(e){} });
+  const lines = [];
+  const add = (price, colour, title, style) => {
+    if(price == null || !isFinite(price)) return;
+    lines.push(priceSeries.createPriceLine({
+      price, color: colour, lineWidth: 1, lineStyle: style,
+      axisLabelVisible: true, title,
+    }));
+  };
+
+  // Walls first, weakest to strongest, so the heaviest strike is the one whose
+  // label survives when several sit close together.
+  const peak = Math.max(...(d.levels || []).map(l => Math.abs(l.gex || 0)), 1);
+  [...(d.levels || [])]
+    .sort((a, b) => Math.abs(a.gex || 0) - Math.abs(b.gex || 0))
+    .forEach(level => {
+      const weight = Math.abs(level.gex || 0) / peak;
+      if(weight < 0.12) return;
+      const call = (level.gex || 0) >= 0;
+      const touch = level.touch_24h != null ? ` ${Math.round(level.touch_24h * 100)}%` : "";
+      add(level.strike, call ? cssVar("--pos") : cssVar("--neg"),
+          `${call ? "C" : "P"} ${usd(Math.abs(level.gex))}${touch}`,
+          LightweightCharts.LineStyle.Solid);
+    });
+
+  add(d.gamma_flip, cssVar("--warn"), "Flip", LightweightCharts.LineStyle.Dashed);
+  add(d.max_pain, "#a78bfa", "Max pain", LightweightCharts.LineStyle.Dashed);
+  add(d.em_up1, cssVar("--muted"), "1σ trên", LightweightCharts.LineStyle.Dotted);
+  add(d.em_dn1, cssVar("--muted"), "1σ dưới", LightweightCharts.LineStyle.Dotted);
+  priceSeries._leonLines = lines;
+  priceChart.timeScale().fitContent();
+}
+
+function buildTfBar(d){
+  const host = el("tfbar");
+  if(!host) return;
+  host.innerHTML = TF.map(t =>
+    `<button type="button" data-tf="${t}" aria-pressed="${t === priceTf}">${t}</button>`).join("");
+  host.onclick = e => {
+    const btn = e.target.closest("[data-tf]");
+    if(!btn) return;
+    priceTf = btn.dataset.tf;
+    try{ localStorage.setItem("leon_ms_tf", priceTf); }catch(err){}
+    [...host.children].forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tf === priceTf)));
+    drawPriceChart(d);
+  };
 }
 
 function drawProfile(host, d){
