@@ -65,6 +65,7 @@ python -m pipeline.transform.news_build
 python -m pipeline.transform.gex_build
 python -m pipeline.sources.fx_rates
 python -m pipeline.core.validate
+python -m pipeline.core.check_apps                        # parses every app's inline JS
 
 python -m http.server 8811    # http://localhost:8811/hub/
 ```

@@ -1,0 +1,47 @@
+name: App syntax
+
+# The apps have no build step, so nothing catches a JavaScript syntax error
+# before it reaches the browser. One did: a fetch inserted into the middle of a
+# Promise.all array and ended with a semicolon closed the array early, the whole
+# script failed to parse, and the real-estate tab shipped rendering nothing at
+# all -- no map, no table, no prices.
+#
+# This runs on pushes that touch the pages themselves rather than inside a data
+# workflow, because the apps only change when someone edits them and a daily
+# collector run has nothing new to check.
+
+on:
+  push:
+    paths:
+      - "apps/**/*.html"
+      - "hub/**/*.html"
+      - "pipeline/core/check_apps.py"
+      - ".github/workflows/check-apps.yml"
+  pull_request:
+    paths:
+      - "apps/**/*.html"
+      - "hub/**/*.html"
+  workflow_dispatch:
+
+# Read-only: this publishes nothing, so it does not need the warehouse writer
+# lock the data workflows share.
+permissions:
+  contents: read
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Parse every inline script
+        run: python -m pipeline.core.check_apps --verbose
