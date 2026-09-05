@@ -112,5 +112,13 @@ jobs:
             echo "No data change."
           else
             git commit -m "data: VN daily refresh $(date -u +%Y-%m-%d)"
-            git push
+            # Another scheduled job may have pushed while this one worked.
+            # Each job writes different files under data/, so that is a
+            # fast-forward rather than a conflict: rebase and retry instead of
+            # throwing away a completed crawl at the very last step.
+            for attempt in 1 2 3; do
+              git push && break
+              echo "push rejected (attempt $attempt); rebasing onto origin"
+              git pull --rebase --autostash origin "$(git rev-parse --abbrev-ref HEAD)" || exit 1
+            done
           fi
