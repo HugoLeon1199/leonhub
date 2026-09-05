@@ -172,6 +172,19 @@ main{flex:1; position:relative; min-height:0;min-width:0}
 .book-row{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:3px 6px;font-size:11px;
   font-variant-numeric:tabular-nums}.book-row i{position:absolute;inset:1px auto 1px 0;opacity:.11;pointer-events:none}
 .book-row.ask i{background:var(--down)}.book-row.bid i{background:var(--up)}.book-row.ask span:first-of-type{color:var(--down)}.book-row.bid span:first-of-type{color:var(--up)}.book-row span:last-child{text-align:right}
+/* Net dollar at price: a diverging bar per bucket, buy right of nothing and
+   sell left of nothing, so a wall of one-sided flow reads as a shape before
+   any number is parsed. */
+.nd-row{display:grid;grid-template-columns:60px 1fr 62px;gap:5px;align-items:center;
+  padding:2px 5px;font-size:10.5px;font-variant-numeric:tabular-nums;border-bottom:1px solid transparent}
+.nd-row.nd-spot{background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:3px}
+.nd-row.nd-hvl{border-bottom-color:var(--warn)}
+.nd-p{color:var(--muted)}
+.nd-bar{height:9px;background:var(--panel-2);border-radius:2px;overflow:hidden;display:block}
+.nd-bar i{display:block;height:100%}
+.nd-bar i.buy{background:var(--up)} .nd-bar i.sell{background:var(--down)}
+.nd-v{text-align:right}
+.nd-v.up{color:var(--up)} .nd-v.down{color:var(--down)}
 .tape-row{display:grid;grid-template-columns:64px 1fr 1fr;gap:6px;padding:5px 6px;border-bottom:1px solid var(--line);
   font-size:10.5px;font-variant-numeric:tabular-nums}.tape-row span:nth-child(n+2){text-align:right}.tape-row.buy{color:var(--up)}.tape-row.sell{color:var(--down)}
 .level-card{padding:8px 7px;border-bottom:1px solid var(--line)}.level-head{display:flex;justify-content:space-between;gap:8px;font-size:11px}.level-head b{font-variant-numeric:tabular-nums}.level-head small{color:var(--muted)}.level-bar{display:flex;height:4px;margin:6px 0;border-radius:2px;overflow:hidden;background:var(--line)}.level-bar i:nth-child(1){background:var(--down)}.level-bar i:nth-child(2){background:#a78bfa}.level-bar i:nth-child(3){background:var(--warn)}.level-bar i:nth-child(4){background:var(--up)}.level-stats{display:flex;justify-content:space-between;color:var(--muted);font-size:9px}
@@ -303,11 +316,13 @@ footer b{color:var(--text); font-weight:600}
       <button type="button" data-side="book" aria-pressed="false">Sổ lệnh</button>
       <button type="button" data-side="tape" aria-pressed="false">Big Tape</button>
       <button type="button" data-side="levels" aria-pressed="false">Levels</button>
+      <button type="button" data-side="net" aria-pressed="false">Net $</button>
     </div>
     <div class="side-pane" id="side-watch"></div>
     <div class="side-pane" id="side-book" hidden></div>
     <div class="side-pane" id="side-tape" hidden></div>
     <div class="side-pane" id="side-levels" hidden></div>
+    <div class="side-pane" id="side-net" hidden></div>
   </aside>
 </div>
 
@@ -361,6 +376,7 @@ const el = {
   sideWatch: document.getElementById("side-watch"),
   sideBook: document.getElementById("side-book"),
   sideTape: document.getElementById("side-tape"),
+  sideNet: document.getElementById("side-net"),
   sideLevels: document.getElementById("side-levels"),
   coins: document.getElementById("coins"),
   tfs: document.getElementById("tfs"),
@@ -457,6 +473,15 @@ let bookTimer=null;
 let tradeWs=null;
 let tapeEvents=[];
 let tapeMin=500000;
+/* Volume at price, accumulated from every aggTrade rather than only the large
+   ones the tape shows. A wall is built by the whole crowd, not by the handful
+   of prints big enough to be worth listing, so netdollar has to see the flow
+   the tape deliberately filters out. Keyed by bucket index; value carries buy
+   and sell notional separately so the net can be shown without losing which
+   side did the work. */
+let netDollar=new Map();
+let netBucket=0;
+let netFrame=0;
 let gexLevels=[];
 let levelFrame=0;
 
@@ -484,7 +509,8 @@ async function refreshWatchQuotes(){
   try{const r=await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(pairs))}`);if(!r.ok)throw Error(r.status);const data=await r.json();for(const x of data){watchQuotes[x.symbol.slice(0,-4)]={p:+x.lastPrice,ch:+x.priceChangePercent}}renderWatchlist()}catch(e){}
 }
 function selectSymbol(next,announce=true){next=String(next||"").trim().toUpperCase();if(!next||next===symbol)return;symbol=next;el.sym.value=symbol;needsFit=true;loadDrawings();loadPriceAlerts();syncUrl(announce);updateWatchButton();load()}
-function setSide(name){if(!["watch","book","tape","levels"].includes(name))name="watch";document.querySelectorAll("[data-side]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.side===name)));for(const key of ["watch","book","tape","levels"]){document.getElementById(`side-${key}`).hidden=key!==name}try{localStorage.setItem("leon_chart_side_tab",name)}catch(e){}}
+const SIDE_TABS=[...document.querySelectorAll("[data-side]")].map(b=>b.dataset.side);
+function setSide(name){if(!SIDE_TABS.includes(name))name="watch";document.querySelectorAll("[data-side]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.side===name)));for(const key of SIDE_TABS){const pane=document.getElementById(`side-${key}`);if(pane)pane.hidden=key!==name}if(name==="net")renderNetDollar();try{localStorage.setItem("leon_chart_side_tab",name)}catch(e){}}
 function closeMicrostructure(){clearInterval(bookTimer);bookTimer=null;if(tradeWs){tradeWs.onmessage=tradeWs.onclose=tradeWs.onerror=null;try{tradeWs.close()}catch(e){}tradeWs=null}}
 async function refreshBook(sym,token){
   if(token!==inflight)return;
@@ -493,16 +519,90 @@ async function refreshBook(sym,token){
 }
 function renderBookData(d,sym=symbol){const asks=(d.asks||[]).slice(0,10).reverse(),bids=(d.bids||[]).slice(0,10),all=[...asks,...bids],max=Math.max(1,...all.map(x=>+x[1])),bidVol=bids.reduce((a,x)=>a+(+x[1]),0),askVol=asks.reduce((a,x)=>a+(+x[1]),0),imb=(bidVol+askVol)?bidVol/(bidVol+askVol)*100:50;const rows=(arr,side)=>arr.map(x=>`<div class="book-row ${side}"><i style="width:${(+x[1])/max*100}%"></i><span>${nf(+x[0],+x[0]<1?6:2)}</span><span>${compact(+x[1])}</span></div>`).join("");el.sideBook.innerHTML=`<div class="side-summary"><span>Mua ${imb.toFixed(0)}%</span><span>Bán ${(100-imb).toFixed(0)}%</span></div>${rows(asks,"ask")}<div class="side-summary"><b>${sym}</b><span>WebSocket 100ms</span></div>${rows(bids,"bid")}`}
 function renderTape(){const rows=[...tapeEvents].reverse().filter(x=>x.notional>=tapeMin).slice(0,60);el.sideTape.innerHTML=`<div class="side-summary"><span>Ngưỡng USD</span><input id="tape-min" type="number" min="100000" step="100000" value="${tapeMin}" style="width:94px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px"></div>`+(rows.length?rows.map(x=>`<div class="tape-row ${x.side}"><span>${new Date(x.at).toLocaleTimeString("vi-VN",{hour12:false})}</span><span>${nf(x.price,x.price<1?6:2)}</span><span>$${compact(x.notional)}</span></div>`).join(""):`<div class="side-empty">Chờ giao dịch từ ${compact(tapeMin)} USD…</div>`)}
+/* Bucket width is derived from price, not fixed: $50 buckets suit BTC at
+   80,000 and are meaningless for a coin at 0.4. Aim for roughly 0.05% of spot
+   so the profile has comparable resolution whatever the instrument, then round
+   to a human-readable step so bucket edges land on prices people quote. */
+function netDollarBucket(price){
+  if(!(price>0)) return 0;
+  const target=price*0.0005;
+  const mag=Math.pow(10,Math.floor(Math.log10(target)));
+  const step=[1,2,2.5,5,10].find(m=>mag*m>=target)||10;
+  return mag*step;
+}
+
+function addNetDollar(price,notional,side){
+  if(!netBucket) netBucket=netDollarBucket(price);
+  const key=Math.round(price/netBucket);
+  let cell=netDollar.get(key);
+  if(!cell){cell={buy:0,sell:0};netDollar.set(key,cell);}
+  cell[side]+=notional;
+  // The map is unbounded otherwise: a volatile session walks across thousands
+  // of buckets and the oldest are no longer part of the current structure.
+  if(netDollar.size>4000){
+    const cut=Math.round(price/netBucket)-2000;
+    for(const k of netDollar.keys()) if(k<cut) netDollar.delete(k);
+  }
+  if(!netFrame) netFrame=setTimeout(()=>{netFrame=0;renderNetDollar()},700);
+}
+
+/* The single price that traded the most -- the point of control. Where price
+   spent its money is where it is likeliest to be defended, which is why this
+   sits beside the GEX walls rather than in its own tab. */
+function highVolumeLevel(){
+  let best=null,bestVal=0;
+  for(const [key,cell] of netDollar){
+    const total=cell.buy+cell.sell;
+    if(total>bestVal){bestVal=total;best=key;}
+  }
+  return best==null?null:{price:best*netBucket,notional:bestVal};
+}
+
+function renderNetDollar(){
+  const host=el.sideNet;
+  if(!host) return;
+  if(!netDollar.size){
+    host.innerHTML='<div class="side-empty">Đang gom lệnh theo mức giá…</div>';
+    return;
+  }
+  const spot=currentBars.at(-1)?.close||0;
+  const rows=[...netDollar.entries()]
+    .map(([key,cell])=>({price:key*netBucket,buy:cell.buy,sell:cell.sell,
+                         net:cell.buy-cell.sell,total:cell.buy+cell.sell}))
+    .filter(r=>r.total>0)
+    .sort((a,b)=>Math.abs(a.price-spot)-Math.abs(b.price-spot))
+    .slice(0,24)
+    .sort((a,b)=>b.price-a.price);
+  const peak=Math.max(...rows.map(r=>Math.abs(r.net)),1);
+  const hvl=highVolumeLevel();
+  const total=rows.reduce((a,r)=>a+r.total,0);
+  const netAll=rows.reduce((a,r)=>a+r.net,0);
+  host.innerHTML=
+    `<div class="side-summary"><span>Bước ${nf(netBucket,netBucket<1?4:0)}</span>`+
+    `<span class="${netAll>=0?"up":"down"}">Ròng ${netAll>=0?"+":"−"}$${compact(Math.abs(netAll))}</span></div>`+
+    (hvl?`<div class="side-summary"><span>HVL (giá đông nhất)</span><b>${nf(hvl.price,hvl.price<10?4:0)}</b></div>`:"")+
+    rows.map(r=>{
+      const w=Math.round(Math.abs(r.net)/peak*100);
+      const near=Math.abs(r.price-spot)<netBucket;
+      const isHvl=hvl&&Math.abs(r.price-hvl.price)<netBucket/2;
+      return `<div class="nd-row${near?" nd-spot":""}${isHvl?" nd-hvl":""}">`+
+        `<span class="nd-p">${nf(r.price,r.price<10?4:0)}</span>`+
+        `<span class="nd-bar"><i class="${r.net>=0?"buy":"sell"}" style="width:${w}%"></i></span>`+
+        `<span class="nd-v ${r.net>=0?"up":"down"}">${r.net>=0?"+":"−"}$${compact(Math.abs(r.net))}</span></div>`;
+    }).join("")+
+    `<div class="side-summary"><span>Tổng khối lượng hiển thị</span><span>$${compact(total)}</span></div>`;
+}
+
 function scheduleLevels(){if(levelFrame)return;levelFrame=setTimeout(()=>{levelFrame=0;renderLevels()},700)}
 function classifyLevel(level){const bars=currentBars.slice(-240),spot=bars.at(-1)?.close||level,tol=spot*.0008,counts={break:0,absorb:0,fake:0,respect:0};for(const bar of bars){if(bar.low>level+tol||bar.high<level-tol)continue;const broke=(bar.open<level-tol&&bar.close>level+tol)||(bar.open>level+tol&&bar.close<level-tol);if(broke){counts.break++;continue}const start=bar.time*1000,end=start+(INTERVAL_MINUTES[timeframe]||60)*60000,big=tapeEvents.filter(x=>x.at>=start&&x.at<end&&Math.abs(x.price-level)<=tol).reduce((a,x)=>a+x.notional,0);if(big>=100000){counts.absorb++;continue}const fake=(bar.high>level+tol&&bar.close<level+tol)||(bar.low<level-tol&&bar.close>level-tol);if(fake)counts.fake++;else counts.respect++}const total=Object.values(counts).reduce((a,b)=>a+b,0);return {counts,total,pct:Object.fromEntries(Object.entries(counts).map(([k,v])=>[k,total?v/total*100:0]))}}
 function roundedLevelPct(p){const keys=["break","absorb","fake","respect"],raw=keys.map(k=>p[k]||0),whole=raw.map(Math.floor),missing=100-whole.reduce((a,b)=>a+b,0);raw.map((v,i)=>({i,f:v-whole[i]})).sort((a,b)=>b.f-a.f).slice(0,Math.max(0,missing)).forEach(x=>whole[x.i]++);return Object.fromEntries(keys.map((k,i)=>[k,whole[i]]))}
-function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML='<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
+function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML='<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm${x.touch_24h!=null?` · chạm 24h ${Math.round(x.touch_24h*100)}%`:""}</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
 async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH"].includes(sym))return;try{const r=await fetch(`../../data/gex_${sym.toLowerCase()}.json`,{cache:"no-cache"});if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;gexLevels=Array.isArray(d.levels)?d.levels:[];renderLevels()}catch(e){}}
 function openMicrostructure(sym,token){
-  closeMicrostructure();tapeEvents=[];gexLevels=[];try{tapeMin=Math.max(100000,+(localStorage.getItem(`leon_tapemin_${sym}`)||500000))}catch(e){tapeMin=500000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);
+  closeMicrostructure();tapeEvents=[];gexLevels=[];netDollar=new Map();netBucket=0;try{tapeMin=Math.max(100000,+(localStorage.getItem(`leon_tapemin_${sym}`)||500000))}catch(e){tapeMin=500000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);
   const streamSym=sym.toLowerCase()+"usdt";
   try{tradeWs=new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streamSym}@aggTrade/${streamSym}@depth20@100ms`)}catch(e){return}
-  tradeWs.onmessage=ev=>{if(token!==inflight)return;let x;try{const payload=JSON.parse(ev.data);x=payload.data||payload}catch(e){return}if(Array.isArray(x.bids)&&Array.isArray(x.asks)){renderBookData(x,sym);return}if(x.e!=="aggTrade")return;const price=+x.p,qty=+x.q,notional=price*qty;if(!isFinite(notional)||notional<100000)return;const event={at:+x.T,price,notional,side:x.m?"sell":"buy"};tapeEvents.push(event);if(tapeEvents.length>500)tapeEvents.shift();renderTape();scheduleLevels()};
+  tradeWs.onmessage=ev=>{if(token!==inflight)return;let x;try{const payload=JSON.parse(ev.data);x=payload.data||payload}catch(e){return}if(Array.isArray(x.bids)&&Array.isArray(x.asks)){renderBookData(x,sym);return}if(x.e!=="aggTrade")return;const price=+x.p,qty=+x.q,notional=price*qty;if(!isFinite(notional)||notional<=0)return;addNetDollar(price,notional,x.m?"sell":"buy");if(notional<100000)return;const event={at:+x.T,price,notional,side:x.m?"sell":"buy"};tapeEvents.push(event);if(tapeEvents.length>500)tapeEvents.shift();renderTape();scheduleLevels()};
 }
 
 el.watchAdd.addEventListener("click",()=>{const at=watchlist.indexOf(symbol);if(at>=0)watchlist.splice(at,1);else watchlist.unshift(symbol);saveWatchlist()});

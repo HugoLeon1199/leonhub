@@ -167,6 +167,8 @@ def compute(chain: list[dict[str, Any]], spot: float, now: datetime) -> dict[str
             horizon_h = min(remaining, MAX_HORIZON_H)
 
     em1 = expected_move(spot, atm_iv, horizon_h)
+    # A full day, independent of how close the nearest expiry happens to be.
+    em_day = expected_move(spot, atm_iv, 24.0)
     pin = pin_risk(by_strike, spot, em1)
     flip = gamma_flip(kept, spot, now)
     regime = "positive" if net_gex >= 0 else "negative"
@@ -190,6 +192,7 @@ def compute(chain: list[dict[str, Any]], spot: float, now: datetime) -> dict[str
         # One and two standard deviations over the quoted horizon, as prices.
         "horizon_h": round(horizon_h, 1),
         "em1": round(em1, 2),
+        "em_day": round(em_day, 2),
         "em2": round(em1 * 2, 2),
         "em_up1": round(spot + em1, 2),
         "em_dn1": round(spot - em1, 2),
@@ -202,7 +205,7 @@ def compute(chain: list[dict[str, Any]], spot: float, now: datetime) -> dict[str
             {"strike": k, "gex": round(v["gex"], 1)}
             for k, v in sorted(by_strike.items())
         ],
-        "levels": top_levels(by_strike, spot),
+        "levels": top_levels(by_strike, spot, em1, em_day),
     }
 
 
@@ -317,7 +320,30 @@ def gex_signal(regime: str, spot: float, flip: float | None, pin: float) -> str:
     return "POS_GEX_DAMP"
 
 
-def top_levels(by_strike: dict[float, dict[str, float]], spot: float, count: int = 12) -> list[dict[str, Any]]:
+def touch_probability(strike: float, spot: float, em: float) -> float:
+    """Chance price reaches `strike` within the expected-move horizon.
+
+    Under a driftless random walk the probability of *touching* a barrier is
+    twice the probability of finishing beyond it -- the reflection principle --
+    because every path that ends past the barrier had to cross it, and each
+    such path pairs with a reflected one that crossed and came back. Reported
+    for the same window `em` describes, so a level three standard deviations
+    out reads as near-unreachable rather than merely far.
+    """
+    if em <= 0 or spot <= 0:
+        return 0.0
+    z = abs(strike - spot) / em
+    probability = 2 * (1 - norm_cdf(z))
+    return round(min(max(probability, 0.0), 1.0), 4)
+
+
+def top_levels(
+    by_strike: dict[float, dict[str, float]],
+    spot: float,
+    em: float = 0.0,
+    em_day: float = 0.0,
+    count: int = 12,
+) -> list[dict[str, Any]]:
     """The strikes carrying the most gamma — where hedging flow concentrates."""
     ranked = sorted(by_strike.items(), key=lambda kv: -abs(kv[1]["gex"]))[:count]
     out = []
@@ -330,6 +356,14 @@ def top_levels(by_strike: dict[float, dict[str, float]], spot: float, count: int
             "dist": round((strike / spot - 1) * 100, 2),
             "call_oi": round(bucket["call_oi"], 1),
             "put_oi": round(bucket["put_oi"], 1),
+            # A wall matters in proportion to how likely price is to reach it.
+            # Two windows because one is not enough: near an expiry the horizon
+            # can be a few hours, where every distant strike reads 0.0% and the
+            # column stops distinguishing them. The 24h figure keeps the
+            # ranking meaningful; the horizon figure answers "before this
+            # expiry", and they are labelled separately rather than blended.
+            "touch_prob": touch_probability(strike, spot, em),
+            "touch_24h": touch_probability(strike, spot, em_day),
         })
     return sorted(out, key=lambda r: r["strike"])
 
