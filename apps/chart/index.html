@@ -318,12 +318,18 @@ footer b{color:var(--text); font-weight:600}
       <button type="button" data-side="tape" aria-pressed="false">Big Tape</button>
       <button type="button" data-side="levels" aria-pressed="false">Levels</button>
       <button type="button" data-side="net" aria-pressed="false">Net $</button>
+      <!-- VN equities only. Shown in place of the Binance microstructure tabs,
+           which have no VN equivalent: there is no public tape or depth stream.
+           What VN does have, and crypto does not, is foreign flow and ownership
+           room. -->
+      <button type="button" data-side="vnflow" aria-pressed="false" hidden>Dòng tiền</button>
     </div>
     <div class="side-pane" id="side-watch"></div>
     <div class="side-pane" id="side-book" hidden></div>
     <div class="side-pane" id="side-tape" hidden></div>
     <div class="side-pane" id="side-levels" hidden></div>
     <div class="side-pane" id="side-net" hidden></div>
+    <div class="side-pane" id="side-vnflow" hidden></div>
   </aside>
 </div>
 
@@ -362,6 +368,80 @@ const LIMIT = 500;
 const MAX_BARS = 5000;
 const COIN_CACHE_KEY = "leon_binance_coins_v1";
 const COIN_CACHE_MS = 24 * 60 * 60 * 1000;
+
+/* ---------- market kinds ----------
+   The chart began as crypto-only, so every panel below assumed a Binance pair
+   existed for whatever was typed. VN equities and US equities now share the
+   page, and each answers a different set of questions: VN has no public tape,
+   order-book stream or options, but it does have foreign flow and ownership
+   room, which crypto has no equivalent of. `symbolKind` is what every
+   Binance-specific call site gates on. */
+const VN_TIMEFRAMES = ["1h", "1d", "1w", "1M"];
+const US_TIMEFRAMES = ["1d", "1w", "1M"];
+// VPS serves 1/5/15/30/60 and D, but not W or M -- those 400. Weekly and
+// monthly are folded from daily bars in the browser instead.
+const VPS_RESOLUTION = {"1h":"60", "1d":"D"};
+// Measured 2026-09-07: how far back each resolution actually reaches. Stated on
+// the page rather than left for the reader to discover by scrolling into
+// nothing.
+const VPS_DEPTH_NOTE = {"1h":"~3 tháng", "1d":"~3 năm", "1w":"gộp từ ngày", "1M":"gộp từ ngày"};
+// VPS quotes in thousands of VND (255.5 for a 255,500 close), the same
+// convention PRICE_SCALE handles in vn_history.py.
+const VPS_PRICE_SCALE = 1000;
+
+let vnSymbols = null, usSymbols = null;
+
+// Liquid US tickers that are also three letters, so the pre-manifest heuristic
+// below does not mistake them for VN symbols and send them to a VN feed. Only
+// needed until us.json arrives; after that membership decides.
+const US_HINTS = ["SPY","QQQ","DIA","IWM","IVV","VOO","VTI","GLD","SLV","TLT",
+  "AMD","IBM","NKE","XOM","JPM","BAC","WMT","PEP","KO","DIS","UNH","CVX","MRK","PFE"];
+
+function symbolKind(sym){
+  // Membership decides once the manifests are in hand.
+  if(usSymbols && usSymbols.has(sym)) return "us";
+  if(vnSymbols && vnSymbols.has(sym)) return "vn";
+  if(usSymbols) return "crypto";   // manifests loaded and it is in neither
+
+  // Cold start: the manifests have not arrived, so classify by shape. Crypto
+  // bases win first (BTC, ETH, SOL are also three letters), then the known US
+  // names, then anything else three-letter is treated as VN. load() retries
+  // against the settled classification if this guess turns out wrong.
+  if(FALLBACK_COINS.includes(sym)) return "crypto";
+  if(US_HINTS.includes(sym)) return "us";
+  return /^[A-Z]{3}$/.test(sym) ? "vn" : "crypto";
+}
+
+/* The manifests are fetched once, lazily, and only to classify a symbol and
+   fill the datalist. stocks.json is ~960 KB, so it must never be on the boot
+   path -- the chart has to draw before it arrives. */
+async function loadEquityManifests(){
+  if(vnSymbols) return;
+  const [vn, us] = await Promise.all([
+    fetch("../../data/stocks.json", {cache:"force-cache"}).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch("../../data/us.json", {cache:"force-cache"}).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]);
+  const vnRows = vn && (Array.isArray(vn) ? vn : vn.rows) || [];
+  const usRows = us && us.rows || [];
+  vnSymbols = new Map(vnRows.filter(r => r && r.s).map(r => [r.s, r]));
+  usSymbols = new Map(usRows.filter(r => r && r.s).map(r => [r.s, r]));
+
+  // Append equities to the datalist the crypto list already populated. Liquid
+  // VN names first: 1,751 options are only useful if the ones anyone types are
+  // near the top.
+  const vnByLiquidity = [...vnSymbols.values()]
+    .sort((a, b) => (b.mc || 0) - (a.mc || 0))
+    .map(r => r.s);
+  const extra = [...usSymbols.keys(), ...vnByLiquidity];
+  const existing = new Set([...el.coins.options].map(o => o.value));
+  el.coins.append(...extra.filter(s => !existing.has(s)).map(s => {
+    const option = document.createElement("option");
+    option.value = s;
+    const row = usSymbols.get(s) || vnSymbols.get(s);
+    if(row && row.n) option.label = row.n;
+    return option;
+  }));
+}
 const FALLBACK_COINS = [
   "BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK",
   "SUI","TON","DOT","BCH","LTC","UNI","NEAR","APT","FIL","ARB",
@@ -510,14 +590,132 @@ function renderWatchlist(){
   const rows=watchlist.length?watchlist.map(sym=>{const q=watchQuotes[sym]||{},tone=q.ch==null?"":q.ch>=0?"up":"down";return `<div class="watch-row" data-watch="${sym}"><b>${sym}</b><span class="${tone}">${q.p==null?"—":nf(q.p,q.p<1?5:2)}${q.ch==null?"":`<small style="display:block">${q.ch>=0?"+":""}${q.ch.toFixed(2)}%</small>`}</span><button class="watch-rm" type="button" data-remove="${sym}" title="Bỏ ${sym}">×</button></div>`}).join(""):'<div class="side-empty">Nhấn ☆ để thêm mã đang xem.</div>';
   el.sideWatch.innerHTML=tools+rows;
 }
+/* Quotes are fetched per market. Binance rejects the WHOLE batched request if
+   any one symbol is unknown to it, so a single VN ticker starred into the
+   watchlist used to blank the price of every crypto beside it. */
 async function refreshWatchQuotes(){
   if(!watchlist.length)return;
-  const pairs=watchlist.map(x=>x+"USDT");
-  try{const r=await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(pairs))}`);if(!r.ok)throw Error(r.status);const data=await r.json();for(const x of data){watchQuotes[x.symbol.slice(0,-4)]={p:+x.lastPrice,ch:+x.priceChangePercent}}renderWatchlist()}catch(e){}
+  const crypto=[],equity=[];
+  for(const sym of watchlist)(symbolKind(sym)==="crypto"?crypto:equity).push(sym);
+
+  if(crypto.length){
+    const pairs=crypto.map(x=>x+"USDT");
+    try{const r=await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(pairs))}`);if(!r.ok)throw Error(r.status);const data=await r.json();for(const x of data){watchQuotes[x.symbol.slice(0,-4)]={p:+x.lastPrice,ch:+x.priceChangePercent}}}catch(e){}
+  }
+  // Equities come from the artifacts already loaded for classification, so this
+  // costs no extra request.
+  for(const sym of equity){
+    const row=(usSymbols&&usSymbols.get(sym))||(vnSymbols&&vnSymbols.get(sym));
+    if(row&&row.p!=null)watchQuotes[sym]={p:row.p,ch:row.chp!=null?row.chp:row.ch};
+  }
+  renderWatchlist();
 }
-function selectSymbol(next,announce=true){next=String(next||"").trim().toUpperCase();if(!next||next===symbol)return;symbol=next;el.sym.value=symbol;needsFit=true;loadDrawings();loadPriceAlerts();syncUrl(announce);updateWatchButton();load()}
+function selectSymbol(next,announce=true){next=String(next||"").trim().toUpperCase();if(!next||next===symbol)return;symbol=next;el.sym.value=symbol;needsFit=true;loadDrawings();loadPriceAlerts();
+  // Classification decides both the timeframe strip and which panels apply, so
+  // the manifests have to be in hand before the chart is drawn for a symbol
+  // that might be an equity.
+  loadEquityManifests().then(()=>{coerceTimeframe();updateTimeframeControls();applyMarketKind();syncUrl(announce);updateWatchButton();load()});}
 const SIDE_TABS=[...document.querySelectorAll("[data-side]")].map(b=>b.dataset.side);
 function setSide(name){if(!SIDE_TABS.includes(name))name="watch";document.querySelectorAll("[data-side]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.side===name)));for(const key of SIDE_TABS){const pane=document.getElementById(`side-${key}`);if(pane)pane.hidden=key!==name}if(name==="net")renderNetDollar();try{localStorage.setItem("leon_chart_side_tab",name)}catch(e){}}
+/* Show only the panels the current market can actually fill.
+   Order book, Big Tape and Net $ are all built from Binance's aggTrade and
+   depth streams. VN publishes no equivalent, and leaving the tabs visible would
+   present an empty panel as if the market were quiet rather than unobservable.
+   GEX is already gated to BTC/ETH inside loadLevels(). */
+const CRYPTO_ONLY_SIDES = ["book", "tape", "net", "levels"];
+function applyMarketKind(){
+  const kind = symbolKind(symbol);
+  const isVn = kind === "vn";
+  document.querySelectorAll("[data-side]").forEach(b => {
+    if(CRYPTO_ONLY_SIDES.includes(b.dataset.side)) b.hidden = kind !== "crypto";
+    if(b.dataset.side === "vnflow") b.hidden = !isVn;
+  });
+  // If the visible tab just became irrelevant, fall back rather than leaving
+  // the reader on a hidden pane.
+  const active = document.querySelector('[data-side][aria-pressed="true"]');
+  if(!active || active.hidden) setSide(isVn ? "vnflow" : "watch");
+  if(isVn) renderVnFlow(symbol);
+}
+
+/* VN money flow, fetched live from the VPS board.
+   This endpoint answers Access-Control-Allow-Origin: * -- unlike SSI iBoard,
+   which restricts CORS to its own board and therefore has to run pipeline-side.
+   It carries what actually answers "what is the big money doing" in a market
+   with no options and no public tape: three levels of real depth, foreign
+   buy/sell inside the session, remaining foreign room, and put-through
+   (thoả thuận) volume, which is where institutional blocks land. */
+async function renderVnFlow(sym){
+  const box = document.getElementById("side-vnflow");
+  if(!box) return;
+  box.innerHTML = '<div class="side-empty">Đang tải dòng tiền…</div>';
+  let board = null;
+  try{
+    const r = await fetch(`https://bgapidatafeed.vps.com.vn/getliststockdata/${encodeURIComponent(sym)}`);
+    if(r.ok){ const d = await r.json(); board = Array.isArray(d) ? d[0] : null; }
+  }catch(e){ /* the fundamentals below still stand without it */ }
+  if(sym !== symbol) return;
+
+  const row = vnSymbols && vnSymbols.get(sym);
+  const num = (v, d = 2) => v == null || !isFinite(v) ? "—" : (+v).toLocaleString("vi-VN", {minimumFractionDigits:d, maximumFractionDigits:d});
+  const signed = (v, d = 2) => v == null || !isFinite(v) ? "—" : (v >= 0 ? "+" : "") + num(v, d);
+  const tone = v => v == null ? "" : v >= 0 ? "up" : "down";
+  const line = (k, v, cls = "") => `<div class="watch-row"><b>${k}</b><span class="${cls}">${v}</span></div>`;
+
+  let html = "";
+
+  if(board){
+    // g1-g3 are the bid side, g4-g6 the ask side, each "price|volume|flag".
+    const level = key => {
+      const raw = board[key];
+      if(!raw || typeof raw !== "string") return null;
+      const [p, v] = raw.split("|");
+      return (+p > 0) ? {p:+p * VPS_PRICE_SCALE, v:+v} : null;
+    };
+    const bids = ["g1","g2","g3"].map(level).filter(Boolean);
+    const asks = ["g4","g5","g6"].map(level).filter(Boolean);
+    if(bids.length || asks.length){
+      const max = Math.max(1, ...[...bids, ...asks].map(x => x.v));
+      const rows = (arr, side) => arr.map(x =>
+        `<div class="book-row ${side}"><i style="width:${x.v / max * 100}%"></i>` +
+        `<span>${num(x.p, 0)}</span><span>${compact(x.v)}</span></div>`).join("");
+      html += `<div class="side-summary"><b>${sym}</b><span>Sổ lệnh 3 mức</span></div>`
+        + rows([...asks].reverse(), "ask") + rows(bids, "bid");
+    }
+
+    const fBuy = +board.fBValue, fSell = +board.fSValue;
+    if(isFinite(fBuy) && isFinite(fSell)){
+      const net = (fBuy - fSell) / 1e9;
+      html += '<div class="side-summary"><span>Khối ngoại trong phiên</span></div>'
+        + line("Mua", num(fBuy / 1e9, 2) + " tỷ", "up")
+        + line("Bán", num(fSell / 1e9, 2) + " tỷ", "down")
+        + line("Ròng", signed(net, 2) + " tỷ", tone(net));
+    }
+    // Put-through trades settle outside the order book. A large number here
+    // with a quiet tape is the clearest free sign of an institutional block.
+    const pt = +board.ptVol;
+    if(isFinite(pt) && pt > 0) html += line("Thoả thuận", compact(pt) + " CP");
+    if(+board.avePrice > 0) html += line("Giá TB phiên", num(+board.avePrice * VPS_PRICE_SCALE, 0));
+  }
+
+  if(row){
+    html += '<div class="side-summary"><span>Dòng tiền &amp; định giá</span></div>';
+    if(row.f1 != null) html += line("NN 1 phiên", signed(row.f1) + " tỷ", tone(row.f1));
+    if(row.f5 != null) html += line("NN 5 phiên", signed(row.f5) + " tỷ", tone(row.f5));
+    if(row.f20 != null) html += line("NN 20 phiên", signed(row.f20) + " tỷ", tone(row.f20));
+    // Near zero means foreign demand is capped by the ownership ceiling rather
+    // than by price -- a different situation from simply not being bought.
+    if(row.fr != null) html += line("Room ngoại", num(row.fr, 1) + "%", row.fr < 1 ? "down" : "");
+    if(row.pe != null) html += line("P/E", num(row.pe, 1));
+    if(row.pb != null) html += line("P/B", num(row.pb, 2));
+    if(row.roe != null) html += line("ROE", num(row.roe, 1) + "%");
+    if(row.pos52 != null) html += line("Vị trí 52T", num(row.pos52, 0));
+    if(row.mc != null) html += line("Vốn hoá", compact(row.mc) + " tỷ");
+    html += `<div class="side-summary"><a href="../ticker/?s=${encodeURIComponent(sym)}" target="_top">Xem hồ sơ đầy đủ →</a></div>`;
+  }
+
+  box.innerHTML = html || '<div class="side-empty">Không có dữ liệu dòng tiền cho mã này.</div>';
+}
+
 function closeMicrostructure(){clearInterval(bookTimer);bookTimer=null;if(tradeWs){tradeWs.onmessage=tradeWs.onclose=tradeWs.onerror=null;try{tradeWs.close()}catch(e){}tradeWs=null}}
 async function refreshBook(sym,token){
   if(token!==inflight)return;
@@ -2071,6 +2269,96 @@ async function fromHyperliquid(sym, tf, endTime){
   }));
 }
 
+/* VN equities from the VPS TradingView feed, fetched in the browser for the
+   same reason Binance is: it is CORS-open and needs no key, so the reader's own
+   browser can ask for exactly the one symbol they are looking at rather than
+   the pipeline pre-fetching 1,751 of them.
+
+   Three differences from the loaders above, each of which silently corrupts the
+   chart if missed:
+   - every field arrives as a STRING, timestamps included
+   - `t` is already in seconds, so unlike Binance (r[0]/1000) and Hyperliquid
+     (r.t/1000) it must NOT be divided
+   - prices are in thousands of VND, matching PRICE_SCALE in vn_history.py */
+async function fromVps(sym, tf, endTime){
+  const resolution = VPS_RESOLUTION[tf] || (tf === "1w" || tf === "1M" ? "D" : "60");
+  const to = Math.floor((endTime || Date.now()) / 1000);
+  // Ask wide and let the feed return what it holds: intraday reaches ~3 months,
+  // daily ~3 years. Weekly and monthly are folded from daily below.
+  const span = resolution === "D" ? 5 * 365 * 86400 : 200 * 86400;
+  const url = "https://histdatafeed.vps.com.vn/tradingview/history"
+    + `?symbol=${encodeURIComponent(sym)}&resolution=${resolution}&from=${to - span}&to=${to}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("vps " + res.status);
+  const d = await res.json();
+  if(d.s !== "ok" || !Array.isArray(d.t) || !d.t.length) throw new Error("vps " + (d.s || "empty"));
+
+  const bars = d.t.map((t, i) => ({
+    time: +t,
+    open: +d.o[i] * VPS_PRICE_SCALE,
+    high: +d.h[i] * VPS_PRICE_SCALE,
+    low:  +d.l[i] * VPS_PRICE_SCALE,
+    close:+d.c[i] * VPS_PRICE_SCALE,
+    volume: +d.v[i],
+  })).filter(b => isFinite(b.close) && b.close > 0);
+
+  return (tf === "1w" || tf === "1M") ? foldBars(bars, tf) : bars;
+}
+
+/* US equities from the published artifact. Yahoo sends no CORS header, so
+   unlike VN this cannot be proxied through the browser -- us_equity.py fetches
+   it pipeline-side and publishes OHLCV. */
+async function fromUsJson(sym, tf){
+  if(!usSymbols) await loadEquityManifests();
+  const row = usSymbols && usSymbols.get(sym);
+  const hist = row && row.hist;
+  if(!Array.isArray(hist) || !hist.length) throw new Error("us no history");
+  // Older builds published [date, close] pairs, which cannot draw a candle.
+  // Accept them rather than break on a stale artifact: the flat line is still
+  // honest, and says plainly that OHLC was not collected then.
+  const bars = hist.map(row => {
+    const t = Math.floor(Date.parse(row[0] + "T00:00:00Z") / 1000);
+    if(row.length >= 6){
+      return {time:t, open:+row[1], high:+row[2], low:+row[3], close:+row[4], volume:+row[5]};
+    }
+    const c = +row[1];
+    return {time:t, open:c, high:c, low:c, close:c, volume:0};
+  }).filter(b => isFinite(b.time) && isFinite(b.close));
+
+  return tf === "1d" ? bars : foldBars(bars, tf);
+}
+
+/* Fold daily bars into weekly or monthly ones. VPS answers 400 for W and M and
+   us.json is daily, so this is the only way those timeframes exist for
+   equities. Buckets are keyed on UTC to match how the daily bars arrive. */
+function foldBars(bars, tf){
+  const out = [];
+  let bucket = null, key = null;
+  for(const bar of bars){
+    const d = new Date(bar.time * 1000);
+    let k;
+    if(tf === "1M"){
+      k = d.getUTCFullYear() * 12 + d.getUTCMonth();
+    }else{
+      // ISO-ish week: shift so weeks start Monday, then floor to whole weeks.
+      const days = Math.floor(bar.time / 86400);
+      k = Math.floor((days + 3) / 7);
+    }
+    if(k !== key){
+      if(bucket) out.push(bucket);
+      key = k;
+      bucket = {time:bar.time, open:bar.open, high:bar.high, low:bar.low, close:bar.close, volume:bar.volume};
+    }else{
+      bucket.high = Math.max(bucket.high, bar.high);
+      bucket.low = Math.min(bucket.low, bar.low);
+      bucket.close = bar.close;
+      bucket.volume += bar.volume;
+    }
+  }
+  if(bucket) out.push(bucket);
+  return out;
+}
+
 /* Perp context: funding and open interest say whether a move is being pushed
    by leverage or by spot demand. Both are free and keyless. */
 async function perpStats(sym){
@@ -2280,21 +2568,64 @@ async function load(){
   el.msg.innerHTML = "<strong>Đang tải dữ liệu…</strong>";
 
   let bars, source = "Binance";
-  try{
-    bars = await fromBinance(symbol, timeframe);
-  }catch(primary){
+  const kind = symbolKind(symbol);
+  if(kind !== "crypto"){
+    // Equities never touch the Binance chain: an unknown pair there costs three
+    // failing requests and, in the watchlist's batched call, takes the valid
+    // symbols down with it.
+    const fetchEquity = async k => {
+      const rows = k === "us" ? await fromUsJson(symbol, timeframe) : await fromVps(symbol, timeframe);
+      return [rows, k === "us" ? "Yahoo (trễ)" : "VPS"];
+    };
     try{
-      bars = await fromHyperliquid(symbol, timeframe);
-      source = "Hyperliquid";
-    }catch(fallback){
-      if(token !== inflight) return;
-      closeStream();
-      closeMicrostructure();
-      el.msg.innerHTML =
-        `<strong>Không tải được ${symbol}</strong>` +
-        `<small>Cả Binance lẫn Hyperliquid đều không trả dữ liệu cho mã này. ` +
-        `Kiểm tra lại ký hiệu (ví dụ BTC, ETH, SOL).</small>`;
-      return;
+      [bars, source] = await fetchEquity(kind);
+    }catch(first){
+      // `kind` was a shape guess if the manifests had not arrived yet. Load
+      // them and retry against the settled classification before giving up, so
+      // a US ticker opened from a cold start is not reported as a missing VN
+      // symbol.
+      let recovered = false;
+      try{
+        await loadEquityManifests();
+        const settled = symbolKind(symbol);
+        if(settled !== kind && settled !== "crypto"){
+          [bars, source] = await fetchEquity(settled);
+          coerceTimeframe();
+          updateTimeframeControls();
+          applyMarketKind();
+          recovered = true;
+        }
+      }catch(second){ /* fall through to the message below */ }
+
+      if(!recovered){
+        if(token !== inflight) return;
+        closeStream();
+        closeMicrostructure();
+        el.msg.innerHTML =
+          `<strong>Không tải được ${symbol}</strong>` +
+          `<small>${kind === "us"
+            ? "Mã Mỹ đọc từ data/us.json — chạy lại pipeline nếu thiếu."
+            : "Nguồn VPS không trả dữ liệu cho mã này ở khung " + timeframe + "."}</small>`;
+        return;
+      }
+    }
+  }else{
+    try{
+      bars = await fromBinance(symbol, timeframe);
+    }catch(primary){
+      try{
+        bars = await fromHyperliquid(symbol, timeframe);
+        source = "Hyperliquid";
+      }catch(fallback){
+        if(token !== inflight) return;
+        closeStream();
+        closeMicrostructure();
+        el.msg.innerHTML =
+          `<strong>Không tải được ${symbol}</strong>` +
+          `<small>Cả Binance lẫn Hyperliquid đều không trả dữ liệu cho mã này. ` +
+          `Kiểm tra lại ký hiệu (ví dụ BTC, ETH, SOL).</small>`;
+        return;
+      }
     }
   }
   if(token !== inflight) return;
@@ -2330,9 +2661,12 @@ async function load(){
   el.upd.textContent = new Date().toLocaleTimeString("vi-VN");
   el.msg.hidden = true;
 
-  const stats = await perpStats(symbol);
+  // Both are Binance/Coinbase perp concepts with no equity equivalent. They
+  // were previously called unconditionally, each try/caught into silence, so a
+  // VN symbol fired four doomed cross-origin requests per load.
+  const stats = kind === "crypto" ? await perpStats(symbol) : {};
   if(token !== inflight) return;
-  const premium = await coinbasePremium(symbol, stats.mark);
+  const premium = kind === "crypto" ? await coinbasePremium(symbol, stats.mark) : null;
   if(token !== inflight) return;
 
   const last = bars[bars.length - 1];
@@ -3730,9 +4064,18 @@ async function loadOlderHistory(){
     // endTime is inclusive, so step back one second to avoid refetching the
     // bar already held at the left edge.
     const endMs = (oldestTime - 1) * 1000;
-    const older = currentSource === "Hyperliquid"
-      ? await fromHyperliquid(symbol, timeframe, endMs)
-      : await fromBinance(symbol, timeframe, endMs);
+    let older;
+    if(currentSource === "Hyperliquid"){
+      older = await fromHyperliquid(symbol, timeframe, endMs);
+    }else if(currentSource === "VPS"){
+      older = await fromVps(symbol, timeframe, endMs);
+    }else if(currentSource.startsWith("Yahoo")){
+      // us.json ships one fixed window; there is no older page to request.
+      historyExhausted = true;
+      return;
+    }else{
+      older = await fromBinance(symbol, timeframe, endMs);
+    }
 
     if(token !== inflight) return;          // symbol or timeframe changed mid-flight
     const fresh = older.filter(b => b.time < oldestTime);
@@ -3772,10 +4115,40 @@ const pricePaneElement = chart.panes()[0].getHTMLElement();
 if(pricePaneElement) drawResizeObserver.observe(pricePaneElement);
 
 /* ---------- controls ---------- */
+/* Which timeframes the current symbol's source can actually answer. Offering a
+   1m button for a stock that has no 1m data is worse than hiding it: the reader
+   cannot tell a missing feed from a quiet market. */
+function allowedTimeframes(){
+  const kind = symbolKind(symbol);
+  if(kind === "us") return US_TIMEFRAMES;
+  if(kind === "vn") return VN_TIMEFRAMES;
+  return TIMEFRAMES;
+}
 function updateTimeframeControls(){
-  [...el.tfs.querySelectorAll("button")].forEach(c => c.setAttribute("aria-pressed", String(c.dataset.tf === timeframe)));
+  const allowed = allowedTimeframes();
+  [...el.tfs.querySelectorAll("button")].forEach(c => {
+    c.setAttribute("aria-pressed", String(c.dataset.tf === timeframe));
+    c.hidden = !allowed.includes(c.dataset.tf);
+  });
   const more = el.tfs.querySelector("select");
-  if(more){ more.value = PRIMARY_TIMEFRAMES.includes(timeframe) ? "" : timeframe; more.classList.toggle("active", !PRIMARY_TIMEFRAMES.includes(timeframe)); }
+  if(more){
+    const extra = allowed.filter(tf => !PRIMARY_TIMEFRAMES.includes(tf));
+    more.hidden = !extra.length;
+    more.innerHTML = '<option value="">Khác</option>'
+      + extra.map(tf => `<option value="${tf}">${tf}</option>`).join("");
+    more.value = PRIMARY_TIMEFRAMES.includes(timeframe) ? "" : timeframe;
+    more.classList.toggle("active", !PRIMARY_TIMEFRAMES.includes(timeframe));
+  }
+}
+/* Snap to a timeframe the new symbol supports. Switching from BTC on 5m to a
+   VN ticker must not leave the chart asking VPS for a resolution it will not
+   serve. */
+function coerceTimeframe(){
+  const allowed = allowedTimeframes();
+  if(allowed.includes(timeframe)) return false;
+  timeframe = allowed.includes("1d") ? "1d" : allowed[0];
+  needsFit = true;
+  return true;
 }
 function selectTimeframe(tf){
   if(!TIMEFRAMES.includes(tf) || tf === timeframe) return;
@@ -4429,7 +4802,15 @@ loadDrawings();
 loadPriceAlerts();
 loadIndicators();
 renderIndicatorList();
+/* Draw immediately from whatever the shape heuristic says, then reclassify once
+   the manifests arrive. Waiting on a ~960 KB artifact before the first paint
+   would make every crypto load pay for a feature it does not use. */
 load();
+loadEquityManifests().then(() => {
+  applyMarketKind();
+  if(coerceTimeframe()){ updateTimeframeControls(); load(); }
+  else updateTimeframeControls();
+});
 </script>
 </body>
 </html>

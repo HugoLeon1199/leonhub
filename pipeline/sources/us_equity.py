@@ -117,6 +117,23 @@ def _quote_rows(symbol: str, parsed: dict[str, Any], fetched_at: datetime) -> li
     } for bar in parsed["bars"]]
 
 
+def _hist_point(bar: dict[str, Any]) -> list[Any]:
+    """One published candle: [date, open, high, low, close, volume].
+
+    Yahoo leaves O/H/L null on a session it has no print for even though it
+    reports a close. Falling back to the close draws a doji there, which is what
+    actually happened as far as the feed knows -- and is honest in a way that
+    dropping the bar (leaving a silent hole in the series) would not be.
+    """
+    close = round(bar["close"], 3)
+    pick = lambda key: round(bar[key], 3) if bar.get(key) is not None else close
+    return [
+        bar["as_of"].isoformat(),
+        pick("open"), pick("high"), pick("low"), close,
+        int(bar["volume"] or 0),
+    ]
+
+
 def _published_row(symbol: str, parsed: dict[str, Any]) -> dict[str, Any]:
     """Compact view for the browser: trailing window plus derived state."""
     bars = parsed["bars"]
@@ -149,10 +166,11 @@ def _published_row(symbol: str, parsed: dict[str, Any]) -> dict[str, Any]:
         "m6": round(m6, 2) if m6 is not None else None,
         "d": "up" if sma50 and price >= sma50 else "down",
         "w": "up" if sma200 and price >= sma200 else "down",
-        "hist": [
-            [bar["as_of"].isoformat(), round(bar["close"], 3)]
-            for bar in bars[-PUBLISH_SESSIONS:]
-        ],
+        # [date, open, high, low, close, volume]. Previously close only, which
+        # made a candlestick impossible -- the collector fetched full OHLCV and
+        # discarded it at the publish boundary. Readers must accept the older
+        # two-element shape as well; apps/chart does.
+        "hist": [_hist_point(bar) for bar in bars[-PUBLISH_SESSIONS:]],
         "asof": as_of,
     }
 

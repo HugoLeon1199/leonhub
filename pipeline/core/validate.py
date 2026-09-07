@@ -191,16 +191,30 @@ def validate_us(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | Non
         if not isinstance(history, list) or len(history) < US_MIN_SESSIONS:
             malformed.append(row.get("s"))
             continue
-        if any(not isinstance(point, list) or len(point) != 2 for point in history):
+        # [date, close] is the legacy shape; [date, o, h, l, c, v] is what the
+        # collector publishes now so a candlestick can be drawn. Accept both,
+        # and read the close positionally from whichever arrived.
+        if any(not isinstance(point, list) or len(point) not in (2, 6) for point in history):
             malformed.append(row.get("s"))
             continue
         dates = [point[0] for point in history]
         if dates != sorted(dates) or len(set(dates)) != len(dates):
             malformed.append(row.get("s"))
+        # An OHLC bar whose high is below its low, or whose close sits outside
+        # the bar, means the columns were mapped in the wrong order -- a fault
+        # that produces a plausible-looking chart rather than an error.
+        inverted = [
+            point for point in history
+            if len(point) == 6 and None not in point[1:5]
+            and (point[2] < point[3] or not point[3] <= point[4] <= point[2])
+        ]
+        if inverted:
+            malformed.append(row.get("s"))
         price = row.get("p")
+        last_close = history[-1][-2] if len(history[-1]) == 6 else history[-1][1]
         if not isinstance(price, (int, float)) or price <= 0:
             malformed.append(row.get("s"))
-        elif history[-1][1] and abs(price / history[-1][1] - 1) > 0.10:
+        elif last_close and abs(price / last_close - 1) > 0.10:
             stale_close.append(row.get("s"))
     if malformed:
         rep.error(f"{len(malformed)} US rows have malformed price/history (first: {malformed[0]})")
