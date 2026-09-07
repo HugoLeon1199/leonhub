@@ -1,7 +1,8 @@
 {
  "_about": "Hồ sơ 34 tỉnh/thành sau sáp nhập 2025. Phần cơ cấu hành chính lấy từ Nghị quyết 202/2025/QH15. Phần nhận định thị trường được đánh dấu riêng là quan điểm, không phải số liệu đo được. Số liệu giá lấy từ bảng bất động sản của chính LEON.",
  "_sources": {
-  "nq202": "Nghị quyết 202/2025/QH15 về sắp xếp đơn vị hành chính cấp tỉnh, Quốc hội khóa XV, thông qua 12/6/2025 — nguồn cho danh sách 34 tỉnh và các tỉnh thành phần trước sáp nhập"
+  "nq202": "Nghị quyết 202/2025/QH15 về sắp xếp đơn vị hành chính cấp tỉnh, Quốc hội khóa XV, thông qua 12/6/2025 — nguồn cho danh sách 34 tỉnh và các tỉnh thành phần trước sáp nhập",
+  "planning": "Quyết định phê duyệt Quy hoạch tỉnh/thành phố thời kỳ 2021-2030, tầm nhìn đến năm 2050, do Thủ tướng Chính phủ ban hành. Số hiệu và ngày ban hành được ghi kèm từng tỉnh; toàn văn tra cứu tại Công báo Chính phủ. Chỉ ghi những tỉnh xác định được chắc chắn số hiệu — tỉnh chưa ghi là chưa dẫn được nguồn, không phải chưa có quy hoạch."
  },
  "_disclaimer": "Chưa công bố dân số và diện tích từng tỉnh: các con số sau sáp nhập cần lấy từ nguồn thống kê chính thức ở dạng máy đọc được, chưa dẫn được nên để trống thay vì đăng số có thể sai. Mọi nhận định trong mục 'view' là quan điểm phân tích, không phải khuyến nghị đầu tư.",
  "provinces": {
@@ -15,7 +16,13 @@
     "Hạ tầng vành đai",
     "Giá cao so với thu nhập"
    ],
-   "view": "Thị trường lớn nhất miền Bắc, thanh khoản cao. Mặt bằng giá đã lên rất cao so với thu nhập bình quân, nên dư địa tăng phụ thuộc vào hạ tầng vành đai và nguồn cung mới hơn là vào định giá."
+   "view": "Thị trường lớn nhất miền Bắc, thanh khoản cao. Mặt bằng giá đã lên rất cao so với thu nhập bình quân, nên dư địa tăng phụ thuộc vào hạ tầng vành đai và nguồn cung mới hơn là vào định giá.",
+   "planning": {
+    "decision": "1569/QĐ-TTg",
+    "date": "2024-12-12",
+    "title": "Quy hoạch Thủ đô Hà Nội thời kỳ 2021-2030, tầm nhìn đến năm 2050. Định hướng phát triển theo mô hình chùm đô thị, đa cực, gắn với các vành đai và trục hướng tâm; hình thành thành phố phía Bắc và phía Tây trực thuộc Thủ đô.",
+    "source": "congbao.chinhphu.vn"
+   }
   },
   "ho-chi-minh": {
    "kind": "Thành phố trực thuộc Trung ương",
@@ -28,7 +35,13 @@
     "Cảng biển Cái Mép",
     "Quy mô dân số lớn nhất"
    ],
-   "view": "Sáp nhập gộp ba thị trường rất khác nhau: đô thị lõi TP.HCM, vành đai công nghiệp Bình Dương và trục cảng - du lịch Bà Rịa - Vũng Tàu. Giá theo quận/huyện phân tán rất rộng, nên số trung vị cấp tỉnh ít có ý nghĩa hơn ở nơi khác."
+   "view": "Sáp nhập gộp ba thị trường rất khác nhau: đô thị lõi TP.HCM, vành đai công nghiệp Bình Dương và trục cảng - du lịch Bà Rịa - Vũng Tàu. Giá theo quận/huyện phân tán rất rộng, nên số trung vị cấp tỉnh ít có ý nghĩa hơn ở nơi khác.",
+   "planning": {
+    "decision": "1711/QĐ-TTg",
+    "date": "2024-12-31",
+    "title": "Quy hoạch TP.HCM thời kỳ 2021-2030, tầm nhìn đến năm 2050. Định hướng đô thị đa trung tâm, phát triển theo định hướng giao thông công cộng (TOD), mở rộng không gian về phía Đông và các hướng kết nối vùng.",
+    "source": "congbao.chinhphu.vn"
+   }
   },
   "hai-phong": {
    "kind": "Thành phố trực thuộc Trung ương",
@@ -39,7 +52,13 @@
     "Công nghiệp chế biến",
     "Logistics"
    ],
-   "view": "Cụm cảng lớn nhất miền Bắc cộng với vùng công nghiệp Hải Dương. Hạ tầng kết nối Hà Nội - Hải Phòng đã hoàn chỉnh, nên câu chuyện nghiêng về công nghiệp và logistics hơn là nhà ở đô thị."
+   "view": "Cụm cảng lớn nhất miền Bắc cộng với vùng công nghiệp Hải Dương. Hạ tầng kết nối Hà Nội - Hải Phòng đã hoàn chỉnh, nên câu chuyện nghiêng về công nghiệp và logistics hơn là nhà ở đô thị.",
+   "planning": {
+    "decision": "1516/QĐ-TTg",
+    "date": "2023-12-02",
+    "title": "Quy hoạch thành phố Hải Phòng thời kỳ 2021-2030, tầm nhìn đến năm 2050. Trọng tâm là cảng biển, logistics và công nghiệp công nghệ cao gắn với khu kinh tế ven biển.",
+    "source": "congbao.chinhphu.vn"
+   }
   },
   "da-nang": {
    "kind": "Thành phố trực thuộc Trung ương",
@@ -50,7 +69,13 @@
     "Trung tâm miền Trung",
     "Khu kinh tế Chu Lai"
    ],
-   "view": "Trung tâm miền Trung, thị trường nghiêng về du lịch và second home nên nhạy với chu kỳ hơn thị trường nhà ở thuần. Sáp nhập Quảng Nam bổ sung quỹ đất và khu kinh tế Chu Lai."
+   "view": "Trung tâm miền Trung, thị trường nghiêng về du lịch và second home nên nhạy với chu kỳ hơn thị trường nhà ở thuần. Sáp nhập Quảng Nam bổ sung quỹ đất và khu kinh tế Chu Lai.",
+   "planning": {
+    "decision": "1287/QĐ-TTg",
+    "date": "2023-11-02",
+    "title": "Quy hoạch thành phố Đà Nẵng thời kỳ 2021-2030, tầm nhìn đến năm 2050. Định hướng trung tâm du lịch, dịch vụ chất lượng cao, cảng biển và trung tâm tài chính khu vực.",
+    "source": "congbao.chinhphu.vn"
+   }
   },
   "can-tho": {
    "kind": "Thành phố trực thuộc Trung ương",
@@ -61,7 +86,13 @@
     "Nông nghiệp",
     "Cảng Trần Đề"
    ],
-   "view": "Trung tâm vùng ĐBSCL. Quy hoạch cảng nước sâu Trần Đề (Sóc Trăng cũ) là yếu tố hạ tầng đáng theo dõi nhất sau sáp nhập."
+   "view": "Trung tâm vùng ĐBSCL. Quy hoạch cảng nước sâu Trần Đề (Sóc Trăng cũ) là yếu tố hạ tầng đáng theo dõi nhất sau sáp nhập.",
+   "planning": {
+    "decision": "1519/QĐ-TTg",
+    "date": "2023-12-02",
+    "title": "Quy hoạch thành phố Cần Thơ thời kỳ 2021-2030, tầm nhìn đến năm 2050. Trung tâm vùng Đồng bằng sông Cửu Long về dịch vụ, logistics nông nghiệp và công nghiệp chế biến.",
+    "source": "congbao.chinhphu.vn"
+   }
   },
   "hue": {
    "kind": "Thành phố trực thuộc Trung ương",
@@ -81,7 +112,13 @@
     "Cửa khẩu Móng Cái",
     "Than khoáng sản"
    ],
-   "view": "Không sáp nhập. Kinh tế dựa vào du lịch, cửa khẩu và khai khoáng; bất động sản tập trung ở trục Hạ Long - Cẩm Phả - Móng Cái."
+   "view": "Không sáp nhập. Kinh tế dựa vào du lịch, cửa khẩu và khai khoáng; bất động sản tập trung ở trục Hạ Long - Cẩm Phả - Móng Cái.",
+   "planning": {
+    "decision": "80/QĐ-TTg",
+    "date": "2023-02-11",
+    "title": "Quy hoạch tỉnh Quảng Ninh thời kỳ 2021-2030, tầm nhìn đến năm 2050. Phát triển theo mô hình một tâm, hai tuyến đa chiều, gắn du lịch, cảng biển và kinh tế cửa khẩu.",
+    "source": "congbao.chinhphu.vn"
+   }
   },
   "bac-ninh": {
    "kind": "Tỉnh",
@@ -217,7 +254,13 @@
     "Dân số lớn",
     "Bờ biển dài"
    ],
-   "view": "Không sáp nhập. Dân số thuộc nhóm lớn nhất cả nước; khu kinh tế Nghi Sơn với lọc hóa dầu là động lực công nghiệp chính."
+   "view": "Không sáp nhập. Dân số thuộc nhóm lớn nhất cả nước; khu kinh tế Nghi Sơn với lọc hóa dầu là động lực công nghiệp chính.",
+   "planning": {
+    "decision": "153/QĐ-TTg",
+    "date": "2023-02-27",
+    "title": "Quy hoạch tỉnh Thanh Hóa thời kỳ 2021-2030, tầm nhìn đến năm 2045, gắn với Khu kinh tế Nghi Sơn và hành lang ven biển.",
+    "source": "congbao.chinhphu.vn"
+   }
   },
   "nghe-an": {
    "kind": "Tỉnh",
@@ -237,7 +280,13 @@
     "Thép Formosa",
     "Cảng nước sâu"
    ],
-   "view": "Không sáp nhập. Kinh tế phụ thuộc nhiều vào khu kinh tế Vũng Áng, nên chu kỳ bất động sản gắn với chu kỳ công nghiệp nặng."
+   "view": "Không sáp nhập. Kinh tế phụ thuộc nhiều vào khu kinh tế Vũng Áng, nên chu kỳ bất động sản gắn với chu kỳ công nghiệp nặng.",
+   "planning": {
+    "decision": "1363/QĐ-TTg",
+    "date": "2022-11-08",
+    "title": "Quy hoạch tỉnh Hà Tĩnh thời kỳ 2021-2030, tầm nhìn đến năm 2050 — quy hoạch tỉnh đầu tiên cả nước được phê duyệt theo Luật Quy hoạch, trọng tâm Khu kinh tế Vũng Áng.",
+    "source": "congbao.chinhphu.vn"
+   }
   },
   "quang-tri": {
    "kind": "Tỉnh",

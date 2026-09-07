@@ -29,8 +29,27 @@
 .pkind{font-size:11px;color:var(--accent);letter-spacing:.03em;margin-bottom:6px}
 .ptags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 .ptag{font-size:10.5px;padding:2px 7px;border:1px solid var(--line);border-radius:99px;color:var(--muted)}
-.padmin,.pview{font-size:12.5px;line-height:1.6;color:var(--muted);margin:0 0 8px}
-.pview b{color:var(--text);display:block;font-size:11px;letter-spacing:.03em;margin-bottom:2px}
+.padmin,.pview,.pplan{font-size:12.5px;line-height:1.6;color:var(--muted);margin:0 0 8px}
+.pview b,.pplan b{color:var(--text);display:block;font-size:11px;letter-spacing:.03em;margin-bottom:2px}
+/* Sourced fact, so it takes the accent rule rather than sitting unmarked
+   beside the opinion paragraph below it. */
+.pplan{border-left:2px solid var(--accent);padding-left:9px}
+.pplan.dim{border-left-color:var(--line);opacity:.7}
+
+/* ---- individual listings in the district drawer ---- */
+.lst-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:18px 0 8px;padding-top:14px;border-top:1px solid var(--line)}
+.lst-head h3{margin:0;font-size:13px}
+.lst-f{display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));gap:6px;margin-bottom:9px}
+.lst-f select,.lst-f input{width:100%;border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:6px 8px;min-width:0}
+.lst-wrap{display:grid;gap:7px;max-height:52vh;overflow:auto}
+.lst{display:block;padding:9px 10px;background:var(--panel2);border:1px solid transparent;border-radius:8px;color:inherit;text-decoration:none}
+.lst:hover{border-color:var(--accent)}
+.lst-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.lst-h b{font-size:14px}
+.lst-h span{color:var(--accent);font-size:12px}
+.lst-t{font-size:12.5px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lst-m{color:var(--muted);font-size:11px;margin-top:2px}
+.lst-m i{font-style:normal;color:var(--accent)}
 .psrc{display:block;font-size:10.5px;opacity:.75;margin-top:3px}
 </style>
 </head>
@@ -175,6 +194,9 @@ function renderTable(){
   $("tbody").querySelectorAll("tr[data-slug]").forEach(tr=>tr.onclick=()=>openDistrict(tr.dataset.slug,tr.dataset.cat));
 }
 function verdict(v){return v==="cheap"?'<span class="badge cheap">Thuê đỡ giá</span>':v==="rich"?'<span class="badge rich">Kỳ vọng cao</span>':v==="fair"?'<span class="badge fair">Cân bằng</span>':'<span class="dim">—</span>'}function signed(v){return `${v>0?"+":""}${fmt(v,1)}`}function esc(v){const d=document.createElement("div");d.textContent=v??"";return d.innerHTML}
+/* ISO date to VN day/month/year. Returned unchanged if it is not a plain
+   ISO date, so a malformed value shows itself instead of becoming "NaN". */
+function fmtDate(iso){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||""));return m?`${m[3]}/${m[2]}/${m[1]}`:String(iso||"")}
 
 function oldMap(){
   const m={};DATA.provinces.forEach(p=>{m[norm(p.name)]=p.name;p.from.forEach(n=>m[norm(n)]=p.name)});
@@ -236,6 +258,15 @@ function profileNarrative(p){
     (pr.kind?`<div class="pkind">${esc(pr.kind)}</div>`:"")+
     (tags?`<div class="ptags">${tags}</div>`:"")+
     (admin?`<p class="padmin">${esc(admin)} <span class="psrc">Nguồn: Nghị quyết 202/2025/QH15</span></p>`:"")+
+    // Planning direction is sourced fact and carries its own citation, so it
+    // sits with the administrative note rather than with `view`. A province
+    // without an entry is one whose decision number we could not cite -- not
+    // one without a plan -- and the footnote says so rather than letting the
+    // silence imply otherwise.
+    (pr.planning?`<p class="pplan"><b>Quy hoạch &amp; tầm nhìn</b> ${esc(pr.planning.title)} `+
+      `<span class="psrc">Nguồn: Quyết định ${esc(pr.planning.decision)} ngày `+
+      `${esc(fmtDate(pr.planning.date))} · tra cứu toàn văn tại ${esc(pr.planning.source)}</span></p>`:
+     `<p class="pplan dim"><b>Quy hoạch &amp; tầm nhìn</b> Chưa dẫn được số hiệu quyết định cho tỉnh này — để trống thay vì ghi số có thể sai.</p>`)+
     (pr.view?`<p class="pview"><b>Nhận định</b> ${esc(pr.view)}</p>`:"")+
     `</div>`;
 }
@@ -253,7 +284,82 @@ function renderTrend(){
   series.forEach((s,si)=>{const by=Object.fromEntries(s.points.map(p=>[p.d,p])),pts=dates.map((d,i)=>by[d]?[x(i),y(by[d].p)]:null).filter(Boolean);if(!pts.length)return;const path=document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttribute("d",pts.map((p,i)=>(i?"L":"M")+p.join(",")).join(" "));path.setAttribute("fill","none");path.setAttribute("stroke",COLORS[si]);path.setAttribute("stroke-width","2.5");path.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(path);pts.forEach(p=>circle(p[0],p[1],COLORS[si]))});
   function line(x1,y1,x2,y2,c){const e=document.createElementNS("http://www.w3.org/2000/svg","line");Object.entries({x1,y1,x2,y2,stroke:c}).forEach(([k,v])=>e.setAttribute(k,v));e.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(e)}function text(x,y,s,c){const e=document.createElementNS("http://www.w3.org/2000/svg","text");e.setAttribute("x",x);e.setAttribute("y",y);e.setAttribute("fill",c);e.setAttribute("font-size","10");e.textContent=s;svg.appendChild(e)}function circle(cx,cy,c){const e=document.createElementNS("http://www.w3.org/2000/svg","circle");Object.entries({cx,cy,r:3,fill:c}).forEach(([k,v])=>e.setAttribute(k,v));svg.appendChild(e)}
 }
-function openDistrict(slug,cat){const r=DATA.rows.find(x=>x.slug===slug&&x.cs===cat);if(!r)return;$("drawerTitle").textContent=`${r.d} · ${r.i}`;const history=DATA.history.filter(p=>p.k===`${r.slug}__${r.cs}`).sort((a,b)=>a.d.localeCompare(b.d));$("drawerBody").innerHTML=`<div class="sub">${esc(r.r)} → tỉnh mới ${esc(r.rs)} · cập nhật ${dateText(r.u)}</div><div class="detail-grid" style="margin-top:12px"><div class="detail"><small>Giá/m² trung vị</small><b>${fmt(r.p)} triệu</b></div><div class="detail"><small>Nửa số tin</small><b>${fmt(r.p25)}–${fmt(r.p75)}</b></div><div class="detail"><small>Giá tin trung vị</small><b>${fmt(r.tp,2)} tỷ</b></div><div class="detail"><small>Diện tích trung vị</small><b>${fmt(r.sz,0)} m²</b></div><div class="detail"><small>Lợi suất gộp</small><b>${fmt(r.y,2)}%</b></div><div class="detail"><small>Ngày rao trung vị</small><b>${fmt(r.dom,0)} ngày</b></div><div class="detail"><small>Mẫu bán</small><b>${r.n}</b></div><div class="detail"><small>Mẫu thuê</small><b>${r.yn??"—"}</b></div></div><div class="explain"><b>${r.v==="cheap"?"Dòng tiền thuê đang đỡ giá":r.v==="rich"?"Giá phản ánh kỳ vọng tăng giá":r.v==="fair"?"Tương đối cân bằng với cùng phân khúc":"Chưa đủ cặp bán–thuê để định vị"}</b><br>Định vị này chỉ so lợi suất của khu vực với trung vị cùng loại hình; không phải định giá căn nhà cụ thể.</div><div class="source">Lịch sử: ${history.length} snapshot · CAGR: ${r.g==null?`chưa đủ ${DATA.cagr_min_days||180} ngày`:signed(r.g)+"%/năm"}.<br>Nguồn là tin rao công khai; chưa trừ thuế, phí, thời gian trống và thương lượng.</div>`;$("drawer").classList.add("open")}
+function openDistrict(slug,cat){const r=DATA.rows.find(x=>x.slug===slug&&x.cs===cat);if(!r)return;$("drawerTitle").textContent=`${r.d} · ${r.i}`;const history=DATA.history.filter(p=>p.k===`${r.slug}__${r.cs}`).sort((a,b)=>a.d.localeCompare(b.d));$("drawerBody").innerHTML=`<div class="sub">${esc(r.r)} → tỉnh mới ${esc(r.rs)} · cập nhật ${dateText(r.u)}</div><div class="detail-grid" style="margin-top:12px"><div class="detail"><small>Giá/m² trung vị</small><b>${fmt(r.p)} triệu</b></div><div class="detail"><small>Nửa số tin</small><b>${fmt(r.p25)}–${fmt(r.p75)}</b></div><div class="detail"><small>Giá tin trung vị</small><b>${fmt(r.tp,2)} tỷ</b></div><div class="detail"><small>Diện tích trung vị</small><b>${fmt(r.sz,0)} m²</b></div><div class="detail"><small>Lợi suất gộp</small><b>${fmt(r.y,2)}%</b></div><div class="detail"><small>Ngày rao trung vị</small><b>${fmt(r.dom,0)} ngày</b></div><div class="detail"><small>Mẫu bán</small><b>${r.n}</b></div><div class="detail"><small>Mẫu thuê</small><b>${r.yn??"—"}</b></div></div><div class="explain"><b>${r.v==="cheap"?"Dòng tiền thuê đang đỡ giá":r.v==="rich"?"Giá phản ánh kỳ vọng tăng giá":r.v==="fair"?"Tương đối cân bằng với cùng phân khúc":"Chưa đủ cặp bán–thuê để định vị"}</b><br>Định vị này chỉ so lợi suất của khu vực với trung vị cùng loại hình; không phải định giá căn nhà cụ thể.</div><div class="source">Lịch sử: ${history.length} snapshot · CAGR: ${r.g==null?`chưa đủ ${DATA.cagr_min_days||180} ngày`:signed(r.g)+"%/năm"}.<br>Nguồn là tin rao công khai; chưa trừ thuế, phí, thời gian trống và thương lượng.</div><div id="listingBox"></div>`;$("drawer").classList.add("open");loadListings(r.slug,r.cs)}
+
+/* ---------- individual listings ----------
+   The aggregate above withholds any district with fewer than 20 observations,
+   which is right for a median and wrong for browsing: a district with eight
+   plots is exactly where a buyer looks. These shards carry every active
+   listing, so the sample guard does not apply -- the count is shown instead,
+   and thin districts say so. */
+const LISTING_CACHE={};
+const LEGAL_HINT="Mã pháp lý do nguồn tự đánh số và không công bố từ điển; hiển thị nguyên trạng, không dịch.";
+let listingFilter={ag:"",wc:"",tpMax:null,szMin:null};
+
+async function loadListings(slug,cat){
+  const box=$("listingBox");
+  if(!box)return;
+  box.innerHTML='<div class="source">Đang tải tin rao…</div>';
+  let shard=LISTING_CACHE[slug];
+  if(shard===undefined){
+    shard=await fetch(`../../data/bds/listings/${encodeURIComponent(slug)}.json`,{cache:"no-cache"})
+      .then(r=>r.ok?r.json():null).catch(()=>null);
+    LISTING_CACHE[slug]=shard;
+  }
+  if(!shard||!shard.rows||!shard.rows.length){
+    box.innerHTML='<div class="source">Chưa có tin rao chi tiết cho khu vực này.</div>';
+    return;
+  }
+  listingFilter={ag:"",wc:"",tpMax:null,szMin:null};
+  renderListings(shard,cat);
+}
+
+function renderListings(shard,cat){
+  const box=$("listingBox");
+  const f=listingFilter;
+  const rows=shard.rows.filter(x=>
+    (!cat||x.c===cat)&&
+    (!f.ag||String(x.ag??"")===f.ag)&&
+    (!f.wc||(x.wc||0)>=+f.wc)&&
+    (f.tpMax==null||x.tp<=f.tpMax)&&
+    (f.szMin==null||x.sz>=f.szMin));
+
+  const card=x=>{
+    const bits=[];
+    if(x.r)bits.push(`${x.r} PN`);
+    if(x.wc)bits.push(`${x.wc} WC`);
+    if(x.fl)bits.push(`${x.fl} tầng`);
+    if(x.dir)bits.push(esc(x.dir));
+    if(x.lg!=null)bits.push(`<span title="${esc(LEGAL_HINT)}">PL ${x.lg}</span>`);
+    // Days since first published, not since we saw it -- a reposted ad that has
+    // been on the market three months is a different signal from a new one.
+    if(x.age)bits.push(`đăng lại sau ${x.age} ngày`);
+    return `<a class="lst" href="${esc(x.u)}" target="_blank" rel="noopener noreferrer">`+
+      `<div class="lst-h"><b>${fmt(x.tp,2)} tỷ</b><span>${fmt(x.p,1)} tr/m²</span></div>`+
+      `<div class="lst-t">${esc(x.t||"(không có tiêu đề)")}</div>`+
+      `<div class="lst-m">${fmt(x.sz,0)} m² · ${esc(x.w||"")}${x.st?" · "+esc(x.st):""}</div>`+
+      `<div class="lst-m">${bits.join(" · ")}${x.ag!=null?` · <i>${x.ag?"môi giới":"chính chủ"}</i>`:""}</div>`+
+      `</a>`;
+  };
+
+  box.innerHTML=
+    `<div class="lst-head"><h3>Tin rao trong khu vực</h3>`+
+    `<span class="dim">${rows.length} / ${shard.n} tin</span></div>`+
+    (shard.thin?`<div class="source">Khu vực ít tin (${shard.n}) — số trung vị phía trên không được công bố vì dưới ngưỡng mẫu, nhưng tin rao thì vẫn xem được.</div>`:"")+
+    `<div class="lst-f">`+
+      `<select id="lfAg" title="Nguồn chỉ đánh dấu tin môi giới; tin không đánh dấu là chính chủ. Tin thu thập trước khi có trường này để trống."><option value="">Tất cả người đăng</option><option value="0"${f.ag==="0"?" selected":""}>Chính chủ</option><option value="1"${f.ag==="1"?" selected":""}>Môi giới</option></select>`+
+      `<input id="lfTp" type="number" placeholder="Giá tối đa (tỷ)" value="${f.tpMax??""}">`+
+      `<input id="lfSz" type="number" placeholder="DT tối thiểu (m²)" value="${f.szMin??""}">`+
+      `<input id="lfWc" type="number" placeholder="WC ≥" value="${f.wc||""}">`+
+    `</div>`+
+    (rows.length?`<div class="lst-wrap">${rows.slice(0,120).map(card).join("")}</div>`
+      :'<div class="source">Không có tin nào khớp bộ lọc.</div>')+
+    `<div class="source">${esc(shard.note)} Bấm vào tin để xem bản gốc tại nguồn.</div>`;
+
+  const bind=(id,key,parse)=>{const elx=$(id);if(elx)elx.addEventListener("change",()=>{
+    const v=elx.value.trim();listingFilter[key]=v===""?(parse?null:""):(parse?parseFloat(v):v);renderListings(shard,cat);});};
+  bind("lfAg","ag",false);bind("lfTp","tpMax",true);bind("lfSz","szMin",true);bind("lfWc","wc",false);
+}
 
 document.querySelectorAll("#catSeg button").forEach(b=>b.onclick=()=>{mapCat=b.dataset.cat;document.querySelectorAll("#catSeg button").forEach(x=>x.classList.toggle("on",x===b));buildMap();if(selectedProvince)renderProfile()});
 ["q","province","region","category","pMin","pMax","gMin","yMin","nMin"].forEach(id=>$(id).addEventListener(id==="q"?"input":"change",()=>{if(id==="province"&&$(id).value){selectedProvince=$(id).value;buildMap();renderProfile()}renderTable()}));
