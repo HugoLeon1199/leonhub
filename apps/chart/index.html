@@ -21,7 +21,10 @@
   --bg:#0d1117; --panel:#151b23; --panel-2:#1c242e; --line:#26303c;
   --text:#e7edf3; --muted:#8b98a8; --accent:#38d39f;
   --up:#38d39f; --down:#f0655a; --warn:#e0a83c;
-  --rail-w:38px;
+  /* Wide enough that the longest text label (XABCD) fits without clipping.
+     At 38px it was cut mid-word, which reads as a rendering fault rather than
+     a deliberate abbreviation. */
+  --rail-w:46px;
 }
 :root[data-theme="light"]{
   --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eaeff4; --line:#d5dee6;
@@ -42,11 +45,43 @@ body{
   padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line);
 }
 .sym-input{
-  width:104px; background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  width:118px; background:var(--panel-2); border:1px solid var(--line); color:var(--text);
   border-radius:7px; padding:6px 10px; font:inherit; font-weight:700; letter-spacing:.4px;
   text-transform:uppercase;
 }
-.sym-input:focus{outline:2px solid var(--accent); outline-offset:-1px}
+/* While the field is being typed into it may hold a company name, not a
+   ticker, and forcing those to capitals makes them hard to read. The value is
+   still uppercased on commit, so the symbol itself is unaffected. */
+.sym-input:focus{
+  outline:2px solid var(--accent); outline-offset:-1px;
+  text-transform:none; font-weight:500; letter-spacing:0;
+}
+.sym-input::placeholder{font-weight:400; letter-spacing:0; text-transform:none; color:var(--muted)}
+/* Search results. Positioned relative to the input so the list tracks it, and
+   above the chart's z-index so it is not clipped by the pane below. */
+.sym-wrap{position:relative; display:inline-flex}
+.sym-menu{
+  position:absolute; top:calc(100% + 4px); left:0; z-index:40;
+  width:300px; max-height:320px; overflow-y:auto;
+  background:var(--panel); border:1px solid var(--line); border-radius:9px;
+  box-shadow:0 14px 40px #0009; padding:4px;
+}
+.sym-menu[hidden]{display:none}
+.sym-menu button{
+  display:grid; grid-template-columns:auto 1fr auto; align-items:baseline; gap:8px;
+  width:100%; border:0; background:transparent; color:var(--text);
+  padding:7px 8px; border-radius:6px; cursor:pointer; text-align:left; font:inherit;
+}
+.sym-menu button:hover,.sym-menu button[aria-selected="true"]{background:var(--panel-2)}
+.sym-menu b{font-size:12.5px; font-weight:700; letter-spacing:.3px}
+.sym-menu span{font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.sym-menu i{font-style:normal; font-size:9.5px; color:var(--muted); opacity:.8; white-space:nowrap}
+/* Published trades in the side pane. */
+.sig-row{padding:7px 6px; border-bottom:1px solid var(--line)}
+.sig-h{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+.sig-h b{font-size:12px; font-variant-numeric:tabular-nums}
+.sig-h span{font-size:10px; color:var(--muted)}
+.sig-m{font-size:10.5px; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums}
 .bar-action{appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
   border-radius:7px;padding:6px 9px;cursor:pointer;font:12px inherit}
 .bar-action:hover,.bar-action[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
@@ -139,11 +174,22 @@ main{flex:1; position:relative; min-height:0;min-width:0}
 .draw-rail::-webkit-scrollbar{width:6px}
 .draw-rail::-webkit-scrollbar-thumb{background:var(--line); border-radius:3px}
 .draw-rail button{
-  flex:0 0 auto; width:100%; height:30px; padding:0;
+  flex:0 0 auto; width:100%; height:30px; padding:0 2px;
   display:grid; place-items:center; font-size:14px; line-height:1;
+  /* Labels are a mix of single glyphs and short words (Fib, ABCD, XABCD).
+     Clipping the words was the visible fault; scaling them down keeps every
+     tool readable at one rail width instead of truncating the long ones. */
+  overflow:hidden; white-space:nowrap;
 }
-/* Two text buttons would blow the rail's width out; shrink them to fit it. */
-.draw-rail button[data-tool="pan"], .draw-rail #draw-clear{font-size:10px}
+/* Text-labelled tools shrink to fit rather than overflow. Sized per label
+   length, because one size small enough for XABCD makes Fib needlessly tiny. */
+.draw-rail button[data-tool="pan"]{font-size:15px}
+.draw-rail #draw-clear{font-size:10px}
+.draw-rail button[data-tool="fib"], .draw-rail button[data-tool="fibext"],
+.draw-rail button[data-tool="avwap"]{font-size:11px}
+.draw-rail button[data-tool="abcd"], .draw-rail button[data-tool="elliott"],
+.draw-rail button[data-tool="elliottabc"], .draw-rail button[data-tool="hns"]{font-size:9.5px}
+.draw-rail button[data-tool="xabcd"]{font-size:8px; letter-spacing:-.03em}
 .draw-rail .draw-count{
   flex:0 0 auto; margin-top:2px; text-align:center;
   font-size:10px; color:var(--muted);
@@ -161,7 +207,11 @@ main{flex:1; position:relative; min-height:0;min-width:0}
 #drawings[hidden]{display:none}
 .market-side{width:278px;flex:0 0 278px;background:var(--panel);border-left:1px solid var(--line);
   display:flex;flex-direction:column;min-height:0}.market-side[hidden]{display:none}
-.side-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:6px;border-bottom:1px solid var(--line)}
+/* Tabs wrap rather than shrink: two markets now contribute panes and not all
+   of them apply at once, so a fixed four-column grid left gaps for crypto and
+   squeezed labels for equities. */
+.side-tabs{display:flex;flex-wrap:wrap;gap:2px;padding:6px;border-bottom:1px solid var(--line)}
+.side-tabs button{flex:1 1 auto;min-width:64px}
 .side-tabs button{border:0;border-radius:5px;background:transparent;color:var(--muted);padding:6px 3px;
   cursor:pointer;font:11px inherit}.side-tabs button[aria-pressed="true"]{background:var(--panel-2);color:var(--accent)}
 .side-pane{flex:1;overflow:auto;min-height:0;padding:5px}.side-pane[hidden]{display:none}
@@ -169,6 +219,10 @@ main{flex:1; position:relative; min-height:0;min-width:0}
   border-bottom:1px solid var(--line);cursor:pointer}.watch-row:hover{background:var(--panel-2)}
 .watch-row b{font-size:12px}.watch-row span{font-variant-numeric:tabular-nums;font-size:11px}.watch-rm{border:0;background:none;color:var(--muted);cursor:pointer;padding:2px}.watch-rm:hover{color:var(--down)}
 .side-summary{display:flex;justify-content:space-between;padding:7px 6px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--line)}
+/* Links inside the panes inherit the browser default blue otherwise, which is
+   close to unreadable on the dark panel. */
+.side-summary a,.side-pane a{color:var(--accent);text-decoration:none}
+.side-summary a:hover,.side-pane a:hover{text-decoration:underline}
 .book-row{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:3px 6px;font-size:11px;
   font-variant-numeric:tabular-nums}.book-row i{position:absolute;inset:1px auto 1px 0;opacity:.11;pointer-events:none}
 .book-row.ask i{background:var(--down)}.book-row.bid i{background:var(--up)}.book-row.ask span:first-of-type{color:var(--down)}.book-row.bid span:first-of-type{color:var(--up)}.book-row span:last-child{text-align:right}
@@ -260,12 +314,21 @@ footer b{color:var(--text); font-weight:600}
 <body>
 
 <div class="bar">
-  <input id="sym" class="sym-input" value="BTC" maxlength="12" list="coins" aria-label="Mã coin"
-         autocomplete="off" spellcheck="false">
-  <datalist id="coins"></datalist>
+  <span class="sym-wrap">
+    <!-- No maxlength: the field now searches company names too, and 12
+         characters cuts off "vietcombank" mid-word. -->
+    <input id="sym" class="sym-input" value="BTC" aria-label="Tìm mã: crypto, cổ phiếu VN hoặc Mỹ"
+           placeholder="Tìm mã…" autocomplete="off" spellcheck="false"
+           role="combobox" aria-expanded="false" aria-controls="sym-menu" aria-autocomplete="list">
+    <div class="sym-menu" id="sym-menu" role="listbox" hidden></div>
+  </span>
   <button id="watch-add" class="bar-action" type="button" aria-pressed="false" title="Thêm/bỏ mã khỏi watchlist">☆</button>
   <button id="side-toggle" class="bar-action" type="button" aria-pressed="true" title="Ẩn/hiện bảng thị trường">Bảng</button>
   <button id="gex-toggle" class="bar-action" type="button" aria-pressed="true" title="Vẽ tường gamma, flip, max pain và biên 1σ lên chart (chỉ BTC/ETH)">GEX</button>
+  <!-- Signals come from the same rules the Tín hiệu tab publishes, drawn where
+       they actually fired rather than only listed in a table elsewhere. -->
+  <button id="sig-toggle" class="bar-action" type="button" aria-pressed="false"
+          title="Hiện điểm vào/ra lệnh theo quy tắc đã công bố, ngay trên chart">Tín hiệu</button>
   <div class="group" id="tfs" role="group" aria-label="Khung thời gian"></div>
   <div class="group" role="group" aria-label="Chỉ báo">
     <button id="ind-open" type="button" title="Thêm hoặc bỏ chỉ báo">Chỉ báo <span id="ind-count">0</span></button>
@@ -297,7 +360,11 @@ footer b{color:var(--text); font-weight:600}
   <main>
     <div id="chart"></div>
     <div class="draw-rail" id="draw-tools" role="group" aria-label="Công cụ vẽ">
-      <button type="button" data-tool="pan" aria-pressed="true" title="Di chuyển và thu phóng chart (Esc)">Pan / Esc</button>
+      <!-- A glyph rather than "Pan / Esc": the words did not fit the rail at any
+           readable size, and the shortcut is in the tooltip where the other 33
+           tools keep theirs. -->
+      <button type="button" data-tool="pan" aria-pressed="true" aria-label="Di chuyển và thu phóng chart"
+              title="Di chuyển và thu phóng chart (Esc)">✥</button>
       <button type="button" data-tool="select" aria-pressed="false" title="Chọn, kéo hoặc nhấn Delete để xóa hình">◇</button>
       <!-- Tool buttons are generated from TOOLS so a new tool needs one entry,
            not an entry plus a button someone has to remember to add. -->
@@ -323,6 +390,7 @@ footer b{color:var(--text); font-weight:600}
            What VN does have, and crypto does not, is foreign flow and ownership
            room. -->
       <button type="button" data-side="vnflow" aria-pressed="false" hidden>Dòng tiền</button>
+      <button type="button" data-side="signals" aria-pressed="false">Tín hiệu</button>
     </div>
     <div class="side-pane" id="side-watch"></div>
     <div class="side-pane" id="side-book" hidden></div>
@@ -330,6 +398,7 @@ footer b{color:var(--text); font-weight:600}
     <div class="side-pane" id="side-levels" hidden></div>
     <div class="side-pane" id="side-net" hidden></div>
     <div class="side-pane" id="side-vnflow" hidden></div>
+    <div class="side-pane" id="side-signals" hidden></div>
   </aside>
 </div>
 
@@ -426,21 +495,9 @@ async function loadEquityManifests(){
   vnSymbols = new Map(vnRows.filter(r => r && r.s).map(r => [r.s, r]));
   usSymbols = new Map(usRows.filter(r => r && r.s).map(r => [r.s, r]));
 
-  // Append equities to the datalist the crypto list already populated. Liquid
-  // VN names first: 1,751 options are only useful if the ones anyone types are
-  // near the top.
-  const vnByLiquidity = [...vnSymbols.values()]
-    .sort((a, b) => (b.mc || 0) - (a.mc || 0))
-    .map(r => r.s);
-  const extra = [...usSymbols.keys(), ...vnByLiquidity];
-  const existing = new Set([...el.coins.options].map(o => o.value));
-  el.coins.append(...extra.filter(s => !existing.has(s)).map(s => {
-    const option = document.createElement("option");
-    option.value = s;
-    const row = usSymbols.get(s) || vnSymbols.get(s);
-    if(row && row.n) option.label = row.n;
-    return option;
-  }));
+  // Order VN by market cap so the search box, which keeps the first matches it
+  // finds at equal score, surfaces the names anyone is likely to be after.
+  vnSymbols = new Map([...vnSymbols.entries()].sort((a, b) => (b[1].mc || 0) - (a[1].mc || 0)));
 }
 const FALLBACK_COINS = [
   "BTC","ETH","BNB","SOL","XRP","DOGE","ADA","TRX","AVAX","LINK",
@@ -459,8 +516,9 @@ const el = {
   sideTape: document.getElementById("side-tape"),
   sideNet: document.getElementById("side-net"),
   gexToggle: document.getElementById("gex-toggle"),
+  sigToggle: document.getElementById("sig-toggle"),
   sideLevels: document.getElementById("side-levels"),
-  coins: document.getElementById("coins"),
+  symMenu: document.getElementById("sym-menu"),
   tfs: document.getElementById("tfs"),
   drawing: document.getElementById("drawings"),
   drawTools: document.getElementById("draw-tools"),
@@ -507,13 +565,11 @@ let drawingsVisible = storedBool("leon_chart_drawings_visible", true);
 let crosshairMagnet = storedBool("leon_chart_crosshair_magnet", false);
 let logarithmicScale = storedBool("leon_chart_log_scale", false);
 
-function renderCoinList(symbols){
-  el.coins.replaceChildren(...symbols.map(sym => {
-    const option = document.createElement("option");
-    option.value = sym;
-    return option;
-  }));
-}
+/* The crypto half of the search universe. Held as a plain array rather than
+   pushed into a <datalist>, because the search box below ranks and labels
+   results itself -- a datalist can only prefix-match the raw value. */
+let coinUniverse = FALLBACK_COINS.slice();
+function renderCoinList(symbols){ coinUniverse = symbols; }
 
 async function loadCoinList(){
   let cached;
@@ -570,6 +626,10 @@ let gexLevels=[];
    the payload rather than inside `levels`. */
 let gexMeta=null;
 let gexOverlay=true;
+/* Declared here rather than beside paintSignals: applyMarketKind() runs during
+   the first load and reads these, which is earlier in the file. */
+let signalOverlay=false, signalData=null, signalTrades=[];
+try{ signalOverlay = localStorage.getItem("leon_chart_signals") === "1"; }catch(e){}
 let levelFrame=0;
 
 function loadWatchlist(){
@@ -622,7 +682,10 @@ function setSide(name){if(!SIDE_TABS.includes(name))name="watch";document.queryS
    depth streams. VN publishes no equivalent, and leaving the tabs visible would
    present an empty panel as if the market were quiet rather than unobservable.
    GEX is already gated to BTC/ETH inside loadLevels(). */
-const CRYPTO_ONLY_SIDES = ["book", "tape", "net", "levels"];
+// Levels stays visible for equities: it no longer shows an empty gamma table
+// there, it explains why gamma does not apply and points at the volume profile
+// that does. Book, Tape and Net $ have no VN equivalent at all.
+const CRYPTO_ONLY_SIDES = ["book", "tape", "net"];
 function applyMarketKind(){
   const kind = symbolKind(symbol);
   const isVn = kind === "vn";
@@ -635,6 +698,26 @@ function applyMarketKind(){
   const active = document.querySelector('[data-side][aria-pressed="true"]');
   if(!active || active.hidden) setSide(isVn ? "vnflow" : "watch");
   if(isVn) renderVnFlow(symbol);
+  // openMicrostructure only runs for crypto, so nothing else refreshes the
+  // Levels pane when an equity is selected.
+  if(kind !== "crypto"){ gexLevels = []; gexMeta = null; renderLevels(); }
+  // The rule only trades VN equities, so the tab is pointless elsewhere.
+  const sigTab = document.querySelector('[data-side="signals"]');
+  if(sigTab) sigTab.hidden = !isVn;
+  if(el.sigToggle) el.sigToggle.hidden = !isVn;
+  refreshSignals();
+
+  // One button, two honest meanings. Gamma exists only where options on the
+  // instrument do; everywhere else it draws the volume profile, which answers
+  // the same question ("which prices matter here") from the bars themselves.
+  if(el.gexToggle){
+    const crypto = kind === "crypto";
+    el.gexToggle.textContent = crypto ? "GEX" : "Vùng giá";
+    el.gexToggle.title = crypto
+      ? "Vẽ tường gamma, flip, max pain và biên 1σ lên chart (chỉ BTC/ETH)"
+      : "Vẽ vùng giá giao dịch nhiều nhất (POC) và vùng giá trị 70% từ chính nến đang xem. "
+        + "Cổ phiếu VN không có quyền chọn riêng lẻ nên không có gamma để tính.";
+  }
 }
 
 /* VN money flow, fetched live from the VPS board.
@@ -801,7 +884,9 @@ function renderNetDollar(){
 function scheduleLevels(){if(levelFrame)return;levelFrame=setTimeout(()=>{levelFrame=0;renderLevels()},700)}
 function classifyLevel(level){const bars=currentBars.slice(-240),spot=bars.at(-1)?.close||level,tol=spot*.0008,counts={break:0,absorb:0,fake:0,respect:0};for(const bar of bars){if(bar.low>level+tol||bar.high<level-tol)continue;const broke=(bar.open<level-tol&&bar.close>level+tol)||(bar.open>level+tol&&bar.close<level-tol);if(broke){counts.break++;continue}const start=bar.time*1000,end=start+(INTERVAL_MINUTES[timeframe]||60)*60000,big=tapeEvents.filter(x=>x.at>=start&&x.at<end&&Math.abs(x.price-level)<=tol).reduce((a,x)=>a+x.notional,0);if(big>=100000){counts.absorb++;continue}const fake=(bar.high>level+tol&&bar.close<level+tol)||(bar.low<level-tol&&bar.close>level-tol);if(fake)counts.fake++;else counts.respect++}const total=Object.values(counts).reduce((a,b)=>a+b,0);return {counts,total,pct:Object.fromEntries(Object.entries(counts).map(([k,v])=>[k,total?v/total*100:0]))}}
 function roundedLevelPct(p){const keys=["break","absorb","fake","respect"],raw=keys.map(k=>p[k]||0),whole=raw.map(Math.floor),missing=100-whole.reduce((a,b)=>a+b,0);raw.map((v,i)=>({i,f:v-whole[i]})).sort((a,b)=>b.f-a.f).slice(0,Math.max(0,missing)).forEach(x=>whole[x.i]++);return Object.fromEntries(keys.map((k,i)=>[k,whole[i]]))}
-function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML='<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm${x.touch_24h!=null?` · chạm 24h ${Math.round(x.touch_24h*100)}%`:""}</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
+function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML=symbolKind(symbol)!=="crypto"
+  ?'<div class="side-empty">Cổ phiếu không có quyền chọn riêng lẻ nên không có gamma. Bấm <b>Vùng giá</b> trên thanh công cụ để xem vùng giao dịch nhiều nhất (POC) tính từ chính nến đang hiển thị.</div>'
+  :'<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm${x.touch_24h!=null?` · chạm 24h ${Math.round(x.touch_24h*100)}%`:""}</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
 async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH"].includes(sym))return;try{const r=await fetch(`../../data/gex_${sym.toLowerCase()}.json`,{cache:"no-cache"});if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;gexLevels=Array.isArray(d.levels)?d.levels:[];gexMeta=d;renderLevels();scheduleDraw()}catch(e){}}
 function openMicrostructure(sym,token){
   closeMicrostructure();tapeEvents=[];gexLevels=[];gexMeta=null;netDollar=new Map();netBucket=0;try{tapeMin=Math.max(100000,+(localStorage.getItem(`leon_tapemin_${sym}`)||500000))}catch(e){tapeMin=500000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);
@@ -818,6 +903,16 @@ el.gexToggle.addEventListener("click",()=>{
   el.gexToggle.setAttribute("aria-pressed",String(gexOverlay));
   try{localStorage.setItem("leon_gex_overlay",gexOverlay?"1":"0")}catch(e){}
   scheduleDraw();
+});
+el.sigToggle.setAttribute("aria-pressed",String(signalOverlay));
+el.sigToggle.addEventListener("click",()=>{
+  signalOverlay=!signalOverlay;
+  el.sigToggle.setAttribute("aria-pressed",String(signalOverlay));
+  try{localStorage.setItem("leon_chart_signals",signalOverlay?"1":"0")}catch(e){}
+  // Turning it on opens the pane too: markers without the trade list leave the
+  // reader guessing what an arrow was worth.
+  if(signalOverlay) setSide("signals");
+  refreshSignals();
 });
 el.sideToggle.addEventListener("click",()=>{document.body.classList.toggle("side-closed");const open=!document.body.classList.contains("side-closed");el.sideToggle.setAttribute("aria-pressed",String(open));try{localStorage.setItem("leon_chart_side",open?"1":"0")}catch(e){}});
 el.sideWatch.addEventListener("click",e=>{const remove=e.target.closest("[data-remove]");if(remove){watchlist=watchlist.filter(x=>x!==remove.dataset.remove);saveWatchlist();e.stopPropagation();return}if(e.target.closest("[data-watch-new]")){const name=(prompt("Tên watchlist mới:","")||"").trim().slice(0,30);if(name&&!watchLists[name]){activeWatchList=name;watchlist=[];watchLists[name]=watchlist;saveWatchlist()}return}if(e.target.closest("[data-watch-export]")){const blob=new Blob(["symbol\n"+watchlist.join("\n")+"\n"],{type:"text/csv"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`watchlist-${activeWatchList}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);return}if(e.target.closest("[data-watch-import]")){document.getElementById("watch-file")?.click();return}const row=e.target.closest("[data-watch]");if(row)selectSymbol(row.dataset.watch)});
@@ -3541,7 +3636,250 @@ function syncDrawingPaneHeight(){
    behaviour for free by living here.
    Drawn beneath user shapes, because a wall is context and a trendline someone
    placed by hand is intent. */
+/* The trade list beside the chart. Open positions first -- those are the
+   actionable ones -- then closed trades newest first, each showing its result
+   in R and why it ended. Losses are shown exactly as published; the rule's
+   whole point is that its record is not curated. */
+function renderSignalPane(){
+  const box = document.getElementById("side-signals");
+  if(!box) return;
+  if(signalData === false){
+    box.innerHTML = '<div class="side-empty">Không đọc được data/signals.json.</div>';
+    return;
+  }
+  if(!signalOverlay && !signalTrades.length){
+    box.innerHTML = '<div class="side-empty">Bấm <b>Tín hiệu</b> trên thanh công cụ để tải và vẽ điểm vào/ra lệnh cho mã này.</div>';
+    return;
+  }
+  if(!signalTrades.length){
+    box.innerHTML = `<div class="side-empty">Quy tắc chưa từng vào lệnh với ${symbol}.`
+      + (signalData && signalData.universe ? ` Phạm vi quét: ${signalData.universe} mã vốn hóa ≥ 1.000 tỷ.` : "")
+      + '</div>';
+    return;
+  }
+  const open = signalTrades.filter(t => t.open);
+  const closed = signalTrades.filter(t => !t.open).sort((a, b) => (b.x || "").localeCompare(a.x || ""));
+  const money = v => v == null ? "—" : (+v).toLocaleString("vi-VN", {maximumFractionDigits:0});
+  const WHY = {stop:"chạm dừng lỗ", target:"chạm mục tiêu", time:"hết hạn giữ"};
+
+  let html = "";
+  if(open.length){
+    html += '<div class="side-summary"><span>Đang mở</span></div>' + open.map(t =>
+      `<div class="sig-row"><div class="sig-h"><b>Mua ${money(t.entry)}</b><span>${t.d}</span></div>`
+      + `<div class="sig-m">Dừng lỗ ${money(t.stop)} · Mục tiêu ${money(t.target)}</div>`
+      + `<div class="sig-m">${t.L ? `${t.L.n}/${t.L.of} lớp xác nhận` : ""}</div></div>`).join("");
+  }
+  if(closed.length){
+    const wins = closed.filter(t => t.r > 0).length;
+    const totalR = closed.reduce((s, t) => s + (t.r || 0), 0);
+    html += `<div class="side-summary"><span>Đã đóng ${closed.length}</span>`
+      + `<span class="${totalR >= 0 ? "up" : "down"}">${totalR >= 0 ? "+" : ""}${totalR.toFixed(2)}R · thắng ${wins}</span></div>`
+      + closed.map(t =>
+        `<div class="sig-row"><div class="sig-h"><b class="${t.r >= 0 ? "up" : "down"}">`
+        + `${t.r >= 0 ? "+" : ""}${t.r.toFixed(2)}R</b><span>${t.x}</span></div>`
+        + `<div class="sig-m">Vào ${money(t.entry)} · Ra ${money(t.exit)} · ${WHY[t.why] || t.why}</div></div>`).join("");
+  }
+  html += '<div class="side-summary"><a href="../signals/" target="_top">Xem quy tắc và toàn bộ hồ sơ →</a></div>';
+  box.innerHTML = html;
+}
+
+/* ---------- rule signals on the chart ----------
+   signals.json is the artifact behind the Tín hiệu tab: walk-forward trades
+   from a stated rule, every closed one published including the losers. Drawing
+   them here puts the entry and exit on the bar where they happened, which is
+   the only place a reader can judge whether the rule fired somewhere sensible.
+
+   Nothing is recomputed in the browser: these are the same trades the tab
+   lists, so the chart cannot disagree with the published record. */
+async function loadSignals(){
+  if(signalData !== null) return signalData;
+  signalData = await fetch("../../data/signals.json", {cache:"no-cache"})
+    .then(r => r.ok ? r.json() : false).catch(() => false);
+  return signalData;
+}
+
+/* Trades for the symbol on screen. Open positions carry no exit, which is what
+   distinguishes "still running" from "closed at this price" on the chart. */
+function signalsFor(sym){
+  const d = signalData;
+  if(!d || !d.closed) return [];
+  const pick = (list, open) => (list || []).filter(t => t.s === sym).map(t => ({...t, open}));
+  return [...pick(d.closed, false), ...pick(d.open, true)];
+}
+
+async function refreshSignals(){
+  signalTrades = [];
+  renderSignalPane();
+  if(!signalOverlay) { scheduleDraw(); return; }
+  await loadSignals();
+  signalTrades = signalsFor(symbol);
+  renderSignalPane();
+  scheduleDraw();
+}
+
+/* Entry and exit markers, anchored to the bar whose date matches. Only the
+   daily and higher timeframes can carry them: the rule operates on daily bars,
+   so plotting them on a 1h chart would place a signal at an hour it never
+   claimed. */
+function paintSignals(ctx, w, h){
+  if(!signalOverlay || !signalTrades.length || !currentBars.length) return;
+  if(!["1d", "1w", "1M"].includes(timeframe)) return;
+
+  const timeToX = t => {
+    try{ const x = chart.timeScale().timeToCoordinate(t); return Number.isFinite(x) ? x : null; }
+    catch(e){ return null; }
+  };
+  const priceToY = p => {
+    try{ const y = candles.priceToCoordinate(p); return Number.isFinite(y) ? y : null; }
+    catch(e){ return null; }
+  };
+  // The rule's dates are calendar days; bars are unix seconds. Snap to the
+  // nearest bar at or after the date so a holiday does not drop the marker.
+  const barAt = iso => {
+    const target = Math.floor(Date.parse(iso + "T00:00:00Z") / 1000);
+    let best = null;
+    for(const bar of currentBars){
+      if(bar.time >= target){ best = bar; break; }
+      best = bar;
+    }
+    return best;
+  };
+
+  ctx.font = "10px -apple-system,Segoe UI,Roboto,sans-serif";
+  const marker = (bar, price, up, text, colour) => {
+    const x = timeToX(bar.time), y = priceToY(price);
+    if(x == null || y == null) return;
+    const dir = up ? 1 : -1;
+    const tip = y - dir * 7, base = y - dir * 20;
+    ctx.fillStyle = colour;
+    ctx.beginPath();
+    ctx.moveTo(x, tip);
+    ctx.lineTo(x - 5, base);
+    ctx.lineTo(x + 5, base);
+    ctx.closePath();
+    ctx.fill();
+    const tw = ctx.measureText(text).width;
+    const ty = up ? base - 4 : base + 12;
+    ctx.fillStyle = "rgba(13,17,23,.82)";
+    ctx.fillRect(x - tw / 2 - 3, ty - 9, tw + 6, 12);
+    ctx.fillStyle = colour;
+    ctx.fillText(text, x - tw / 2, ty);
+  };
+
+  for(const t of signalTrades){
+    const entryBar = barAt(t.d);
+    if(entryBar) marker(entryBar, t.entry, true, "Mua", "#38d39f");
+    if(!t.open && t.x){
+      const exitBar = barAt(t.x);
+      // Colour by outcome, not by direction: a reader scanning the chart should
+      // see which exits worked without reading the numbers.
+      if(exitBar) marker(exitBar, t.exit, false, `Bán ${t.r > 0 ? "+" : ""}${t.r.toFixed(2)}R`,
+        t.r >= 0 ? "#38d39f" : "#f0655a");
+    }else if(t.open){
+      // A live position: draw its stop and target so the plan is visible, not
+      // just the entry.
+      const y1 = priceToY(t.stop), y2 = priceToY(t.target);
+      for(const [y, colour, label] of [[y1, "#f0655a", "Dừng lỗ"], [y2, "#38d39f", "Mục tiêu"]]){
+        if(y == null) continue;
+        ctx.save();
+        ctx.strokeStyle = colour; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.globalAlpha = .75;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = colour;
+        ctx.fillText(label, 6, y - 3);
+      }
+    }
+  }
+}
+
+/* The equity answer to "which prices matter".
+   VN has no single-stock options, so there is no dealer gamma and no wall to
+   draw -- inventing one would be the opaque dashboard this project exists to
+   avoid. What does exist is where the crowd actually traded: a volume profile
+   over the loaded bars, its point of control, and the value area holding 70% of
+   volume. That is measured from the same candles on screen, not modelled.
+
+   Uses the same canvas and the same toggle as the GEX overlay, so the button
+   keeps one meaning: "show me the levels that matter for this instrument". */
+function paintVolumeLevels(ctx, w, h){
+  if(!gexOverlay || currentBars.length < 20) return;
+  const priceToY = price => {
+    try{ const y = candles.priceToCoordinate(price); return Number.isFinite(y) ? y : null; }
+    catch(e){ return null; }
+  };
+  const highs = currentBars.map(b => b.high), lows = currentBars.map(b => b.low);
+  const top = Math.max(...highs), bottom = Math.min(...lows);
+  if(!(top > bottom)) return;
+
+  const BUCKETS = 60;
+  const step = (top - bottom) / BUCKETS;
+  const volume = new Float64Array(BUCKETS);
+  for(const bar of currentBars){
+    // Spread each bar's volume across the buckets its range covers, rather than
+    // dropping it all at the close: a wide bar traded at every price it passed
+    // through, and assigning it to one point invents a peak that never existed.
+    const from = Math.max(0, Math.floor((bar.low - bottom) / step));
+    const to = Math.min(BUCKETS - 1, Math.floor((bar.high - bottom) / step));
+    const span = to - from + 1;
+    const share = (bar.volume || 0) / span;
+    for(let i = from; i <= to; i++) volume[i] += share;
+  }
+  const peak = Math.max(...volume);
+  if(!(peak > 0)) return;
+
+  // Value area: grow outward from the point of control until 70% of volume is
+  // enclosed -- the standard construction, stated here because the page shows
+  // the rule rather than only the shaded band.
+  let pocIndex = 0;
+  for(let i = 1; i < BUCKETS; i++) if(volume[i] > volume[pocIndex]) pocIndex = i;
+  const total = volume.reduce((a, b) => a + b, 0);
+  let lo = pocIndex, hi = pocIndex, held = volume[pocIndex];
+  while(held < total * 0.7 && (lo > 0 || hi < BUCKETS - 1)){
+    const below = lo > 0 ? volume[lo - 1] : -1;
+    const above = hi < BUCKETS - 1 ? volume[hi + 1] : -1;
+    if(above >= below){ hi++; held += volume[hi]; } else { lo--; held += volume[lo]; }
+  }
+
+  const priceAt = i => bottom + (i + 0.5) * step;
+  const yTop = priceToY(priceAt(hi)), yBottom = priceToY(priceAt(lo));
+  if(yTop != null && yBottom != null){
+    ctx.fillStyle = "rgba(56,211,159,.06)";
+    ctx.fillRect(0, Math.min(yTop, yBottom), w, Math.abs(yBottom - yTop));
+  }
+
+  // Histogram along the right edge, so it reads against the price axis without
+  // covering the candles.
+  const maxWidth = Math.min(120, w * 0.14);
+  for(let i = 0; i < BUCKETS; i++){
+    const y = priceToY(priceAt(i));
+    if(y == null) continue;
+    const bw = volume[i] / peak * maxWidth;
+    ctx.fillStyle = i >= lo && i <= hi ? "rgba(56,211,159,.20)" : "rgba(139,152,168,.13)";
+    ctx.fillRect(w - bw, y - Math.max(1, step ? (h / BUCKETS) * .42 : 2), bw, Math.max(1.5, (h / BUCKETS) * .84));
+  }
+
+  const pocY = priceToY(priceAt(pocIndex));
+  if(pocY != null){
+    ctx.save();
+    ctx.strokeStyle = "#e0a83c";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.moveTo(0, pocY); ctx.lineTo(w, pocY); ctx.stroke();
+    ctx.restore();
+    const text = `POC ${nf(priceAt(pocIndex), priceAt(pocIndex) < 100 ? 2 : 0)}`;
+    ctx.font = "10px -apple-system,Segoe UI,Roboto,sans-serif";
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = "rgba(13,17,23,.78)";
+    ctx.fillRect(4, pocY - 7, tw + 6, 13);
+    ctx.fillStyle = "#e0a83c";
+    ctx.fillText(text, 7, pocY + 3);
+  }
+}
+
 function paintGexLevels(ctx, w, h){
+  // Equities route to the volume profile instead: same button, same canvas, an
+  // answer the instrument can actually support.
+  if(symbolKind(symbol) !== "crypto") return paintVolumeLevels(ctx, w, h);
   if(!gexOverlay || !gexMeta || !gexLevels.length) return;
   const priceToY = price => {
     try{ const y = candles.priceToCoordinate(price); return Number.isFinite(y) ? y : null; }
@@ -3632,6 +3970,9 @@ function redraw(){
   drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawCtx.clearRect(0, 0, rect.width, rect.height);
   paintGexLevels(drawCtx, rect.width, rect.height);
+  // Above the levels, below the user's own shapes: a signal is context, a
+  // hand-placed trendline is intent.
+  paintSignals(drawCtx, rect.width, rect.height);
   drawings.forEach((d, i) => paintDrawing(d, i, drawCtx, rect.width, rect.height));
   // Preview the shape mid-placement. Index -2 never matches selectedDrawing,
   // so it draws in the unselected style without claiming to be a real shape.
@@ -4746,16 +5087,133 @@ function syncUrl(announce=true){
 }
 
 let symTimer;
+/* ---------- symbol search ----------
+   The old behaviour loaded whatever had been typed 500 ms ago, so typing VIC
+   fired a load for "VI" first -- a wasted request and a flash of an error for a
+   symbol the reader never asked for. Nothing loads now until a result is
+   chosen, and the list searches names as well as tickers, which a bare
+   <datalist> cannot do: it prefix-matches the value only, so "Vingroup" or
+   "ngân hàng" found nothing. */
+const SEARCH_LIMIT = 12;
+
+/* Vietnamese diacritics are stripped from both sides of the comparison: people
+   type "hoa phat" and the artifact says "Hòa Phát". Without this the name half
+   of the search is unusable for exactly the readers it is for. */
+const deaccent = s => String(s || "")
+  .normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/đ/g, "d").replace(/Đ/g, "D")
+  .toUpperCase();
+const nameIndex = new Map();
+const foldName = name => {
+  let folded = nameIndex.get(name);
+  if(folded === undefined){ folded = deaccent(name); nameIndex.set(name, folded); }
+  return folded;
+};
+
+function searchSymbols(query){
+  const q = deaccent(query.trim());
+  if(!q) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (sym, name, kind) => {
+    if(seen.has(sym) || out.length >= SEARCH_LIMIT) return;
+    seen.add(sym);
+    out.push({sym, name, kind});
+  };
+  /* Scoring, highest first. People search by ticker far more than by name, so
+     an exact ticker beats a prefix beats a name match -- without this, typing
+     "BT" buried BTC under every VN company whose name contains "Bảo"/"Bình",
+     and "VIN" returned a page of Vinacafe/Vinacomin before VIC. */
+  const score = (sym, name) => {
+    if(sym === q) return 100;
+    if(sym.startsWith(q)) return 80 - Math.min(20, sym.length - q.length);
+    if(sym.includes(q)) return 50;
+    const upper = foldName(name);
+    if(!upper.includes(q)) return 0;
+    // A name match at a word boundary is a real hit; mid-word is usually noise.
+    return new RegExp(`(^|[^A-Z0-9])${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(upper) ? 30 : 10;
+  };
+  // Crypto is ranked slightly above equities at equal score because the tab
+  // opens on it, and BTC/ETH are the most-typed symbols on the page.
+  const bonus = {crypto: 3, us: 1, vn: 0};
+
+  const pool = [];
+  for(const sym of coinUniverse) pool.push([sym, "", "crypto"]);
+  if(usSymbols) for(const [sym, row] of usSymbols) pool.push([sym, row.n, "us"]);
+  if(vnSymbols) for(const [sym, row] of vnSymbols) pool.push([sym, row.n, "vn"]);
+
+  const scored = [];
+  for(const [sym, name, kind] of pool){
+    const value = score(sym, name);
+    if(value) scored.push({sym, name, kind, score: value + bonus[kind]});
+  }
+  scored.sort((a, b) => b.score - a.score || a.sym.length - b.sym.length || a.sym.localeCompare(b.sym));
+  for(const item of scored) push(item.sym, item.name, item.kind);
+  return out;
+}
+
+const KIND_LABEL = {crypto:"Crypto", vn:"HOSE/HNX/UPCOM", us:"US"};
+let searchIndex = -1, searchRows = [];
+
+function renderSearch(rows){
+  searchRows = rows;
+  searchIndex = rows.length ? 0 : -1;
+  if(!rows.length){ el.symMenu.hidden = true; return; }
+  el.symMenu.innerHTML = rows.map((r, i) =>
+    `<button type="button" role="option" data-sym="${r.sym}" aria-selected="${i === 0}">` +
+    `<b>${r.sym}</b><span>${r.name ? r.name.replace(/[&<>]/g, "") : ""}</span>` +
+    `<i>${KIND_LABEL[r.kind]}</i></button>`).join("");
+  el.symMenu.hidden = false;
+}
+
+function moveSearch(step){
+  if(!searchRows.length) return;
+  searchIndex = (searchIndex + step + searchRows.length) % searchRows.length;
+  [...el.symMenu.children].forEach((c, i) => {
+    c.setAttribute("aria-selected", String(i === searchIndex));
+    if(i === searchIndex) c.scrollIntoView({block:"nearest"});
+  });
+}
+
+function commitSearch(sym){
+  el.symMenu.hidden = true;
+  searchRows = [];
+  el.sym.value = sym;
+  el.sym.blur();
+  selectSymbol(sym);
+}
+
 el.sym.addEventListener("input", () => {
   clearTimeout(symTimer);
-  symTimer = setTimeout(() => {
-    const next = el.sym.value.trim().toUpperCase();
-    if(next && next !== symbol){
-      selectSymbol(next);
-    }
-  }, 500);
+  // Equities are only searchable once their manifests are in hand; ask for them
+  // the moment the reader starts typing rather than on boot.
+  loadEquityManifests().catch(() => {});
+  symTimer = setTimeout(() => renderSearch(searchSymbols(el.sym.value)), 120);
 });
-el.sym.addEventListener("keydown", e => { if(e.key === "Enter") el.sym.blur(); });
+el.sym.addEventListener("focus", () => { if(el.sym.value.trim()) renderSearch(searchSymbols(el.sym.value)); });
+el.sym.addEventListener("keydown", e => {
+  if(e.key === "ArrowDown" || e.key === "ArrowUp"){
+    if(!el.symMenu.hidden){ moveSearch(e.key === "ArrowDown" ? 1 : -1); e.preventDefault(); }
+    return;
+  }
+  if(e.key === "Enter"){
+    // The highlighted result wins; failing that, take the raw text so a symbol
+    // absent from every manifest can still be tried.
+    const chosen = searchRows[searchIndex]?.sym || el.sym.value.trim().toUpperCase();
+    if(chosen) commitSearch(chosen);
+    e.preventDefault();
+    return;
+  }
+  if(e.key === "Escape"){ el.symMenu.hidden = true; el.sym.blur(); }
+});
+el.symMenu.addEventListener("mousedown", e => {
+  // mousedown, not click: blur fires first and would hide the menu.
+  const button = e.target.closest("[data-sym]");
+  if(button){ commitSearch(button.dataset.sym); e.preventDefault(); }
+});
+document.addEventListener("click", e => {
+  if(!el.symMenu.contains(e.target) && e.target !== el.sym) el.symMenu.hidden = true;
+});
 
 function applySharedContext(data){
   if(!data||typeof data!=="object")return;
