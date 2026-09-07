@@ -64,6 +64,35 @@ CREATE TABLE IF NOT EXISTS re_listing (
     -- Coverage is publishable; a translation is not, until the mapping is
     -- confirmed against the source.
     legal_doc      INTEGER,
+    -- Everything below is captured for the same reason legal_doc is: the API
+    -- returns it today and listing history cannot be backfilled, so a field
+    -- left uncollected is gone for that day forever. Absent on some categories
+    -- (land ads carry no room count, project ads no direction) -- null means
+    -- "the source did not say", never zero.
+    body           VARCHAR,                -- full ad description
+    is_agent       BOOLEAN,                -- company_ad: broker vs owner
+    account_name   VARCHAR,
+    account_oid    VARCHAR,                -- stable poster id, survives renames
+    toilets        INTEGER,
+    direction      VARCHAR,
+    floors         INTEGER,
+    -- Post-2025 merger names. The v1 fields above still carry the legacy
+    -- 63-province naming, and both are kept: the aggregate groups by the new
+    -- structure while the old name stays checkable against what we collected.
+    ward_v3        VARCHAR,
+    region_v3      VARCHAR,
+    -- First publish time. list_time changes on every repost, so the two
+    -- together are what make repost rate measurable.
+    orig_list_time TIMESTAMPTZ,
+    image_count    INTEGER,
+    thumbnail      VARCHAR,                -- URL only; images are never stored
+    state          VARCHAR,                -- accepted / rejected ...
+    status         VARCHAR,                -- active / sold / expired
+    price_string   VARCHAR,                -- as the source displays it
+    -- Numeric codes. Only names were kept before, so a district could not be
+    -- re-queried from the warehouse without rediscovering its code.
+    area_v2        INTEGER,
+    region_v2      INTEGER,
     PRIMARY KEY (list_id, fetched_at)
 );
 
@@ -284,6 +313,23 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
 # holds cannot be re-collected.
 ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("re_listing", "legal_doc", "INTEGER"),
+    ("re_listing", "body", "VARCHAR"),
+    ("re_listing", "is_agent", "BOOLEAN"),
+    ("re_listing", "account_name", "VARCHAR"),
+    ("re_listing", "account_oid", "VARCHAR"),
+    ("re_listing", "toilets", "INTEGER"),
+    ("re_listing", "direction", "VARCHAR"),
+    ("re_listing", "floors", "INTEGER"),
+    ("re_listing", "ward_v3", "VARCHAR"),
+    ("re_listing", "region_v3", "VARCHAR"),
+    ("re_listing", "orig_list_time", "TIMESTAMPTZ"),
+    ("re_listing", "image_count", "INTEGER"),
+    ("re_listing", "thumbnail", "VARCHAR"),
+    ("re_listing", "state", "VARCHAR"),
+    ("re_listing", "status", "VARCHAR"),
+    ("re_listing", "price_string", "VARCHAR"),
+    ("re_listing", "area_v2", "INTEGER"),
+    ("re_listing", "region_v2", "INTEGER"),
 )
 
 

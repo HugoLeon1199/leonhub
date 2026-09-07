@@ -57,6 +57,33 @@ def _to_utc(ms: int | None) -> datetime | None:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
 
 
+def _to_int(value: Any) -> int | None:
+    """Coerce to int, or None when the source said nothing usable.
+
+    The gateway is inconsistent about numeric types across categories: the same
+    field arrives as an int, as a decimal string, or as "" on ads where it does
+    not apply. None has to survive as None -- a missing toilet count is not a
+    house with zero toilets.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_bool(value: Any) -> bool | None:
+    """Coerce to bool, preserving the difference between False and absent."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"true", "1", "yes"}
+
+
 def fetch_page(
     client: HttpClient,
     region: int,
@@ -143,6 +170,36 @@ def to_row(ad: dict[str, Any], listing_type: str, fetched_at: datetime) -> dict[
         # warehouse.py. Collect it now because listing history cannot be
         # backfilled: a field not captured today is gone for today forever.
         "legal_doc": ad.get("property_legal_document"),
+        # The same argument applies to everything below, which the API has been
+        # returning all along while this mapper dropped it. Fields are absent
+        # per category rather than per ad -- land listings carry no room count,
+        # apartments no land_type -- so .get() returning None is the normal
+        # case and must stay distinguishable from a real zero.
+        "body": ad.get("body"),
+        # company_ad marks a brokerage posting. Owner-vs-broker is a first-class
+        # filter on every VN property site and separates two populations whose
+        # asking prices differ systematically.
+        "is_agent": _to_bool(ad.get("company_ad")),
+        "account_name": ad.get("account_name"),
+        "account_oid": ad.get("account_oid"),
+        "toilets": _to_int(ad.get("toilets")),
+        "direction": ad.get("direction"),
+        "floors": _to_int(ad.get("floornumber")),
+        "ward_v3": ad.get("ward_name_v3"),
+        "region_v3": ad.get("region_name_v3"),
+        # Paired with as_of (list_time) this is what makes repost rate
+        # measurable: a listing relisted weekly is a different signal from one
+        # that has sat unsold since it was first published.
+        "orig_list_time": _to_utc(ad.get("orig_list_time")),
+        "image_count": _to_int(ad.get("number_of_images")),
+        # URL only. Images are never downloaded or committed -- the repo has a
+        # ~1GB soft cap and binary assets are explicitly out of bounds.
+        "thumbnail": ad.get("thumbnail_image"),
+        "state": ad.get("state"),
+        "status": ad.get("status"),
+        "price_string": ad.get("price_string"),
+        "area_v2": _to_int(ad.get("area_v2")),
+        "region_v2": _to_int(ad.get("region_v2")),
     }
 
 
