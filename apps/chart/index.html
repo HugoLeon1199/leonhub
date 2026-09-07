@@ -318,7 +318,7 @@ footer b{color:var(--text); font-weight:600}
     <!-- No maxlength: the field now searches company names too, and 12
          characters cuts off "vietcombank" mid-word. -->
     <input id="sym" class="sym-input" value="BTC" aria-label="Tìm mã: crypto, cổ phiếu VN hoặc Mỹ"
-           placeholder="Tìm mã…" autocomplete="off" spellcheck="false"
+           placeholder="Tìm mã…" title="Gõ bất kỳ đâu trên chart để tìm mã" autocomplete="off" spellcheck="false"
            role="combobox" aria-expanded="false" aria-controls="sym-menu" aria-autocomplete="list">
     <div class="sym-menu" id="sym-menu" role="listbox" hidden></div>
   </span>
@@ -4388,6 +4388,19 @@ document.addEventListener("keydown", e => {
     closeChartMenu();
     if(el.alertDialog.open) el.alertDialog.close();
     setDrawMode("pan");
+  }else if(!mod && !e.altKey && /^[a-zA-Z0-9]$/.test(e.key)){
+    /* Type-to-search, the way a charting terminal behaves: start typing
+       anywhere on the chart and the symbol box takes over. Reaching for the
+       input first is an extra step for the single most frequent action on the
+       page. Guarded to bare alphanumerics so Ctrl/Alt combinations and the
+       drawing shortcuts above are untouched. */
+    // Focus first (its handler selects the old symbol), then overwrite with the
+    // key that was consumed here and dispatch `input` to open the results.
+    el.sym.focus();
+    el.sym.value = e.key;
+    el.sym.setSelectionRange(1, 1);
+    el.sym.dispatchEvent(new Event("input"));
+    e.preventDefault();
   }
 });
 
@@ -5190,7 +5203,9 @@ el.sym.addEventListener("input", () => {
   loadEquityManifests().catch(() => {});
   symTimer = setTimeout(() => renderSearch(searchSymbols(el.sym.value)), 120);
 });
-el.sym.addEventListener("focus", () => { if(el.sym.value.trim()) renderSearch(searchSymbols(el.sym.value)); });
+// Select the current symbol on click so typing replaces it rather than
+// appending to it -- "BTC" plus "VIC" is not a symbol anyone meant.
+el.sym.addEventListener("focus", () => { el.sym.select(); });
 el.sym.addEventListener("keydown", e => {
   if(e.key === "ArrowDown" || e.key === "ArrowUp"){
     if(!el.symMenu.hidden){ moveSearch(e.key === "ArrowDown" ? 1 : -1); e.preventDefault(); }
