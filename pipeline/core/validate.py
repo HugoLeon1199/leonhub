@@ -593,9 +593,80 @@ def validate_ticker_manifest(payload: dict[str, Any], previous: dict[str, Any] |
     return rep
 
 
+def validate_bds_listings(payload: dict[str, Any], previous: dict[str, Any] | None) -> Report:
+    """Guard the per-district listing shards.
+
+    Unlike bds.json this one deliberately has no minimum sample: a district
+    with eight plots is published, because that is exactly where a buyer looks.
+    So the checks here are about referential integrity and units, not weight of
+    evidence -- a shard the index promises but that does not exist is a broken
+    link in the UI, and a price/m2 outside the sane band means rental listings
+    leaked into the sale lane again.
+    """
+    rep = Report()
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        rep.error("bds listings index is empty")
+        return rep
+
+    keys = [row.get("k") for row in rows]
+    if len(set(keys)) != len(keys) or any(not key for key in keys):
+        rep.error("bds listings index has a missing or duplicate district key")
+
+    missing, malformed, bad_price = [], [], []
+    sampled = 0
+    for row in rows:
+        key = row.get("k")
+        # Reading 388 shards on every run is affordable and is the only way the
+        # index's promises are actually checked.
+        shard = read_json(f"bds/listings/{key}.json")
+        if shard is None:
+            missing.append(key)
+            continue
+        sampled += 1
+        items = shard.get("rows")
+        if not isinstance(items, list) or len(items) != row.get("n"):
+            malformed.append(key)
+            continue
+        for item in items:
+            price = item.get("p")
+            if not isinstance(price, (int, float)) or not (BDS_PRICE_RANGE[0] <= price <= BDS_PRICE_RANGE[1]):
+                bad_price.append(key)
+                break
+            # Total price in billions against per-m2 in millions and size in m2.
+            # These three are published independently, so a unit slip in any one
+            # shows up as a mismatch here rather than as a plausible wrong number.
+            total, size = item.get("tp"), item.get("sz")
+            if isinstance(total, (int, float)) and isinstance(size, (int, float)) and size > 0:
+                implied = total * 1000 / size
+                if implied > 0 and abs(implied / price - 1) > 0.05:
+                    bad_price.append(key)
+                    break
+
+    if missing:
+        rep.error(f"{len(missing)} districts in the index have no shard file (first: {missing[0]})")
+    if malformed:
+        rep.error(f"{len(malformed)} listing shards are unreadable or disagree with the index (first: {malformed[0]})")
+    if bad_price:
+        rep.error(f"{len(bad_price)} shards carry an out-of-band or inconsistent price (first: {bad_price[0]})")
+    if previous and isinstance(previous.get("rows"), list):
+        drop = 1 - len(rows) / max(1, len(previous["rows"]))
+        if drop > MAX_ROW_DROP:
+            rep.error(f"listing coverage fell {drop:.1%} ({len(previous['rows'])} → {len(rows)})")
+
+    rep.stats.update(
+        districts=len(rows),
+        listings=sum(row.get("n") or 0 for row in rows),
+        thin_districts=sum(1 for row in rows if row.get("thin")),
+        shards_checked=sampled,
+    )
+    return rep
+
+
 VALIDATORS = {
     "stocks.json": validate_stocks,
     "bds.json": validate_bds,
+    "bds/listings/index.json": validate_bds_listings,
     "us.json": validate_us,
     "fx.json": validate_fx,
     "crypto.json": validate_crypto,
@@ -614,6 +685,7 @@ VALIDATORS = {
 _TAKES_PAYLOAD = {
     "flows.json", "signals.json", "news_ticker.json", "gex_btc.json",
     "gex_eth.json", "ticker/manifest.json", "breadth.json",
+    "bds/listings/index.json",
 }
 
 
