@@ -65,9 +65,66 @@ collectors write plain VND. Mixing them puts a thousand-fold step in every
 ticker's history exactly where backfill meets live rows — momentum, z-scores and
 the 52-week range all break at once. `PRICE_SCALE` handles it.
 
+**VPS `history` timestamps are already in seconds**, unlike Binance klines
+(`r[0]/1000`) and Hyperliquid (`r.t/1000`). Dividing them again lands every bar
+in 1970 and the chart silently renders nothing. Every numeric field also arrives
+as a *string*, timestamps included, so each needs an explicit `+`.
+
+**VPS intraday exists but is shallow, and W/M do not exist at all** (probed
+2026-09-07 on VIC). `resolution=1/5/15/30/60` and `D` all answer `s:"ok"`;
+`W` and `M` answer HTTP 400, so weekly and monthly bars have to be folded from
+daily. History reaches roughly: 1m ~4 days, 5m ~14 days, 15m ~28 days, 30m ~2
+months, 60m ~3 months, D ~3 years. Ask for more and the feed simply returns what
+it holds. Note `1H` (letter form) is a 400 — the hourly resolution is `60`.
+
+**VPS has no visible rate limit for browser-shaped use.** Fifteen back-to-back
+`history` calls with no delay returned 15×200 in 11.9s. The chart fetches one
+symbol per view from the reader's own browser, so this stays well inside
+anything the source could object to; a bulk server-side crawl is a different
+question and has not been probed.
+
+**`bgapidatafeed.vps.com.vn` answers `Access-Control-Allow-Origin: *`.** This is
+the one VN board a static page can read directly, and it carries three levels of
+depth (`g1`-`g6` as `price|volume|flag`), intra-session foreign buy/sell value
+and volume, `fRoom`, and `ptVol` (put-through/thoả thuận). SSI iBoard has richer
+data but restricts CORS to its own board, which is why that one runs
+pipeline-side and this one does not.
+
+**Binance rejects an entire batched `ticker/24hr` request if any one symbol is
+unknown to it.** A single VN ticker starred into the chart watchlist therefore
+blanked the price of every crypto beside it. Quotes are now partitioned by
+market before the request is built.
+
 **Chotot mixes sale and rental ads unless `st` is pinned.** A rental price/m² is
 ~1000x smaller than a sale one (0.24 vs 208 million/m² in the same district).
 Every query sets `st=s` or `st=u` explicitly.
+
+**Chotot per-listing fields are absent by category, not by ad** (measured
+2026-09-07, 20 ads per category in region 13000). `toilets` is 14/20 on nhà ở
+and 19/20 on chung cư but **0/20 on đất**; `floors` is 5/20 on chung cư and
+0/20 elsewhere; `direction` runs 7-13/20 across all three. So a null is the
+source declining to say, and coercing it to 0 would invent a house with no
+bathroom. `_to_int`/`_to_bool` in `chotot.py` preserve None deliberately — the
+gateway also returns the same numeric field as an int, a decimal string, or ""
+depending on category.
+
+**`company_ad` shows the populations are not comparable.** 17/20 đất listings
+are brokerage postings against 11/20 for nhà ở, so any cross-source or
+cross-category median mixes two different seller populations. Publish the split
+before merging anything.
+
+**Chotot and Nhà Tốt are the same source.** `nhatot.com` is Chợ Tốt's property
+brand and serves from the same `gateway.chotot.com` endpoint with the same
+schema. Adding it as a second source would double-count the same listings.
+
+**`batdongsan.com.vn` answers 403 to everything, including robots.txt.** The
+response carries `Cf-Mitigated: challenge` and a Cloudflare "Just a moment..."
+body with `<meta name="robots" content="noindex,nofollow">`; a full browser
+header set (sec-ch-ua, Sec-Fetch-*, Accept-Language, Accept-Encoding) does not
+change it. This is an active refusal, not a user-agent filter — do not try to
+work around it. Mogi, Homedy, Guland and CafeLand sit behind Cloudflare too and
+all answer 200 with full sitemaps, which is what shows the block is that site's
+own choice rather than a platform behaviour.
 
 **Farside writes negatives in accounting parentheses** — `(95.1)` means -95.1 —
 and the BTC and ETH tables use different header shapes. Reconcile any parser
