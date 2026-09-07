@@ -82,6 +82,16 @@ body{
 .sig-h b{font-size:12px; font-variant-numeric:tabular-nums}
 .sig-h span{font-size:10px; color:var(--muted)}
 .sig-m{font-size:10.5px; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums}
+/* Multi-timeframe gauge. */
+.mtf-head{padding:9px 8px; border-left:3px solid var(--line); background:var(--panel-2); border-radius:5px; margin:7px 5px}
+.mtf-head.up{border-left-color:var(--up)} .mtf-head.down{border-left-color:var(--down)}
+.mtf-head b{display:block; font-size:12.5px; margin-bottom:3px}
+.mtf-head small{color:var(--muted); font-size:11px; line-height:1.45}
+.mtf-chips{display:flex; gap:5px; flex-wrap:wrap; padding:0 6px 4px}
+.mtf-chip{font-size:10.5px; padding:3px 7px; border-radius:99px; border:1px solid var(--line); color:var(--muted)}
+.mtf-chip.up{color:var(--up); border-color:var(--up)} .mtf-chip.down{color:var(--down); border-color:var(--down)}
+.mtf-gauge{padding:2px 8px 6px}
+.mtf-scale{display:flex; justify-content:space-between; color:var(--muted); font-size:10px; margin-top:-6px}
 .bar-action{appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
   border-radius:7px;padding:6px 9px;cursor:pointer;font:12px inherit}
 .bar-action:hover,.bar-action[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
@@ -391,6 +401,7 @@ footer b{color:var(--text); font-weight:600}
            room. -->
       <button type="button" data-side="vnflow" aria-pressed="false" hidden>Dòng tiền</button>
       <button type="button" data-side="signals" aria-pressed="false">Tín hiệu</button>
+      <button type="button" data-side="mtf" aria-pressed="false">Đa khung</button>
     </div>
     <div class="side-pane" id="side-watch"></div>
     <div class="side-pane" id="side-book" hidden></div>
@@ -399,6 +410,7 @@ footer b{color:var(--text); font-weight:600}
     <div class="side-pane" id="side-net" hidden></div>
     <div class="side-pane" id="side-vnflow" hidden></div>
     <div class="side-pane" id="side-signals" hidden></div>
+    <div class="side-pane" id="side-mtf" hidden></div>
   </aside>
 </div>
 
@@ -676,7 +688,11 @@ function selectSymbol(next,announce=true){next=String(next||"").trim().toUpperCa
   // that might be an equity.
   loadEquityManifests().then(()=>{coerceTimeframe();updateTimeframeControls();applyMarketKind();syncUrl(announce);updateWatchButton();load()});}
 const SIDE_TABS=[...document.querySelectorAll("[data-side]")].map(b=>b.dataset.side);
-function setSide(name){if(!SIDE_TABS.includes(name))name="watch";document.querySelectorAll("[data-side]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.side===name)));for(const key of SIDE_TABS){const pane=document.getElementById(`side-${key}`);if(pane)pane.hidden=key!==name}if(name==="net")renderNetDollar();try{localStorage.setItem("leon_chart_side_tab",name)}catch(e){}}
+function setSide(name){if(!SIDE_TABS.includes(name))name="watch";document.querySelectorAll("[data-side]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.side===name)));for(const key of SIDE_TABS){const pane=document.getElementById(`side-${key}`);if(pane)pane.hidden=key!==name}if(name==="net")renderNetDollar();
+  // The gauge costs three extra history requests, so it is computed when the
+  // tab is actually looked at rather than on every symbol change.
+  if(name==="mtf"&&(!mtfState||mtfState.symbol!==symbol))refreshMtf();
+  try{localStorage.setItem("leon_chart_side_tab",name)}catch(e){}}
 /* Show only the panels the current market can actually fill.
    Order book, Big Tape and Net $ are all built from Binance's aggTrade and
    depth streams. VN publishes no equivalent, and leaving the tabs visible would
@@ -706,6 +722,10 @@ function applyMarketKind(){
   if(sigTab) sigTab.hidden = !isVn;
   if(el.sigToggle) el.sigToggle.hidden = !isVn;
   refreshSignals();
+  // Recompute the gauge only while its tab is the visible one.
+  const mtfPane = document.getElementById("side-mtf");
+  if(mtfPane && !mtfPane.hidden) refreshMtf();
+  else mtfState = null;
 
   // One button, two honest meanings. Gamma exists only where options on the
   // instrument do; everywhere else it draws the volume profile, which answers
@@ -2127,6 +2147,15 @@ const INDICATORS = {
 };
 const INDICATOR_KEYS = Object.keys(INDICATORS);
 
+/* Histograms reject a point with no value, while lines read it as a gap. Only
+   the histogram case is filtered, so a broken line still shows its break rather
+   than being joined through a stretch that carries no reading. */
+function seriesData(plot){
+  return plot.histogram
+    ? (plot.data || []).filter(p => p && p.value != null && isFinite(p.value))
+    : (plot.data || []);
+}
+
 /* Active instances. Each carries its own id, so the same indicator can be
    added several times with different periods (EMA 20 + EMA 50 + EMA 200) --
    which a single on/off toggle per type could never express. */
@@ -2221,13 +2250,17 @@ function buildIndicator(inst, bars){
   if(!bars.length) return;
   let plots = [];
   try{ plots = def.build(bars, inst.params) || []; }catch(e){ return; }
+  // Point series (Parabolic SAR, pivots, Supertrend) emit bare {time} for bars
+  // they have no value on, which Lightweight Charts accepts as a whitespace gap
+  // on a line but throws "Value is null" on for a histogram. Filtering here
+  // covers every plot type at both call sites below.
   const signature = plots.map(p => p.histogram ? "h" : "l").join("");
 
   // Keep existing series when only their data changed. Recreating every pane
   // after a history page arrived made the chart jump and discarded the user's
   // resized pane heights.
   if(inst._series && inst._signature === signature && inst._series.length === plots.length){
-    plots.forEach((plot, i) => inst._series[i].setData(plot.data));
+    plots.forEach((plot, i) => inst._series[i].setData(seriesData(plot)));
     setIndicatorVisibility(inst);
     return;
   }
@@ -2259,7 +2292,7 @@ function buildIndicator(inst, bars){
           pointMarkersVisible: !!plot.dots,
           lineVisible: !plot.dots,
         }, common), paneIndex);
-    s.setData(plot.data);
+    s.setData(seriesData(plot));
     return s;
   });
   inst._signature = signature;
@@ -3636,6 +3669,152 @@ function syncDrawingPaneHeight(){
    behaviour for free by living here.
    Drawn beneath user shapes, because a wall is context and a trendline someone
    placed by hand is intent. */
+/* ---------- multi-timeframe state ----------
+   One reading of "where does this instrument stand" across three timeframes at
+   once, so a 1h entry taken against a falling daily is visible as such before
+   it is taken rather than after.
+
+   Each timeframe votes on three things it can actually measure -- price against
+   its own SMA50, the Supertrend direction, and whether ADX says a trend is
+   present at all. The score is the average of those votes, and the gauge shows
+   it. The inputs are listed beside the needle on purpose: a dial with no stated
+   rule is a horoscope, and the reader has to be able to disagree with it. */
+const MTF_FRAMES = {
+  crypto: ["1h", "4h", "1d"],
+  // VPS intraday is shallow and the rule set here is daily-shaped anyway.
+  vn: ["1h", "1d", "1w"],
+  us: ["1d", "1w", "1M"],
+};
+let mtfState = null, mtfToken = 0;
+
+/* Score one set of bars in [-1, 1]. Null when there is not enough history to
+   answer honestly, which is different from a neutral reading of zero. */
+function scoreBars(bars){
+  // Periods scale down on a short series rather than refusing to answer: the
+  // weekly fold of us.json is ~52 bars, and an SMA50 on that reads only its own
+  // final value. Below 30 bars nothing is said at all.
+  if(!bars || bars.length < 30) return null;
+  const trendPeriod = bars.length >= 60 ? 50 : Math.max(10, Math.floor(bars.length / 3));
+  const closes = bars.at(-1).close;
+  const trend = sma(bars, trendPeriod);
+  const st = supertrend(bars, 10, 3);
+  const dx = adx(bars, 14);
+
+  const votes = [];
+  const trendVal = trend.at(-1)?.value;
+  if(trendVal != null) votes.push(closes > trendVal ? 1 : -1);
+  // supertrend() returns separate up/down series; whichever carries the last
+  // bar is the side it is currently on.
+  const lastUp = st.up?.filter(x => x.value != null).at(-1);
+  const lastDown = st.down?.filter(x => x.value != null).at(-1);
+  const lastTime = bars.at(-1).time;
+  if(lastUp?.time === lastTime) votes.push(1);
+  else if(lastDown?.time === lastTime) votes.push(-1);
+
+  if(!votes.length) return null;
+  const direction = votes.reduce((a, b) => a + b, 0) / votes.length;
+  // ADX scales conviction rather than adding a direction of its own: a strong
+  // reading on a flat market is not a signal, it is a stronger flat market.
+  const adxVal = dx.at(-1)?.value;
+  const conviction = adxVal == null ? 0.6 : Math.max(0.35, Math.min(1, adxVal / 40));
+  return {score: direction * conviction, adx: adxVal, votes: votes.length};
+}
+
+async function refreshMtf(){
+  const token = ++mtfToken;
+  const kind = symbolKind(symbol);
+  const frames = MTF_FRAMES[kind] || MTF_FRAMES.crypto;
+  mtfState = {loading:true, frames:[], symbol};
+  renderMtf();
+
+  const fetcher = kind === "us" ? fromUsJson : kind === "vn" ? fromVps : fromBinance;
+  const results = [];
+  for(const tf of frames){
+    let bars = null;
+    try{ bars = await fetcher(symbol, tf); }
+    catch(e){
+      // Crypto falls back the same way the main chart does.
+      if(kind === "crypto"){ try{ bars = await fromHyperliquid(symbol, tf); }catch(e2){} }
+    }
+    if(token !== mtfToken) return;
+    results.push({tf, ...(scoreBars(bars) || {score:null})});
+  }
+  if(token !== mtfToken) return;
+  mtfState = {loading:false, frames:results, symbol};
+  renderMtf();
+}
+
+function renderMtf(){
+  const box = document.getElementById("side-mtf");
+  if(!box) return;
+  if(!mtfState){ box.innerHTML = ""; return; }
+  if(mtfState.loading){
+    box.innerHTML = '<div class="side-empty">Đang tính trạng thái đa khung…</div>';
+    return;
+  }
+  const scored = mtfState.frames.filter(f => f.score != null);
+  if(!scored.length){
+    box.innerHTML = '<div class="side-empty">Không đủ lịch sử để đánh giá đa khung cho mã này.</div>';
+    return;
+  }
+  const avg = scored.reduce((s, f) => s + f.score, 0) / scored.length;
+  const ups = scored.filter(f => f.score > 0.15).length;
+  const downs = scored.filter(f => f.score < -0.15).length;
+
+  // A timeframe the source could not supply is reported as missing, never
+  // folded into the verdict: "all frames agree" must not mean "the one frame
+  // we could measure agrees".
+  const missing = mtfState.frames.filter(f => f.score == null).map(f => f.tf);
+  const shortfall = missing.length ? ` Thiếu dữ liệu khung ${missing.join(", ")}.` : "";
+
+  let headline, detail;
+  if(scored.length < 2){
+    headline = "Chưa đủ dữ liệu đa khung";
+    detail = `Chỉ đánh giá được khung ${scored.map(f => f.tf).join(", ")}.${shortfall}`;
+  }else if(ups === scored.length){
+    headline = `Cả ${scored.length} khung đồng pha tăng`;
+    detail = "Các khung đo được đều đang ở trạng thái tăng." + shortfall;
+  }else if(downs === scored.length){
+    headline = `Cả ${scored.length} khung đồng pha giảm`;
+    detail = "Các khung đo được đều đang ở trạng thái giảm." + shortfall;
+  }else if(ups && downs){
+    headline = "Các khung mâu thuẫn";
+    detail = "Khung lớn và khung nhỏ đang ngược chiều — rủi ro cao hơn bình thường." + shortfall;
+  }else{
+    headline = "Đang chuyển trạng thái";
+    detail = "Một số khung chưa xác lập rõ xu hướng." + shortfall;
+  }
+
+  // Needle sweeps 180 degrees: -1 points hard left (giảm), +1 hard right.
+  const angle = Math.max(-1, Math.min(1, avg)) * 90;
+  const tone = avg > 0.15 ? "up" : avg < -0.15 ? "down" : "";
+  const chip = f => {
+    const label = f.score == null ? "?" : f.score > 0.15 ? "↑" : f.score < -0.15 ? "↓" : "~";
+    const cls = f.score == null ? "" : f.score > 0.15 ? "up" : f.score < -0.15 ? "down" : "";
+    return `<span class="mtf-chip ${cls}">${f.tf} ${label}</span>`;
+  };
+
+  box.innerHTML =
+    `<div class="side-summary"><span>Trạng thái đa khung</span><span>${mtfState.symbol}</span></div>` +
+    `<div class="mtf-head ${tone}"><b>${headline}</b><small>${detail}</small></div>` +
+    `<div class="mtf-chips">${mtfState.frames.map(chip).join("")}</div>` +
+    `<div class="mtf-gauge">` +
+      `<svg viewBox="0 0 200 116" width="100%" height="106" aria-hidden="true">` +
+        `<path d="M18 108 A82 82 0 0 1 60 37" stroke="#f0655a" stroke-width="13" fill="none" stroke-linecap="round"/>` +
+        `<path d="M67 32 A82 82 0 0 1 133 32" stroke="#e0a83c" stroke-width="13" fill="none" stroke-linecap="round"/>` +
+        `<path d="M140 37 A82 82 0 0 1 182 108" stroke="#38d39f" stroke-width="13" fill="none" stroke-linecap="round"/>` +
+        `<g transform="rotate(${angle} 100 108)">` +
+          `<line x1="100" y1="108" x2="100" y2="42" stroke="var(--text)" stroke-width="2.5" stroke-linecap="round"/>` +
+        `</g>` +
+        `<circle cx="100" cy="108" r="6" fill="var(--panel)" stroke="var(--text)" stroke-width="2"/>` +
+      `</svg>` +
+      `<div class="mtf-scale"><span>Giảm</span><span>Tăng</span></div>` +
+    `</div>` +
+    `<div class="side-summary" style="display:block;line-height:1.5">` +
+      `Mỗi khung chấm theo ba yếu tố đo được: giá so với SMA50, chiều Supertrend(10,3), ` +
+      `và ADX(14) dùng để nhân độ tin cậy. Không phải khuyến nghị mua bán.</div>`;
+}
+
 /* The trade list beside the chart. Open positions first -- those are the
    actionable ones -- then closed trades newest first, each showing its result
    in R and why it ended. Losses are shown exactly as published; the rule's
