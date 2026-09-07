@@ -89,6 +89,30 @@ tbody tr:hover td:first-child{background:var(--panel-2)}
 
 .msg{padding:36px 20px; text-align:center; color:var(--muted)}
 .msg strong{display:block; color:var(--text); margin-bottom:6px; font-size:15px}
+
+/* Bank ratios are null for ~1,700 non-banks, so they stay out of the way until
+   asked for rather than padding every row with dashes. */
+.bankcol{display:none}
+body.show-bank .bankcol{display:table-cell}
+
+/* The rules block. `flex:0 0 auto` is load-bearing: body is a flex column with
+   overflow hidden and .wrap is flex:1, so without it an expanded panel fights
+   the table for height instead of pushing it down. */
+.guide{flex:0 0 auto; margin:0 12px 8px; border:1px solid var(--line); border-radius:8px;
+  background:var(--panel); font-size:12px; max-height:46vh; overflow:auto}
+.guide>summary{cursor:pointer; padding:8px 12px; color:var(--muted); list-style:none}
+.guide>summary::-webkit-details-marker{display:none}
+.guide>summary::before{content:"▸ "; color:var(--accent)}
+.guide[open]>summary::before{content:"▾ "}
+.guide>summary:hover{color:var(--text)}
+.guide .gbody{padding:2px 12px 12px; border-top:1px solid var(--line)}
+.guide h4{margin:12px 0 5px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent)}
+.guide dl{display:grid; grid-template-columns:minmax(110px,auto) 1fr; gap:3px 12px; margin:0}
+.guide dt{color:var(--text); font-weight:600}
+.guide dd{margin:0; color:var(--muted)}
+.guide .warnrow{margin-top:8px; padding:7px 9px; border-left:3px solid var(--warn);
+  background:var(--panel-2); border-radius:4px; color:var(--muted)}
+.guide .warnrow b{color:var(--warn)}
 footer{
   flex:0 0 auto; padding:5px 12px; background:var(--panel); border-top:1px solid var(--line);
   font-size:11px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap;
@@ -105,6 +129,12 @@ footer b{color:var(--text); font-weight:600}
   <span class="rng">P/E <input id="peMin" type="number" placeholder="từ" aria-label="P/E từ"><input id="peMax" type="number" placeholder="đến" aria-label="P/E đến"></span>
   <span class="rng">ROE% <input id="roeMin" type="number" placeholder="từ" aria-label="ROE từ"></span>
   <span class="rng">Vốn hóa ≥ <input id="mcMin" type="number" placeholder="tỷ" aria-label="Vốn hóa tối thiểu"></span>
+  <span class="rng">KL ≥ <input id="volMin" type="number" placeholder="CP" aria-label="Khối lượng khớp tối thiểu"></span>
+  <span class="rng">P/B <input id="pbMin" type="number" placeholder="từ" aria-label="P/B từ"><input id="pbMax" type="number" placeholder="đến" aria-label="P/B đến"></span>
+  <span class="rng">Cổ tức ≥ <input id="dyMin" type="number" placeholder="%" aria-label="Cổ tức tối thiểu"></span>
+  <span class="rng">Vị trí 52T <input id="posMin" type="number" placeholder="từ" aria-label="Vị trí 52 tuần từ"><input id="posMax" type="number" placeholder="đến" aria-label="Vị trí 52 tuần đến"></span>
+  <label class="rng" title="Hiện NIM, nợ xấu, CIR, CASA, LDR — chỉ có số ở nhóm ngân hàng">
+    <input id="bankCols" type="checkbox"> Chỉ số NH</label>
   <span class="spacer"></span>
   <span class="count" id="count">—</span>
   <button class="btn" id="csv" type="button">Tải CSV</button>
@@ -112,6 +142,15 @@ footer b{color:var(--text); font-weight:600}
 </div>
 
 <div class="presets" id="presets"></div>
+
+<!-- The rules, on the page rather than only in a title attribute. Tooltips are
+     invisible on touch and unsearchable, and a screener whose filters cannot be
+     read is the opaque dashboard CLAUDE.md warns against. Generated from COLS
+     and PRESETS so it cannot drift from what the code actually does. -->
+<details class="guide" id="guide">
+  <summary>Các điều kiện lọc đang làm gì? — bấm để xem</summary>
+  <div class="gbody" id="guideBody"></div>
+</details>
 
 <div class="wrap">
   <table>
@@ -147,7 +186,14 @@ const COLS = [
   {k:"roic",t:"ROIC %",   kind:"num", d:1},
   {k:"npm", t:"Biên LN %",kind:"num", d:1},
   {k:"de",  t:"Nợ/VCSH",  kind:"num", d:2},
-  {k:"dy",  t:"Cổ tức %", kind:"num", d:2},
+  {k:"dy",  t:"Cổ tức %", kind:"num", d:2, p:"dy_p"},
+  {k:"ps",  t:"P/S",      kind:"num", d:2, p:"ps_p"},
+  {k:"ev",  t:"EV/EBITDA",kind:"num", d:1, p:"ev_p"},
+  {k:"roa", t:"ROA %",    kind:"num", d:1,
+   hint:"Lợi nhuận trên tổng tài sản — dùng được cho cả ngân hàng lẫn doanh nghiệp thường."},
+  {k:"gpm", t:"Biên gộp %", kind:"num", d:1},
+  {k:"cr",  t:"Thanh toán HH", kind:"num", d:2,
+   hint:"Tài sản ngắn hạn chia nợ ngắn hạn. Dưới 1 nghĩa là nợ đến hạn vượt tài sản có thể xoay ngay."},
   {k:"m1",  t:"1 tháng %", kind:"pct", hint:"Thay đổi giá 1 tháng (≈22 phiên)"},
   {k:"m3",  t:"3 tháng %", kind:"pct", hint:"Thay đổi giá 3 tháng (≈64 phiên)"},
   {k:"m6",  t:"6 tháng %", kind:"pct", hint:"Thay đổi giá 6 tháng (≈127 phiên)"},
@@ -163,6 +209,28 @@ const COLS = [
   {k:"f5",  t:"NN 5p",    kind:"flow", hint:"Khối ngoại mua ròng 5 phiên (tỷ VND)"},
   {k:"f20", t:"NN 20p",   kind:"flow", hint:"Khối ngoại mua ròng 20 phiên (tỷ VND)"},
   {k:"i",   t:"Ngành",    kind:"text"},
+  // Liquidity. A screener that cannot express "only names I could actually
+  // buy" surfaces shells whose every trade is a multi-sigma move.
+  {k:"v",   t:"KL khớp",  kind:"num", d:0,
+   hint:"Khối lượng khớp phiên gần nhất (cổ phiếu). Mã khối lượng thấp có thể không mua/bán được ở mức giá hiển thị."},
+  {k:"spread", t:"Chênh mua-bán %", kind:"num", d:2, derived:true,
+   hint:"Khoảng cách giữa giá chào bán và giá chào mua tốt nhất, tính theo % giá. Càng rộng càng khó khớp lệnh — đây là chi phí thật khi vào và ra."},
+  // Bank ratios. The pipeline maps six of them and the "Ngân hàng tốt" preset
+  // filters on two, yet none were ever rendered: the reader could not see the
+  // numbers deciding which names qualified. Hidden by default because they are
+  // null for the ~1,700 non-banks; the toggle reveals them.
+  {k:"nim", t:"NIM %",    kind:"num", d:2, bank:true,
+   hint:"Biên lãi ròng — chênh lệch giữa lãi cho vay và lãi huy động."},
+  {k:"npl", t:"Nợ xấu %", kind:"num", d:2, bank:true,
+   hint:"Tỉ lệ nợ xấu. Càng thấp càng tốt; trên 3% là ngưỡng cảnh báo của NHNN."},
+  {k:"cir", t:"CIR %",    kind:"num", d:1, bank:true,
+   hint:"Chi phí trên thu nhập. Thấp nghĩa là ngân hàng vận hành hiệu quả."},
+  {k:"casa",t:"CASA %",   kind:"num", d:1, bank:true,
+   hint:"Tỉ lệ tiền gửi không kỳ hạn — nguồn vốn rẻ. Cao là lợi thế cạnh tranh."},
+  {k:"ldr", t:"LDR %",    kind:"num", d:1, bank:true,
+   hint:"Dư nợ trên tiền gửi. Cao nghĩa là cho vay nhiều so với vốn huy động."},
+  {k:"days",t:"Số phiên", kind:"num", d:0,
+   hint:"Số phiên đã quan sát được. Ít phiên thì Vị trí 52T và Z-score chưa đáng tin."},
 ];
 
 /* One-click strategies. Each is a documented rule, not a black box — the title
@@ -205,7 +273,8 @@ const PRESETS = [
 
 const el = id => document.getElementById(id);
 let ROWS = [], META = {};
-let sortKey = "mc", sortDir = -1, activePreset = null;
+let sortKey = "mc", sortDir = -1;
+const activePresets = new Set();
 
 /* ---------- load ---------- */
 fetch("../../data/stocks.json", {cache:"no-cache"})
@@ -216,6 +285,15 @@ fetch("../../data/stocks.json", {cache:"no-cache"})
     const rows = Array.isArray(payload) ? payload : payload.rows;
     META = Array.isArray(payload) ? {} : payload;
     ROWS = rows;
+    // Bid-ask spread as a share of price. Derived here rather than in the
+    // pipeline because it is purely a view over two columns already published,
+    // and the artifact's short-key budget is paid on every page load.
+    for(const r of ROWS){
+      if(r.b1 > 0 && r.a1 > 0 && r.a1 >= r.b1){
+        const mid = (r.a1 + r.b1) / 2;
+        if(mid > 0) r.spread = (r.a1 - r.b1) / mid * 100;
+      }
+    }
     el("msg").hidden = true;
     // Drop columns nothing populates yet: an all-blank column reads as broken,
     // and the rolling foreign-flow windows stay empty until the warehouse has
@@ -229,6 +307,8 @@ fetch("../../data/stocks.json", {cache:"no-cache"})
     buildFacets();
     buildHead();
     buildPresets();
+    // After the presets exist (it marks the unusable ones) and before render.
+    buildGuide();
     readUrl();
     render();
     // The trading session the data describes, not today's date: a file three
@@ -270,6 +350,7 @@ function buildHead(){
   COLS.forEach(col => {
     const th = document.createElement("th");
     th.innerHTML = col.t + '<span class="dir"></span>';
+    if(col.bank) th.className = "bankcol";
     if(col.hint) th.title = col.hint;
     th.addEventListener("click", () => {
       if(sortKey === col.k) sortDir = -sortDir;
@@ -289,14 +370,59 @@ function buildPresets(){
     b.title = p.hint;
     b.setAttribute("aria-pressed", "false");
     b.addEventListener("click", () => {
-      activePreset = activePreset === p.id ? null : p.id;
+      // Presets intersect rather than replace one another: "cheap" and "foreign
+      // buying" is a question the single-selection version could not ask.
+      if(activePresets.has(p.id)) activePresets.delete(p.id);
+      else activePresets.add(p.id);
       [...el("presets").children].forEach((c, i) =>
-        c.setAttribute("aria-pressed", String(PRESETS[i].id === activePreset)));
+        c.setAttribute("aria-pressed", String(activePresets.has(PRESETS[i].id))));
       syncUrl();
       render();
     });
     el("presets").appendChild(b);
   });
+}
+
+/* Build the rules panel from the same arrays the filters run on. Hand-written
+   prose here would be a second source of truth and would rot the first time a
+   threshold changed. */
+function buildGuide(){
+  const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  const dl = items => "<dl>" + items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + "</dl>";
+
+  // A preset whose inputs the warehouse cannot supply yet matches nothing. Say
+  // so, rather than letting the button return an empty table in silence.
+  const dead = PRESETS.filter(p => !ROWS.some(r => p.fn(r)));
+
+  let html = "<h4>Nút lọc nhanh</h4>"
+    + dl(PRESETS.map(p => [p.label, p.hint]));
+
+  if(dead.length){
+    html += `<div class="warnrow"><b>Chưa dùng được:</b> ${dead.map(p => esc(p.label)).join(", ")}. `
+      + "Điều kiện cần dữ liệu mà kho chưa tích đủ ngày — nút sẽ không ra mã nào cho tới khi đủ.</div>";
+  }
+
+  html += "<h4>Ý nghĩa các cột</h4>"
+    + dl(COLS.filter(c => c.hint).map(c => [c.t, c.hint]));
+
+  html += "<h4>Cách đọc con số</h4>" + dl([
+    ["Đơn vị", "Giá tính bằng VND. Vốn hóa và dòng tiền khối ngoại tính bằng tỷ VND. Khối lượng tính bằng cổ phiếu."],
+    ["Thanh phần trăm", "Ô có thanh nhỏ bên dưới là so với chính lịch sử của mã đó, không phải so với ngành. Cần ít nhất 8 quý mới xếp hạng được."],
+    ["Dấu *", "Giá tham chiếu của sàn — mã chưa từng có lệnh khớp trong dữ liệu đã thu."],
+    ["Dấu †", "Giá khớp của một phiên cũ hơn, mã không giao dịch phiên gần nhất."],
+    ["Ô trống (—)", "Nguồn không cung cấp, không phải bằng 0. Chỉ số ngân hàng để trống ở doanh nghiệp thường là đúng."],
+    ["Kết hợp bộ lọc", "Chọn nhiều nút cùng lúc thì mã phải thỏa mãn tất cả các điều kiện."],
+    ["Giới hạn hiển thị", "Bảng vẽ tối đa 600 dòng cho nhẹ máy; số đếm và file CSV vẫn tính đủ toàn bộ kết quả lọc."],
+  ]);
+
+  html += "<h4>Nguồn và thời điểm</h4>" + dl([
+    ["Giá, khối lượng, khối ngoại", "Vietcap; sổ lệnh và room ngoại từ SSI iBoard."],
+    ["Chỉ số cơ bản", "Vietcap, theo quý từ 2018 tới nay."],
+    ["Phiên dữ liệu", (META.as_of || "—") + " · " + (META.trading_days || "—") + " phiên đã quan sát."],
+    ["Lưu ý", "Đây là dữ liệu tham khảo, không phải khuyến nghị đầu tư."],
+  ]);
+
+  el("guideBody").innerHTML = html;
 }
 
 /* ---------- filtering ---------- */
@@ -308,6 +434,8 @@ function filters(){
     ind: el("ind").value,
     peMin: num("peMin"), peMax: num("peMax"),
     roeMin: num("roeMin"), mcMin: num("mcMin"),
+    volMin: num("volMin"), pbMin: num("pbMin"), pbMax: num("pbMax"),
+    dyMin: num("dyMin"), posMin: num("posMin"), posMax: num("posMax"),
   };
 }
 
@@ -320,8 +448,15 @@ function passes(r, f){
   if(f.peMax != null && !(r.pe <= f.peMax)) return false;
   if(f.roeMin != null && !(r.roe >= f.roeMin)) return false;
   if(f.mcMin != null && !(r.mc >= f.mcMin)) return false;
-  if(activePreset){
-    const preset = PRESETS.find(p => p.id === activePreset);
+  if(f.volMin != null && !(r.v >= f.volMin)) return false;
+  if(f.pbMin != null && !(r.pb >= f.pbMin)) return false;
+  if(f.pbMax != null && !(r.pb <= f.pbMax)) return false;
+  if(f.dyMin != null && !(r.dy >= f.dyMin)) return false;
+  if(f.posMin != null && !(r.pos52 >= f.posMin)) return false;
+  if(f.posMax != null && !(r.pos52 <= f.posMax)) return false;
+  // Every selected preset must hold, so combinations narrow rather than widen.
+  for(const id of activePresets){
+    const preset = PRESETS.find(p => p.id === id);
     if(preset && !preset.fn(r)) return false;
   }
   return true;
@@ -419,42 +554,57 @@ function render(){
   // still reports the true match total.
   const shown = rows.slice(0, 600);
   el("body").innerHTML = shown
-    .map(r => "<tr>" + COLS.map(c => `<td>${cell(r, c)}</td>`).join("") + "</tr>")
+    .map(r => "<tr>" + COLS.map(c => `<td${c.bank ? ' class="bankcol"' : ""}>${cell(r, c)}</td>`).join("") + "</tr>")
     .join("");
 
   window.__filtered = rows;
 }
 
 /* ---------- url state, so a filtered view is shareable ---------- */
+// One list, used by sync, restore, listeners and reset alike. Three separate
+// copies is how a newly added control ends up saved but never restored.
+const FILTER_IDS = ["q","ex","ind","peMin","peMax","roeMin","mcMin",
+  "volMin","pbMin","pbMax","dyMin","posMin","posMax"];
+
 function syncUrl(){
   const p = new URLSearchParams();
   const f = filters();
   Object.entries(f).forEach(([k, v]) => { if(v) p.set(k, v); });
-  if(activePreset) p.set("preset", activePreset);
+  if(activePresets.size) p.set("preset", [...activePresets].join(","));
+  if(document.body.classList.contains("show-bank")) p.set("bank", "1");
   history.replaceState(null, "", p.toString() ? "?" + p.toString() : location.pathname);
 }
 
 function readUrl(){
   const p = new URLSearchParams(location.search);
-  ["q","ex","ind","peMin","peMax","roeMin","mcMin"].forEach(k => {
-    if(p.get(k)) el(k).value = p.get(k);
+  FILTER_IDS.forEach(k => { if(p.get(k)) el(k).value = p.get(k); });
+  // Comma-separated, and still accepts a single id from an older shared link.
+  (p.get("preset") || "").split(",").filter(Boolean).forEach(id => {
+    if(PRESETS.some(x => x.id === id)) activePresets.add(id);
   });
-  const preset = p.get("preset");
-  if(preset && PRESETS.some(x => x.id === preset)){
-    activePreset = preset;
-    [...el("presets").children].forEach((c, i) =>
-      c.setAttribute("aria-pressed", String(PRESETS[i].id === preset)));
+  [...el("presets").children].forEach((c, i) =>
+    c.setAttribute("aria-pressed", String(activePresets.has(PRESETS[i].id))));
+  if(p.get("bank") === "1"){
+    el("bankCols").checked = true;
+    document.body.classList.add("show-bank");
   }
 }
 
-["q","ex","ind","peMin","peMax","roeMin","mcMin"].forEach(id => {
+FILTER_IDS.forEach(id => {
   el(id).addEventListener("input", () => { syncUrl(); render(); });
 });
 
+el("bankCols").addEventListener("change", () => {
+  document.body.classList.toggle("show-bank", el("bankCols").checked);
+  syncUrl();
+});
+
 el("reset").addEventListener("click", () => {
-  ["q","ex","ind","peMin","peMax","roeMin","mcMin"].forEach(id => el(id).value = "");
-  activePreset = null;
+  FILTER_IDS.forEach(id => el(id).value = "");
+  activePresets.clear();
   [...el("presets").children].forEach(c => c.setAttribute("aria-pressed", "false"));
+  el("bankCols").checked = false;
+  document.body.classList.remove("show-bank");
   syncUrl();
   render();
 });
@@ -462,10 +612,14 @@ el("reset").addEventListener("click", () => {
 el("csv").addEventListener("click", () => {
   const rows = window.__filtered || [];
   const head = COLS.map(c => c.t).join(",");
+  // Quote on quote, comma or newline, doubling any embedded quote. Checking
+  // only for a comma left a company name containing " able to shift every
+  // later column by one.
   const body = rows.map(r => COLS.map(c => {
     const v = r[c.k];
     if(v == null) return "";
-    return typeof v === "string" && v.includes(",") ? `"${v}"` : v;
+    const s = String(v);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }).join(",")).join("\n");
   const blob = new Blob(["﻿" + head + "\n" + body], {type:"text/csv;charset=utf-8"});
   const a = document.createElement("a");
