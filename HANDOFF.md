@@ -14,6 +14,41 @@ Updated 2026-09-05 by Codex. Read `CLAUDE.md` and
 - Do not reset the worktree. Use `git log -1` for the latest local commit; this
   handoff deliberately does not self-reference a commit hash.
 
+## 2026-09-05 Market Structure live-flow upgrade
+
+- `apps/gex/index.html` now combines two explicitly separated layers:
+  Deribit option positioning for BTC/ETH, and Binance USDⓈ-M Futures live
+  order flow for BTC/ETH/SOL. The new CVD is taker-buy notional minus
+  taker-sell notional and intentionally resets whenever the tab/symbol opens;
+  it is not presented as historical or all-day CVD.
+- The same panel lists actual `forceOrder` events seen since the tab opened and
+  separates long liquidations (forced SELL) from short liquidations (forced
+  BUY). It says plainly that these are Binance-only executions, not inferred
+  liquidation zones and not the whole market.
+- Solana has its own Market Structure mode with Binance candles, CVD and
+  liquidations. Do **not** add `gex_sol.json` yet: a live Deribit dry-run on
+  2026-09-05 returned a valid SOL index price but zero option contracts. The UI
+  explains the missing GEX rather than publishing a neutral-looking zero
+  surface.
+- `pipeline/sources/deribit_gex.py` now raises when Deribit returns an empty
+  option chain. This prevents a supported symbol outage or unsupported symbol
+  from being persisted as genuine zero GEX. BTC dry-run remained healthy with
+  978 contracts after the guard was added.
+- Binance migrated `aggTrade` and `forceOrder` to the routed
+  `/market/stream` endpoint and retired push delivery through the legacy route
+  after 2026-04-23. Browser QA caught the silent-open legacy socket; the page
+  now uses the new route. Live QA on BTC received 17 aggregate trades in seven
+  seconds, changed CVD to 182.5K, drew the CVD SVG and passed a deterministic
+  forced-SELL parser check (2 × 100 = 200 long liquidation).
+- Incidental interrupted-work cleanup: the duplicate Charm metric tile was
+  removed. Fresh desktop visual QA at 1440×1500 found the SOL layout readable
+  with no overlap or horizontal overflow. Static checks: all 35 inline scripts
+  parse, Python pipeline compiles, and `git diff --check` passes.
+- Remaining honest gap versus Turtle: there is still no persisted historical
+  futures trade/footprint/liquidation store. Building that needs an append-only
+  collector and retention policy; do not relabel this browser session stream as
+  historical data.
+
 ## 2026-09-05 map repair and interrupted-work check
 
 - `apps/bds/index.html` now renders the 63 legacy source geometries as exactly

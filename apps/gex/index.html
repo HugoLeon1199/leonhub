@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
 <title>Market Structure — LEON Hub</title>
-<meta name="description" content="Gamma exposure của quyền chọn Bitcoin và Ethereum: vùng gamma dương/âm, gamma flip, max pain và các mức strike tập trung dòng phòng hộ.">
+<meta name="description" content="Cấu trúc thị trường crypto: gamma exposure quyền chọn, CVD và các lệnh thanh lý thực tế trên Binance Futures.">
 
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("leon_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -107,6 +107,18 @@ footer b{color:var(--text); font-weight:600}
 .tfbar button{appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
   font:inherit;font-size:11.5px;padding:3px 9px;border-radius:99px;cursor:pointer}
 .tfbar button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#04150f;font-weight:600}
+.flowstats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}
+.flowgrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(290px,.65fr);gap:10px}
+.flowbox{min-height:230px}
+.flowhead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:5px}
+.live{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--warn);display:inline-block}
+.live.on i{background:var(--pos);box-shadow:0 0 0 3px color-mix(in srgb,var(--pos) 18%,transparent)}
+.cvdchart{height:185px;display:grid;place-items:center;color:var(--muted);font-size:12px}
+.liqscroll{max-height:190px;overflow:auto}
+.liqrow{display:grid;grid-template-columns:58px 1fr 1fr;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;font-variant-numeric:tabular-nums}
+.liqrow:last-child{border-bottom:0}.liqrow span:nth-child(n+2){text-align:right}
+@media(max-width:720px){.flowstats{grid-template-columns:repeat(2,minmax(0,1fr))}.flowgrid{grid-template-columns:1fr}.pricewrap{height:340px}}
 </style>
 </head>
 <body>
@@ -116,9 +128,9 @@ footer b{color:var(--text); font-weight:600}
   <h1>Market Structure</h1>
   <div class="group" id="syms" role="group" aria-label="Tài sản"></div>
 </div>
-<p class="sub">Trang này trả lời một câu: <b>các nhà tạo lập quyền chọn đang buộc phải mua hay bán khi giá động đậy?</b>
-Họ bán quyền chọn rồi phải phòng hộ, và dòng phòng hộ đó là cơ học — không phải lựa chọn.
-Vì thế nó nói lên điều mà lịch sử giá không nói được.</p>
+<p class="sub">Đọc cấu trúc qua hai lớp: <b>dòng phòng hộ quyền chọn</b> của Bitcoin/Ethereum và
+<b>dòng lệnh hợp đồng tương lai live</b> của Bitcoin/Ethereum/Solana. Với chứng khoán Việt Nam,
+trang dùng độ rộng thị trường vì chưa có chuỗi quyền chọn niêm yết tương đương.</p>
 
 <details class="explain">
   <summary>Bốn khái niệm, giải thích ngắn</summary>
@@ -150,7 +162,7 @@ Vì thế nó nói lên điều mà lịch sử giá không nói được.</p>
 <div id="body"></div>
 
 <footer>
-  <span>Nguồn: <b>Deribit</b> — toàn bộ chuỗi quyền chọn đang mở</span>
+  <span>Nguồn: <b>Deribit</b> (quyền chọn) · <b>Binance USDⓈ-M Futures</b> (CVD/thanh lý)</span>
   <span id="stamp"></span>
   <span>Số liệu tham khảo, không phải khuyến nghị đầu tư.</span>
 </footer>
@@ -160,7 +172,7 @@ Vì thế nó nói lên điều mà lịch sử giá không nói được.</p>
 <script>
 "use strict";
 
-const SYMBOLS = {btc:"Bitcoin", eth:"Ethereum", vn:"Chứng khoán VN"};
+const SYMBOLS = {btc:"Bitcoin", eth:"Ethereum", sol:"Solana", vn:"Chứng khoán VN"};
 const el = id => document.getElementById(id);
 let current = (new URLSearchParams(location.search).get("sym") || "btc").toLowerCase();
 if(!SYMBOLS[current]) current = "btc";
@@ -194,10 +206,15 @@ Object.entries(SYMBOLS).forEach(([key, name]) => {
 });
 
 function load(){
+  stopFlowStream();
   el("body").innerHTML = '<div class="msg">Đang tải…</div>';
   el("tiles").innerHTML = "";
   el("verdict").innerHTML = "";
   const vn = current === "vn";
+  if(current === "sol"){
+    renderSol();
+    return;
+  }
   const file = vn ? "breadth" : `gex_${current}`;
   const cmd = vn
     ? "python -m pipeline.transform.breadth_build"
@@ -209,6 +226,45 @@ function load(){
       el("body").innerHTML =
         `<div class="msg">Chưa có <code>data/${file}.json</code>. Chạy <code>${cmd}</code>.</div>`;
     });
+}
+
+function flowSection(){
+  return `<section id="flowsection"><h2>Dòng lệnh hợp đồng tương lai</h2>` +
+    `<p class="cap">CVD live = giá trị lệnh mua chủ động trừ lệnh bán chủ động trên Binance USDⓈ-M Futures ` +
+    `<b>từ lúc mở tab</b>. Thanh lý là lệnh cưỡng bức đã xảy ra trên Binance, không phải vùng dự đoán ` +
+    `và không đại diện cho toàn thị trường.</p>` +
+    `<div class="flowstats">` +
+      `<div class="tile"><span class="k">CVD phiên tab</span><span class="v" id="flow-cvd">0</span><span class="n">mua chủ động − bán chủ động</span></div>` +
+      `<div class="tile"><span class="k">Mua chủ động</span><span class="v pos" id="flow-buy">0</span><span class="n">notional USD</span></div>` +
+      `<div class="tile"><span class="k">Bán chủ động</span><span class="v neg" id="flow-sell">0</span><span class="n">notional USD</span></div>` +
+      `<div class="tile"><span class="k">Thanh lý đã thấy</span><span class="v warn" id="flow-liq">0</span><span class="n" id="flow-liq-note">chờ sự kiện</span></div>` +
+    `</div><div class="flowgrid">` +
+      `<div class="card flowbox"><div class="flowhead"><h2>CVD live</h2><span class="live" id="flow-status"><i></i>Đang kết nối…</span></div><div class="cvdchart" id="cvdchart">Chờ giao dịch đầu tiên…</div></div>` +
+      `<div class="card flowbox"><div class="flowhead"><h2>Thanh lý gần nhất</h2><span class="dim" style="font-size:11px">Long bán · Short mua</span></div><div class="liqscroll" id="liq-list"><div class="msg">Chưa có thanh lý từ lúc mở tab.</div></div></div>` +
+    `</div></section>`;
+}
+
+function priceSection(d, withLevels){
+  return `<section><h2>${withLevels ? "Giá và các mức quyền chọn" : "Giá Solana"}</h2>` +
+    `<p class="cap">${withLevels
+      ? "Nến từ Binance, các mức vẽ đè lên đúng giá của chúng. Xanh là tường call (cản), đỏ là tường put (đỡ); nét đứt là gamma flip và max pain; chấm mờ là biên một độ lệch chuẩn. Nhãn kèm xác suất chạm trong 24 giờ."
+      : "Nến spot từ Binance. Deribit hiện không trả chuỗi quyền chọn SOL cho bộ thu thập này, nên LEON không dựng GEX bằng các giá trị 0."}</p>` +
+    `<div class="card"><div class="tfbar" id="tfbar"></div>` +
+    `<div class="pricewrap"><div id="pricechart"></div>` +
+    `<div class="priceloading" id="priceloading">Đang tải nến…</div></div></div></section>`;
+}
+
+function renderSol(){
+  const d = {sym:"SOL", levels:[]};
+  el("verdict").innerHTML = `<div class="verdict warn"><b>Cấu trúc dòng lệnh SOL — dữ liệu live</b>` +
+    `<p>CVD và thanh lý bên dưới bắt đầu tích lũy khi mở trang. GEX SOL không hiển thị vì nguồn quyền chọn hiện chưa có hợp đồng để tính đáng tin cậy.</p></div>`;
+  el("tiles").innerHTML = "";
+  el("stamp").innerHTML = "";
+  el("body").innerHTML = priceSection(d, false) + flowSection();
+  priceChart = null; priceSeries = null;
+  buildTfBar(d);
+  drawPriceChart(d);
+  startFlowStream("SOL");
 }
 
 /* Vietnam has no listed single-stock options, so there is no dealer gamma to
@@ -348,8 +404,6 @@ function render(d){
     // Vanna and charm are the two ways a hedge drifts without the price
     // moving at all -- one with implied volatility, one with the calendar.
     // Both are computed already; neither was shown.
-    {k:"Charm", v:usd(d.charm), cls:(d.charm || 0) >= 0 ? "pos" : "neg",
-     n:"gamma trôi theo thời gian"},
     {k:"Vanna", v:usd(d.vanna), cls:d.vanna >= 0 ? "pos" : "neg",
      n:"phòng hộ đổi khi IV đổi"},
     {k:"Charm", v:usd(d.charm), cls:d.charm >= 0 ? "pos" : "neg",
@@ -366,14 +420,7 @@ function render(d){
     ? `Cập nhật: <b>${new Date(d.updated_at).toLocaleString("vi-VN")}</b>`
     : "";
 
-  el("body").innerHTML =
-    `<section><h2>Giá và các mức quyền chọn</h2>` +
-    `<p class="cap">Nến từ Binance, các mức vẽ đè lên đúng giá của chúng. ` +
-    `Xanh là tường call (cản), đỏ là tường put (đỡ); nét đứt là gamma flip và max pain; ` +
-    `chấm mờ là biên một độ lệch chuẩn. Nhãn kèm xác suất chạm trong 24 giờ.</p>` +
-    `<div class="card"><div class="tfbar" id="tfbar"></div>` +
-    `<div class="pricewrap"><div id="pricechart"></div>` +
-    `<div class="priceloading" id="priceloading">Đang tải nến…</div></div></div></section>` +
+  el("body").innerHTML = priceSection(d, true) + flowSection() +
     `<section><h2>Phân bố gamma theo mức giá</h2>` +
     `<p class="cap">Mỗi cột là tổng gamma tại một strike. Cột xanh là nơi nhà tạo lập ` +
     `phòng hộ ngược chiều thị trường (nén biến động), cột đỏ là nơi họ phòng hộ thuận chiều ` +
@@ -400,6 +447,7 @@ function render(d){
   drawProfile(el("profile"), d);
   drawLevels(el("levels"), d);
   drawStrikes(el("strikes"), d);
+  startFlowStream((d.sym || current).toUpperCase());
 }
 
 /* Open interest per strike, call against put. The GEX table above ranks by
@@ -545,6 +593,112 @@ function buildTfBar(d){
     [...host.children].forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tf === priceTf)));
     drawPriceChart(d);
   };
+}
+
+/* Browser-only futures flow. It deliberately starts at zero on every page
+   visit: aggTrade has no historical backfill here, so persisting the number
+   would turn a partial session into a misleading all-day CVD. */
+let flowWs = null, flowRun = 0, flowTimer = null, flowRetry = null;
+let flow = null;
+
+function stopFlowStream(){
+  flowRun++;
+  if(flowRetry){ clearTimeout(flowRetry); flowRetry = null; }
+  if(flowTimer){ clearTimeout(flowTimer); flowTimer = null; }
+  if(flowWs){ flowWs.onclose = null; flowWs.close(); flowWs = null; }
+}
+
+function startFlowStream(sym){
+  stopFlowStream();
+  const run = flowRun, streamSym = `${sym.toLowerCase()}usdt`;
+  flow = {buy:0, sell:0, cvd:0, longLiq:0, shortLiq:0, trades:0,
+          points:[{t:Date.now(),v:0}], liqs:[]};
+  const status = el("flow-status");
+  if(!status) return;
+  const connect = () => {
+    if(run !== flowRun || !el("flow-status")) return;
+    status.className = "live";
+    status.innerHTML = "<i></i>Đang kết nối…";
+    // Binance split futures WebSockets into routed endpoints in 2026. Both
+    // aggTrade and forceOrder now belong to /market; the legacy route accepts
+    // the handshake but no longer pushes these events.
+    const url = `wss://fstream.binance.com/market/stream?streams=${streamSym}@aggTrade/${streamSym}@forceOrder`;
+    const ws = new WebSocket(url);
+    flowWs = ws;
+    ws.onopen = () => {
+      if(run !== flowRun) return ws.close();
+      status.className = "live on";
+      status.innerHTML = "<i></i>Đang nhận live";
+    };
+    ws.onmessage = event => {
+      if(run !== flowRun) return;
+      let msg; try{ msg = JSON.parse(event.data).data; }catch(e){ return; }
+      if(!msg) return;
+      if(msg.e === "aggTrade"){
+        const notional = (+msg.p || 0) * (+msg.q || 0);
+        if(msg.m) flow.sell += notional; else flow.buy += notional;
+        flow.cvd = flow.buy - flow.sell;
+        flow.trades++;
+        const now = +msg.T || Date.now(), last = flow.points[flow.points.length - 1];
+        if(now - last.t < 1000) last.v = flow.cvd;
+        else flow.points.push({t:now,v:flow.cvd});
+        if(flow.points.length > 300) flow.points.shift();
+      }else if(msg.e === "forceOrder" && msg.o){
+        const o = msg.o, px = (+o.ap || +o.p || 0), qty = (+o.z || +o.q || 0);
+        const value = px * qty, isLong = o.S === "SELL";
+        if(isLong) flow.longLiq += value; else flow.shortLiq += value;
+        flow.liqs.unshift({t:+o.T || Date.now(), side:isLong ? "Long" : "Short", value, px});
+        flow.liqs = flow.liqs.slice(0, 40);
+      }
+      scheduleFlowRender(run);
+    };
+    ws.onerror = () => ws.close();
+    ws.onclose = () => {
+      if(run !== flowRun) return;
+      status.className = "live";
+      status.innerHTML = "<i></i>Mất kết nối · đang thử lại";
+      flowRetry = setTimeout(connect, 3000);
+    };
+  };
+  connect();
+  renderFlow();
+}
+
+function scheduleFlowRender(run){
+  if(flowTimer) return;
+  flowTimer = setTimeout(() => {
+    flowTimer = null;
+    if(run === flowRun) renderFlow();
+  }, 250);
+}
+
+function renderFlow(){
+  if(!flow || !el("flow-cvd")) return;
+  const cvd = el("flow-cvd"), totalLiq = flow.longLiq + flow.shortLiq;
+  cvd.textContent = usd(flow.cvd);
+  cvd.className = `v ${flow.cvd >= 0 ? "pos" : "neg"}`;
+  el("flow-buy").textContent = usd(flow.buy);
+  el("flow-sell").textContent = usd(flow.sell);
+  el("flow-liq").textContent = usd(totalLiq);
+  el("flow-liq-note").textContent = `Long ${usd(flow.longLiq)} · Short ${usd(flow.shortLiq)}`;
+  drawCvd(el("cvdchart"), flow.points);
+  el("liq-list").innerHTML = flow.liqs.length ? flow.liqs.map(r =>
+    `<div class="liqrow"><b class="${r.side === "Long" ? "neg" : "pos"}">${r.side}</b>` +
+    `<span>${usd(r.value)}</span><span class="dim">${fmt(r.px)} · ${new Date(r.t).toLocaleTimeString("vi-VN")}</span></div>`
+  ).join("") : '<div class="msg">Chưa có thanh lý từ lúc mở tab.</div>';
+}
+
+function drawCvd(host, points){
+  if(!host || points.length < 2){ if(host) host.textContent = "Chờ giao dịch đầu tiên…"; return; }
+  const W=620,H=180,P=12, vals=points.map(p=>p.v), lo=Math.min(0,...vals), hi=Math.max(0,...vals);
+  const x=i=>P+i/(points.length-1||1)*(W-P*2), y=v=>P+(hi-v)/(hi-lo||1)*(H-P*2);
+  const colour=vals[vals.length-1]>=0?"var(--pos)":"var(--neg)";
+  const path=points.map((p,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="CVD live từ lúc mở tab">`+
+    `<line x1="${P}" x2="${W-P}" y1="${y(0)}" y2="${y(0)}" class="zero"/>`+
+    `<path d="${path}" fill="none" stroke="${colour}" stroke-width="2" vector-effect="non-scaling-stroke"/>`+
+    `<text x="${P}" y="${H-3}" class="axis">${flow.trades.toLocaleString("vi-VN")} lệnh tổng hợp</text>`+
+    `<text x="${W-P}" y="${H-3}" text-anchor="end" class="axis">${usd(vals[vals.length-1])}</text></svg>`;
 }
 
 function drawProfile(host, d){

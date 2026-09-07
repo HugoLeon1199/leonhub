@@ -377,6 +377,11 @@ def collect(symbol: str = "BTC", dry_run: bool = False) -> dict[str, Any]:
         f"{API}/get_book_summary_by_currency",
         params={"currency": symbol, "kind": "option"},
     )["result"]
+    if not chain:
+        # A valid index price alone is not an option surface. Publishing the
+        # computed zeroes would make an unsupported or temporarily empty chain
+        # look like a genuine neutral-GEX regime.
+        raise RuntimeError(f"Deribit returned no open {symbol} option contracts")
     index = client.get_json(
         f"{API}/get_index_price", params={"index_name": f"{symbol.lower()}_usd"}
     )["result"]["index_price"]
@@ -419,7 +424,7 @@ def collect(symbol: str = "BTC", dry_run: bool = False) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compute gamma exposure from Deribit")
-    parser.add_argument("--symbol", default="BTC", help="BTC or ETH")
+    parser.add_argument("--symbol", default="BTC", help="option currency, currently BTC or ETH")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
