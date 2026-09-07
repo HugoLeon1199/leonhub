@@ -76,6 +76,23 @@ td{font-variant-numeric:tabular-nums; border-bottom:1px solid var(--line)}
   flex:0 0 auto; padding:9px 12px; background:var(--panel); border-top:1px solid var(--line);
   font-size:11.5px; color:var(--muted); line-height:1.5;
 }
+/* ---- "how to read this" panel ----
+   Collapsed by default: a reader who already knows the vocabulary should not
+   scroll past an explanation to reach the numbers. */
+.howto{border:1px solid var(--line); background:var(--panel); border-radius:9px; margin:0 0 16px}
+.howto>summary{cursor:pointer; padding:10px 15px; color:var(--muted); font-size:12.5px; list-style:none}
+.howto>summary::-webkit-details-marker{display:none}
+.howto>summary::before{content:"▸ "; color:var(--accent)}
+.howto[open]>summary::before{content:"▾ "}
+.howto>summary:hover{color:var(--text)}
+.howto-body{padding:4px 15px 15px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); max-width:88ch}
+.howto-body p{margin:10px 0; line-height:1.65}
+.howto-body b{color:var(--text)}
+.howto-body i{color:var(--text); font-style:normal}
+.howto-body dl{display:grid; grid-template-columns:minmax(120px,auto) 1fr; gap:5px 14px; margin:12px 0}
+.howto-body dt{color:var(--text); font-weight:600}
+.howto-body dd{margin:0; line-height:1.55}
+@media(max-width:620px){.howto-body dl{grid-template-columns:1fr; gap:2px 0}.howto-body dd{margin-bottom:8px}}
 </style>
 </head>
 <body>
@@ -95,6 +112,23 @@ td{font-variant-numeric:tabular-nums; border-bottom:1px solid var(--line)}
 </div>
 
 <div class="presets" id="presets"></div>
+
+<details class="howto">
+  <summary>Cách dùng trang này &amp; các chỉ số nghĩa là gì</summary>
+  <div class="howto-body">
+    <p><b>Trang này để làm gì.</b> Trả lời câu "cả thị trường crypto đang chạy cái gì" —
+    tab Chart chỉ xem được một đồng, còn đây là toàn bộ. Lọc xong bấm vào mã để mở chart.</p>
+    <dl>
+      <dt>Thanh khoản</dt><dd>Giá trị giao dịch 24 giờ quy ra đô. Lọc theo nó trước tiên: mã thanh khoản thấp thì giá hiển thị không phải giá bạn mua bán được.</dd>
+      <dt>Biến động 24h</dt><dd>Phần trăm thay đổi so với 24 giờ trước, không phải so với đầu ngày.</dd>
+      <dt>Vị trí trong biên</dt><dd>Giá hiện tại nằm ở đâu giữa đáy và đỉnh 24 giờ: 100 là đang ở đỉnh, 0 là đáy. Cao kèm tăng mạnh nghĩa là đang phá lên; thấp kèm giảm nghĩa là đang bị bán xuống.</dd>
+      <dt>Số lệnh</dt><dd>Số giao dịch khớp trong 24 giờ. Nhiều lệnh nhỏ khác hẳn ít lệnh lớn — dùng cùng "lệnh trung bình" để phân biệt.</dd>
+      <dt>Lệnh trung bình</dt><dd>Giá trị giao dịch chia số lệnh. Cao bất thường thường là dấu vết của tiền lớn.</dd>
+    </dl>
+    <p><b>Nguồn.</b> Binance, lấy trực tiếp trong trình duyệt của bạn tại thời điểm mở trang.
+    Không lưu lịch sử, nên đây là ảnh chụp hiện tại chứ không phải chuỗi thời gian.</p>
+  </div>
+</details>
 
 <div class="wrap"><table>
   <thead><tr id="head"></tr></thead>

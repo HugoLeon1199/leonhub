@@ -27,10 +27,58 @@ table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;colo
 .profile-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(230px,1fr);gap:16px}.prose{margin:0;color:var(--text);line-height:1.72}.fact-list{display:grid;gap:7px}.fact{display:flex;justify-content:space-between;gap:12px;padding-bottom:6px;border-bottom:1px solid var(--line)}.fact span{color:var(--muted);font-size:11px}.fact b{text-align:right;font-size:12px}.list{display:grid;gap:6px}.list-item{display:flex;justify-content:space-between;gap:10px;padding:7px 8px;background:var(--panel-2);border-radius:6px}.list-item span{min-width:0}.list-item small{display:block;color:var(--muted)}.event-list{display:grid;gap:0}.event{display:grid;grid-template-columns:90px 56px 1fr;gap:8px;padding:8px 4px;border-bottom:1px solid var(--line)}.event:last-child{border:0}.event time,.event code{color:var(--muted);font-size:10px}.event code{color:var(--accent)}
 @media(max-width:900px){.history-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.quote-strip{grid-template-columns:repeat(4,1fr)}.quote-cell:nth-child(4n){border-right:0}.hero{grid-template-columns:1fr auto}.actions{grid-column:1/-1}.span4{grid-column:span 6}}
 @media(max-width:650px){.card,.span4{grid-column:1/-1}.quote{text-align:left}.hero{display:flex;align-items:flex-start;flex-direction:column}.history-grid{grid-template-columns:1fr}.quote-strip{grid-template-columns:repeat(2,1fr)}.quote-cell:nth-child(2n){border-right:0}.book,.profile-grid{grid-template-columns:1fr}.page{padding:12px 10px 36px}.chart-box,.chart-box svg{min-height:250px;height:250px}.section-head{align-items:flex-start;flex-direction:column}.event{grid-template-columns:72px 48px 1fr}}
+/* ---- "how to read this" panel ----
+   Collapsed by default: a reader who already knows the vocabulary should not
+   scroll past an explanation to reach the numbers. */
+.howto{border:1px solid var(--line); background:var(--panel); border-radius:9px; margin:0 0 16px}
+.howto>summary{cursor:pointer; padding:10px 15px; color:var(--muted); font-size:12.5px; list-style:none}
+.howto>summary::-webkit-details-marker{display:none}
+.howto>summary::before{content:"▸ "; color:var(--accent)}
+.howto[open]>summary::before{content:"▾ "}
+.howto>summary:hover{color:var(--text)}
+.howto-body{padding:4px 15px 15px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); max-width:88ch}
+.howto-body p{margin:10px 0; line-height:1.65}
+.howto-body b{color:var(--text)}
+.howto-body i{color:var(--text); font-style:normal}
+.howto-body dl{display:grid; grid-template-columns:minmax(120px,auto) 1fr; gap:5px 14px; margin:12px 0}
+.howto-body dt{color:var(--text); font-weight:600}
+.howto-body dd{margin:0; line-height:1.55}
+@media(max-width:620px){.howto-body dl{grid-template-columns:1fr; gap:2px 0}.howto-body dd{margin-bottom:8px}}
 </style>
 </head>
 <body><div class="page">
   <a class="back" href="../../hub/?tab=stocks" target="_top">← Quay lại bộ lọc cổ phiếu</a>
+  <details class="howto">
+    <summary>Cách đọc trang này &amp; các chỉ số nghĩa là gì</summary>
+    <div class="howto-body">
+      <p><b>Trang này để làm gì.</b> Hồ sơ đầy đủ một mã: giá, định giá, sức khoẻ tài chính,
+      dòng tiền và tin tức. Điểm khác biệt so với các trang khác là mọi chỉ số định giá đều
+      được đặt cạnh <i>chính lịch sử của mã đó</i>, không phải so với ngành hay thị trường.</p>
+      <dl>
+        <dt>P/E</dt><dd>Giá chia lợi nhuận mỗi cổ phiếu. Cho biết trả bao nhiêu đồng để mua một đồng lợi nhuận. So sánh giữa các ngành khác nhau thường vô nghĩa.</dd>
+        <dt>P/B</dt><dd>Giá chia giá trị sổ sách. Hữu ích với ngân hàng và doanh nghiệp nhiều tài sản; ít ý nghĩa với công ty công nghệ.</dd>
+        <dt>P/S</dt><dd>Giá chia doanh thu. Dùng khi lợi nhuận âm hoặc biến động mạnh.</dd>
+        <dt>EV/EBITDA</dt><dd>Giá trị doanh nghiệp (đã tính cả nợ) chia lợi nhuận trước lãi vay, thuế và khấu hao. So được giữa các công ty có cấu trúc nợ khác nhau.</dd>
+        <dt>Thanh phần trăm dưới mỗi ô</dt><dd>Vị trí của chỉ số hiện tại trong chính lịch sử 8 năm của mã. "Rẻ hơn 80% lịch sử" nghĩa là chỉ 20% số quý từng rẻ hơn lúc này.</dd>
+        <dt>ROE / ROIC</dt><dd>Lợi nhuận trên vốn chủ sở hữu và trên vốn đầu tư. ROE cao nhờ vay nợ nhiều không giống ROE cao nhờ kinh doanh tốt — nên đọc kèm Nợ/VCSH.</dd>
+        <dt>Biên lợi nhuận</dt><dd>Lợi nhuận trên doanh thu. Biên ổn định qua nhiều quý quan trọng hơn biên cao một quý.</dd>
+        <dt>Khối ngoại 1/5/20 phiên</dt><dd>Mua ròng của nhà đầu tư nước ngoài, tỷ VND. Xu hướng nhiều phiên có ý nghĩa hơn một phiên.</dd>
+        <dt>Room ngoại</dt><dd>Tỉ lệ cổ phiếu còn được phép bán cho nước ngoài. Gần 0% nghĩa là cầu ngoại bị chặn bởi trần sở hữu chứ không phải bởi định giá.</dd>
+        <dt>Vị trí 52 tuần</dt><dd>Giá nằm ở đâu trong biên độ một năm: 100 là đỉnh, 0 là đáy.</dd>
+        <dt>Biến động chuẩn hoá (σ)</dt><dd>Mức dao động hôm nay so với mức bình thường của chính mã đó. Vượt ±2 là bất thường.</dd>
+        <dt>Sổ lệnh SSI</dt><dd>Ba mức giá chờ mua và chờ bán tốt nhất, chụp cuối phiên — không phải thời gian thực.</dd>
+        <dt>So sánh cùng ngành</dt><dd>Vị trí của mã trong ngành theo từng chỉ số, kèm trung vị ngành để biết mức tham chiếu.</dd>
+      </dl>
+      <p><b>Ký hiệu bên cạnh giá.</b> Dấu <i>*</i> nghĩa là giá tham chiếu của sàn — mã chưa
+      từng khớp lệnh thật. Dấu <i>†</i> nghĩa là giá khớp của phiên cũ hơn, mã không giao dịch
+      phiên gần nhất. Cả hai đều không phải giá thị trường vừa xác lập.</p>
+      <p><b>Vì sao không có "giá trị hợp lý".</b> Trang này không in ra một con số định giá duy
+      nhất. Một mô hình định giá phụ thuộc rất nhiều vào giả định đầu vào, và một con số trông
+      chắc chắn sẽ che mất điều đó. Thay vào đó là các chỉ số đặt trong lịch sử của chính mã,
+      để bạn tự kết luận.</p>
+    </div>
+  </details>
+
   <div id="root"><div class="msg">Đang tải hồ sơ mã…</div></div>
   <footer id="footer"></footer>
 </div>

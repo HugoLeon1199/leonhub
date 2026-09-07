@@ -76,6 +76,23 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 footer{border-top:1px solid var(--line); padding-top:12px; font-size:11px; color:var(--muted);
        display:flex; gap:14px; flex-wrap:wrap}
 footer b{color:var(--text); font-weight:600}
+/* ---- "how to read this" panel ----
+   Collapsed by default: a reader who already knows the vocabulary should not
+   scroll past an explanation to reach the numbers. */
+.howto{border:1px solid var(--line); background:var(--panel); border-radius:9px; margin:0 0 16px}
+.howto>summary{cursor:pointer; padding:10px 15px; color:var(--muted); font-size:12.5px; list-style:none}
+.howto>summary::-webkit-details-marker{display:none}
+.howto>summary::before{content:"▸ "; color:var(--accent)}
+.howto[open]>summary::before{content:"▾ "}
+.howto>summary:hover{color:var(--text)}
+.howto-body{padding:4px 15px 15px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); max-width:88ch}
+.howto-body p{margin:10px 0; line-height:1.65}
+.howto-body b{color:var(--text)}
+.howto-body i{color:var(--text); font-style:normal}
+.howto-body dl{display:grid; grid-template-columns:minmax(120px,auto) 1fr; gap:5px 14px; margin:12px 0}
+.howto-body dt{color:var(--text); font-weight:600}
+.howto-body dd{margin:0; line-height:1.55}
+@media(max-width:620px){.howto-body dl{grid-template-columns:1fr; gap:2px 0}.howto-body dd{margin-bottom:8px}}
 </style>
 </head>
 <body>
@@ -84,6 +101,27 @@ footer b{color:var(--text); font-weight:600}
 <h1>Dòng tiền tổ chức</h1>
 <p class="sub">Tiền vào và ra các quỹ ETF Bitcoin, Ethereum giao ngay tại Mỹ — thước đo trực tiếp nhất
 về việc vốn có quy định đang tham gia hay rút khỏi thị trường. Một ngày là nhiễu; tổng 20 phiên là một vị thế.</p>
+
+<details class="howto">
+  <summary>Cách dùng trang này &amp; các chỉ số nghĩa là gì</summary>
+  <div class="howto-body">
+    <p><b>Trang này để làm gì.</b> Xem vốn tổ chức Mỹ đang vào hay ra khỏi Bitcoin và Ethereum.
+    Khác với giá — vốn dĩ ai cũng thấy — dòng tiền ETF cho biết <i>ai</i> đang mua: đây là tiền
+    có quy định, đi qua môi giới, và phải công bố hằng ngày.</p>
+    <dl>
+      <dt>Dòng tiền ròng</dt><dd>Tiền mới vào quỹ trừ tiền rút ra trong một ngày, tính bằng triệu USD. Dương là quỹ phải mua thêm coin; âm là phải bán ra.</dd>
+      <dt>Cộng dồn</dt><dd>Tổng dòng ròng từ khi quỹ mở. Cho thấy xu thế dài hạn mà biến động ngày che mất.</dd>
+      <dt>Phân rã theo quỹ</dt><dd>Từng nhà phát hành riêng. Quan trọng vì một quỹ rút mạnh có thể che lấp việc các quỹ còn lại đang gom.</dd>
+      <dt>Tổng 5 / 20 phiên</dt><dd>Một ngày là nhiễu — quỹ có thể cân đối kỹ thuật. Cộng nhiều phiên mới thành một vị thế thật.</dd>
+    </dl>
+    <p><b>Cách đọc thận trọng.</b> Dòng tiền ETF là <i>kết quả</i> của quyết định mua bán, không
+    phải nguyên nhân của giá — nó thường đi sau giá chứ không dẫn trước. Và đây chỉ là ETF giao
+    ngay tại Mỹ: tiền mua trực tiếp trên sàn, quỹ nước ngoài hay hợp đồng tương lai đều không nằm
+    trong số này.</p>
+    <p><b>Độ trễ.</b> Số liệu chốt sau phiên Mỹ và cập nhật ngày hôm sau, nên phiên gần nhất
+    luôn chậm khoảng một ngày.</p>
+  </div>
+</details>
 
 <div class="tiles" id="tiles"></div>
 <div id="charts"></div>

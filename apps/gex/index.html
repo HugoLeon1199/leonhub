@@ -152,6 +152,24 @@ trang dùng độ rộng thị trường vì chưa có chuỗi quyền chọn ni
         <b>Vanna</b>: khi biến động ngụ ý (IV) đổi. <b>Charm</b>: khi thời gian trôi
         về phía đáo hạn. Vì thế một phiên yên ắng vẫn có thể sinh lệnh mua bán —
         đây là lý do giá hay chạy quanh giờ đáo hạn dù không có tin gì.</dd>
+    <dt>Pin risk</dt>
+    <dd>Mức độ <b>một strike duy nhất chi phối</b> lượng phòng hộ quanh giá hiện tại.
+        Pin cao đi cùng gamma dương là cấu hình giữ giá đứng yên: mọi dịch chuyển
+        đều bị lệnh phòng hộ kéo ngược về.</dd>
+    <dt>Biên kỳ vọng (1σ)</dt>
+    <dd>Khoảng giá mà thị trường quyền chọn đang định giá cho một phiên, quy từ IV ra
+        đơn vị tiền. Dùng để biết một tường gamma có nằm trong tầm với hay không —
+        thay vì phải tự đổi phần trăm trong đầu.</dd>
+    <dt>CVD</dt>
+    <dd>Chênh lệch giữa giá trị lệnh mua chủ động và lệnh bán chủ động trên hợp đồng
+        tương lai. Tăng nghĩa là bên mua đang chủ động nâng giá. <b>Chỉ tính từ lúc
+        bạn mở tab</b> và reset khi đổi mã — đây là ảnh chụp phiên hiện tại,
+        không phải chuỗi lịch sử.</dd>
+    <dt>Thanh lý</dt>
+    <dd>Lệnh bị sàn đóng cưỡng bức do hết ký quỹ. Thanh lý <i>long</i> tạo lệnh bán ra,
+        thanh lý <i>short</i> tạo lệnh mua vào — nên chúng khuếch đại chiều đang chạy.
+        Đây là giao dịch thật trên Binance, không phải vùng thanh lý suy đoán,
+        và không bao gồm các sàn khác.</dd>
   </dl>
   <p class="fine">Đây là trạng thái phòng hộ hiện tại, không phải dự báo giá. Nó cho biết
      thị trường đang <em>dễ</em> hay <em>khó</em> biến động, chứ không nói giá sẽ đi hướng nào.</p>

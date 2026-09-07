@@ -7,7 +7,42 @@
 .fxbar .fx .d{font-size:11px;font-variant-numeric:tabular-nums}
 .fxbar .fx .d.up{color:var(--up,#38d39f)} .fxbar .fx .d.dn{color:var(--down,#f0655a)}
 .fxbar .fxhead{grid-column:1/-1;background:var(--panel-2,#1c242e);padding:7px 11px;font-size:11px;color:var(--muted,#8b98a8)}
-</style></head><body><header class="top"><span class="brand"><b>LEON</b> US Stocks</span><input id="q" type="search" placeholder="Tìm AAPL, Apple…"><span class="sp"></span><span class="muted" id="stamp">Đang tải…</span></header><div class="layout"><aside><div class="head"><h2>Thị trường Mỹ · 40 mã thanh khoản</h2></div><div class="list" id="list"></div></aside><main><div class="hero"><article class="card"><div class="head"><h2>Biểu đồ giá 1 năm</h2><span class="sp"></span><span class="muted">Close ngày · USD</span></div><div class="chart"><svg id="chart" viewBox="0 0 900 360" preserveAspectRatio="none"></svg></div></article><article class="card"><div class="identity"><span class="muted" id="exchange">—</span><h1 id="name">—</h1><div class="price" id="price">—</div><b id="change">—</b></div><div class="states" id="states"></div><div class="metrics" id="metrics"></div></article></div><section class="fxbar" id="fxbar" hidden></section><div class="notice"><b>Phạm vi đúng:</b> đây là giá/khối lượng OHLCV trễ từ Yahoo Finance cho một rổ 40 ETF và cổ phiếu thanh khoản. Không có BCTC hay định giá, vì nguồn này không cung cấp các input đó. Dùng để quan sát xu hướng, không phải khuyến nghị mua bán.</div></main></div><script>
+/* ---- "how to read this" panel ----
+   Collapsed by default: a reader who already knows the vocabulary should not
+   scroll past an explanation to reach the numbers. */
+.howto{border:1px solid var(--line); background:var(--panel); border-radius:9px; margin:0 0 16px}
+.howto>summary{cursor:pointer; padding:10px 15px; color:var(--muted); font-size:12.5px; list-style:none}
+.howto>summary::-webkit-details-marker{display:none}
+.howto>summary::before{content:"▸ "; color:var(--accent)}
+.howto[open]>summary::before{content:"▾ "}
+.howto>summary:hover{color:var(--text)}
+.howto-body{padding:4px 15px 15px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); max-width:88ch}
+.howto-body p{margin:10px 0; line-height:1.65}
+.howto-body b{color:var(--text)}
+.howto-body i{color:var(--text); font-style:normal}
+.howto-body dl{display:grid; grid-template-columns:minmax(120px,auto) 1fr; gap:5px 14px; margin:12px 0}
+.howto-body dt{color:var(--text); font-weight:600}
+.howto-body dd{margin:0; line-height:1.55}
+@media(max-width:620px){.howto-body dl{grid-template-columns:1fr; gap:2px 0}.howto-body dd{margin-bottom:8px}}
+</style></head><body><header class="top"><span class="brand"><b>LEON</b> US Stocks</span><input id="q" type="search" placeholder="Tìm AAPL, Apple…"><span class="sp"></span><span class="muted" id="stamp">Đang tải…</span></header><div class="layout"><aside><div class="head"><h2>Thị trường Mỹ · 40 mã thanh khoản</h2></div><div class="list" id="list"></div></aside><main><div class="hero"><article class="card"><div class="head"><h2>Biểu đồ giá 1 năm</h2><span class="sp"></span><span class="muted">Close ngày · USD</span></div><div class="chart"><svg id="chart" viewBox="0 0 900 360" preserveAspectRatio="none"></svg></div></article><article class="card"><div class="identity"><span class="muted" id="exchange">—</span><h1 id="name">—</h1><div class="price" id="price">—</div><b id="change">—</b></div><div class="states" id="states"></div><div class="metrics" id="metrics"></div></article></div><details class="howto">
+  <summary>Cách dùng trang này &amp; các chỉ số nghĩa là gì</summary>
+  <div class="howto-body">
+    <p><b>Trang này để làm gì.</b> Theo dõi bối cảnh thị trường Mỹ — chỉ số, nhóm ngành và
+    vài cổ phiếu lớn — vì nó thường dẫn dắt tâm lý thị trường Việt Nam phiên kế tiếp.
+    Chọn mã ở cột trái để xem biểu đồ và chỉ số.</p>
+    <dl>
+      <dt>RSI</dt><dd>Đo tốc độ tăng/giảm gần đây trên thang 0-100. Trên 70 thường gọi là quá mua, dưới 30 là quá bán — nhưng trong xu hướng mạnh nó có thể ở vùng cực trị rất lâu.</dd>
+      <dt>1T / 3T / 6T</dt><dd>Thay đổi giá 1, 3 và 6 tháng. Xem cùng lúc để phân biệt đà tăng thật với cú nảy kỹ thuật.</dd>
+      <dt>52 tuần</dt><dd>Đỉnh và đáy một năm. Giá sát đỉnh trong xu hướng tăng thường là sức mạnh, không phải rủi ro.</dd>
+      <dt>Xu hướng ngày / tuần</dt><dd>Giá so với đường trung bình 50 phiên và 200 phiên. Hai khung cùng chiều là tín hiệu đáng tin hơn một khung.</dd>
+      <dt>Tỷ giá &amp; vĩ mô</dt><dd>USD/VND, vàng, dầu và lợi suất trái phiếu Mỹ — các biến số bên ngoài ảnh hưởng tới dòng vốn vào Việt Nam.</dd>
+    </dl>
+    <p><b>Phạm vi cần nhớ.</b> Đây là rổ 40 mã thanh khoản được chọn sẵn, không phải toàn thị
+    trường Mỹ. Dữ liệu là giá trễ cuối phiên, và <i>không có</i> báo cáo tài chính hay định giá —
+    nguồn này không cung cấp. Dùng để quan sát xu hướng, không phải để phân tích doanh nghiệp.</p>
+  </div>
+</details>
+<section class="fxbar" id="fxbar" hidden></section><div class="notice"><b>Phạm vi đúng:</b> đây là giá/khối lượng OHLCV trễ từ Yahoo Finance cho một rổ 40 ETF và cổ phiếu thanh khoản. Không có BCTC hay định giá, vì nguồn này không cung cấp các input đó. Dùng để quan sát xu hướng, không phải khuyến nghị mua bán.</div></main></div><script>
 "use strict";const $=id=>document.getElementById(id),fmt=(v,d=2)=>v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:d,minimumFractionDigits:d});let rows=[],selected=null;
 fetch("../../data/us.json",{cache:"no-cache"}).then(r=>r.json()).then(d=>{rows=d.rows;$("stamp").textContent=`Cập nhật ${new Date(d.updated_at).toLocaleString("vi-VN")} · Yahoo delayed`;selected=rows.find(r=>r.s==="SPY")||rows[0];renderList();render()}).catch(e=>$("list").innerHTML=`<div class="muted" style="padding:20px">Chạy python -m pipeline.sources.us_equity<br>${e}</div>`);
 function renderList(){const q=$("q").value.toLowerCase(),a=rows.filter(r=>!q||`${r.s} ${r.n}`.toLowerCase().includes(q));$("list").innerHTML=a.map(r=>`<div class="item ${r===selected?"on":""}" data-s="${r.s}"><b>${r.s}</b><small>${r.n}</small><span class="num"><b>${fmt(r.p)}</b><br><small class="${r.chp>=0?"pos":"neg"}">${r.chp>0?"+":""}${fmt(r.chp)}%</small></span></div>`).join("");$("list").querySelectorAll(".item").forEach(e=>e.onclick=()=>{selected=rows.find(r=>r.s===e.dataset.s);renderList();render()})}

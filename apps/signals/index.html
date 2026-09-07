@@ -74,6 +74,23 @@ tr:last-child td{border-bottom:0}
 .warnbox p{margin:0; font-size:12.5px; color:var(--muted); max-width:80ch}
 .warnbox b{color:var(--text)}
 
+/* Collapsed by default: a reader who already knows what R means should not
+   have to scroll past the explanation to reach the numbers. */
+.howto{border:1px solid var(--line); background:var(--panel); border-radius:9px; margin-bottom:20px}
+.howto>summary{cursor:pointer; padding:10px 15px; color:var(--muted); font-size:12.5px; list-style:none}
+.howto>summary::-webkit-details-marker{display:none}
+.howto>summary::before{content:"▸ "; color:var(--accent)}
+.howto[open]>summary::before{content:"▾ "}
+.howto>summary:hover{color:var(--text)}
+.howto-body{padding:4px 15px 15px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); max-width:88ch}
+.howto-body p{margin:10px 0; line-height:1.65}
+.howto-body b{color:var(--text)}
+.howto-body i{color:var(--text); font-style:normal}
+.howto-body dl{display:grid; grid-template-columns:minmax(120px,auto) 1fr; gap:5px 14px; margin:12px 0}
+.howto-body dt{color:var(--text); font-weight:600}
+.howto-body dd{margin:0; line-height:1.55}
+@media(max-width:620px){.howto-body dl{grid-template-columns:1fr; gap:2px 0}.howto-body dd{margin-bottom:8px}}
+
 .msg{padding:30px 16px; text-align:center; color:var(--muted); font-size:13px}
 .msg code{background:var(--panel-2); padding:2px 6px; border-radius:4px}
 footer{border-top:1px solid var(--line); padding-top:12px; font-size:11px; color:var(--muted);
@@ -95,6 +112,41 @@ nên tỉ lệ thắng trên trang này đến từ chính bộ quy tắc sinh r
   Kết quả quá khứ tính trên dữ liệu point-in-time — mỗi lệnh chỉ dùng giá đã biết tại thời điểm đó —
   nhưng vẫn không đảm bảo điều gì về tương lai, và chưa trừ phí giao dịch hay trượt giá.</p>
 </div>
+
+<details class="howto">
+  <summary>Cách dùng trang này &amp; các chỉ số nghĩa là gì</summary>
+  <div class="howto-body">
+    <p><b>Trang này để làm gì.</b> Kiểm chứng một bộ quy tắc, không phải để lấy mã mua.
+    Giá trị nằm ở chỗ mọi lệnh đã đóng đều được công bố — kể cả lệnh lỗ — nên tỉ lệ thắng
+    hiển thị đến từ chính bộ quy tắc sinh ra chúng, không phải từ những lệnh được chọn lọc lại.</p>
+
+    <p><b>R là gì.</b> Đơn vị đo lãi/lỗ theo rủi ro ban đầu, không theo phần trăm.
+    Vào 100.000, dừng lỗ 90.000 thì rủi ro là 10.000 = 1R. Bán ở 120.000 là +2R.
+    Dùng R thay vì % để so được lệnh mã lớn với mã nhỏ: cùng +2R nghĩa là cùng lãi
+    gấp đôi số tiền đã chấp nhận mất.</p>
+
+    <dl>
+      <dt>Tỉ lệ thắng</dt><dd>Phần trăm lệnh đóng có R dương. Cao chưa chắc tốt: thắng 80% mà mỗi lần thắng +0,2R còn thua −1R thì vẫn lỗ.</dd>
+      <dt>R trung bình</dt><dd>Kỳ vọng mỗi lệnh. Đây mới là con số quyết định — dương thì bộ quy tắc có lợi thế, âm thì không.</dd>
+      <dt>Tổng R</dt><dd>Cộng dồn toàn bộ lệnh đã đóng. Đọc kèm số lệnh: +10R từ 5 lệnh khác hẳn +10R từ 200 lệnh.</dd>
+      <dt>Sụt giảm tối đa</dt><dd>Chuỗi lỗ sâu nhất tính từ đỉnh đường vốn. Cho biết phải chịu đựng bao nhiêu trước khi hồi.</dd>
+      <dt>Lãi TB / Lỗ TB</dt><dd>R trung bình của lệnh thắng và lệnh thua. Khoảng cách giữa hai số này quyết định tỉ lệ thắng cần có để hoà vốn.</dd>
+      <dt>Lớp xác nhận</dt><dd>Số điều kiện dòng tiền cùng đồng ý tại phiên vào lệnh, tối đa 4: khối lượng đột biến, giá trị giao dịch đột biến, khối ngoại mua ròng, và tích luỹ OBV tăng.</dd>
+      <dt>Lý do đóng</dt><dd><i>chạm dừng lỗ</i> — giá đóng cửa xuyên mức cắt lỗ. <i>chạm mục tiêu</i> — đạt 2R. <i>hết hạn giữ</i> — quá 30 phiên thì đóng bất kể lãi lỗ.</dd>
+      <dt>Đường vốn theo R</dt><dd>Cộng dồn R theo thứ tự lệnh đóng. Trục ngang là số lệnh, không phải thời gian.</dd>
+      <dt>Thị trường cùng kỳ</dt><dd>Trung vị lợi suất mua-và-giữ của toàn bộ mã trong phạm vi quét, cùng khoảng thời gian. Dùng để biết kết quả đến từ quy tắc hay từ thị trường.</dd>
+    </dl>
+
+    <p><b>Bảng thang lớp xác nhận đọc thế nào.</b> Mỗi dòng là kết quả nếu yêu cầu số lớp
+    xác nhận khác nhau, chạy lại trên cùng dữ liệu. Đây là chỗ thấy rõ nhất từng lớp đáng giá
+    bao nhiêu — và vì sao con số hiện tại được chọn. Bảng này được công bố để bạn kiểm tra,
+    không phải để thuyết phục.</p>
+
+    <p><b>Hai điều cần biết trước khi tin con số.</b> Chưa trừ phí giao dịch và trượt giá
+    (ở Việt Nam khoảng 0,4% mỗi vòng). Và cỡ mẫu còn nhỏ — kho dữ liệu mới tích được hơn một năm,
+    trong đó 120 phiên đầu dùng để khởi động chỉ báo.</p>
+  </div>
+</details>
 
 <div class="rules" id="rules"></div>
 <div class="tiles" id="tiles"></div>

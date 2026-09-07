@@ -77,6 +77,23 @@ footer{
   font-size:11px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap;
 }
 footer b{color:var(--text); font-weight:600}
+/* ---- "how to read this" panel ----
+   Collapsed by default: a reader who already knows the vocabulary should not
+   scroll past an explanation to reach the numbers. */
+.howto{border:1px solid var(--line); background:var(--panel); border-radius:9px; margin:0 0 16px}
+.howto>summary{cursor:pointer; padding:10px 15px; color:var(--muted); font-size:12.5px; list-style:none}
+.howto>summary::-webkit-details-marker{display:none}
+.howto>summary::before{content:"▸ "; color:var(--accent)}
+.howto[open]>summary::before{content:"▾ "}
+.howto>summary:hover{color:var(--text)}
+.howto-body{padding:4px 15px 15px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); max-width:88ch}
+.howto-body p{margin:10px 0; line-height:1.65}
+.howto-body b{color:var(--text)}
+.howto-body i{color:var(--text); font-style:normal}
+.howto-body dl{display:grid; grid-template-columns:minmax(120px,auto) 1fr; gap:5px 14px; margin:12px 0}
+.howto-body dt{color:var(--text); font-weight:600}
+.howto-body dd{margin:0; line-height:1.55}
+@media(max-width:620px){.howto-body dl{grid-template-columns:1fr; gap:2px 0}.howto-body dd{margin-bottom:8px}}
 </style>
 </head>
 <body>
@@ -84,6 +101,27 @@ footer b{color:var(--text); font-weight:600}
 
 <h1>Tổng quan thị trường</h1>
 <p class="sub" id="stamp">Đang tải…</p>
+
+<details class="howto">
+  <summary>Cách dùng trang này &amp; các chỉ số nghĩa là gì</summary>
+  <div class="howto-body">
+    <p><b>Trang này để làm gì.</b> Một lượt nhìn buổi sáng: thị trường hôm qua đi đâu,
+    tiền lớn đang vào hay ra, và có mã nào biến động bất thường không. Muốn lọc kỹ thì
+    sang tab Cổ phiếu; muốn xem một mã thì bấm vào mã đó.</p>
+    <dl>
+      <dt>Độ rộng thị trường</dt><dd>Số mã tăng / số mã giảm trong phiên. Chỉ số tăng nhưng độ rộng xấu nghĩa là chỉ vài mã lớn kéo, phần còn lại đang giảm.</dd>
+      <dt>Khối ngoại ròng</dt><dd>Tổng mua trừ bán của nhà đầu tư nước ngoài, tính bằng tỷ VND. Ở Việt Nam đây là thước đo dòng tiền lớn rõ nhất công khai được.</dd>
+      <dt>Z-score</dt><dd>Biến động hôm nay đo bằng độ lệch chuẩn của chính mã đó. ±2 trở lên là bất thường. Dùng nó thay vì % vì 3% với mã nhỏ là bình thường, còn với VCB là sự kiện.</dd>
+      <dt>Vị trí 52T</dt><dd>Giá hiện tại nằm ở đâu trong biên độ một năm: 100 là đỉnh, 0 là đáy.</dd>
+      <dt>Rẻ hơn lịch sử</dt><dd>P/E hiện tại thấp hơn bao nhiêu phần trăm số quý trong 8 năm qua <i>của chính mã đó</i> — không so với ngành hay với thị trường.</dd>
+      <dt>ROE</dt><dd>Lợi nhuận trên vốn chủ sở hữu. Đo doanh nghiệp sinh lời bao nhiêu trên đồng vốn của cổ đông.</dd>
+      <dt>Giá crypto</dt><dd>Lấy trực tiếp từ Binance trong trình duyệt của bạn, nên là giá thời gian thực chứ không phải số đã lưu sẵn.</dd>
+    </dl>
+    <p><b>Lưu ý khi đọc.</b> Danh sách "rẻ so với lịch sử" đã loại các mã chưa từng khớp lệnh
+    thật — giá do sàn ấn định không phải giá thị trường khám phá ra. Số liệu cổ phiếu là của
+    phiên gần nhất đã chốt, không phải trong phiên.</p>
+  </div>
+</details>
 
 <div class="tape" id="tape"></div>
 

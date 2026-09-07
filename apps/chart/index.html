@@ -304,6 +304,18 @@ main{flex:1; position:relative; min-height:0;min-width:0}
   border:1px solid var(--line); border-radius:6px; background:var(--panel-2); color:var(--text);
   padding:5px 9px; cursor:pointer; font:12px inherit;
 }
+.help-dialog{width:min(640px,calc(100vw - 24px))}
+.help-body{padding:12px 18px 18px; overflow:auto; max-height:min(560px,calc(100vh - 120px));
+  font-size:12.5px; color:var(--muted); line-height:1.6}
+.help-body p{margin:9px 0}
+.help-body b{color:var(--text)}
+.help-body i{color:var(--text); font-style:normal}
+.help-body h4{margin:16px 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--accent)}
+.help-body dl{display:grid; grid-template-columns:minmax(112px,auto) 1fr; gap:5px 13px; margin:0}
+.help-body dt{color:var(--text); font-weight:600}
+.help-body dd{margin:0}
+@media(max-width:620px){.help-body dl{grid-template-columns:1fr; gap:1px 0}.help-body dd{margin-bottom:7px}}
+
 .alert-list{padding:8px 16px 14px; max-height:440px; overflow:auto}
 .alert-empty{padding:22px 0; color:var(--muted); text-align:center}
 .alert-row{display:grid; grid-template-columns:minmax(110px,1fr) auto auto; gap:8px; align-items:center;
@@ -339,6 +351,7 @@ footer b{color:var(--text); font-weight:600}
        they actually fired rather than only listed in a table elsewhere. -->
   <button id="sig-toggle" class="bar-action" type="button" aria-pressed="false"
           title="Hiện điểm vào/ra lệnh theo quy tắc đã công bố, ngay trên chart">Tín hiệu</button>
+  <button id="help-open" class="bar-action" type="button" title="Cách dùng và ý nghĩa các chỉ số" aria-label="Trợ giúp">?</button>
   <div class="group" id="tfs" role="group" aria-label="Khung thời gian"></div>
   <div class="group" role="group" aria-label="Chỉ báo">
     <button id="ind-open" type="button" title="Thêm hoặc bỏ chỉ báo">Chỉ báo <span id="ind-count">0</span></button>
@@ -416,6 +429,58 @@ footer b{color:var(--text); font-weight:600}
 
 <div id="chart-menu" class="context-menu" role="menu" aria-label="Tùy chọn biểu đồ" hidden></div>
 <div id="chart-toast" class="chart-toast" role="status" aria-live="polite" hidden></div>
+
+<!-- Full-screen app, so the explanation is a dialog rather than an inline
+     panel: there is no page flow to push down. -->
+<dialog id="help-dialog" class="alert-dialog help-dialog" aria-labelledby="help-title">
+  <div class="alert-head">
+    <strong id="help-title">Cách dùng Chart &amp; các chỉ số nghĩa là gì</strong>
+    <button id="help-close" type="button">Đóng</button>
+  </div>
+  <div class="help-body">
+    <p><b>Trang này để làm gì.</b> Xem biểu đồ giá của ba thị trường trong cùng một chỗ:
+    crypto, cổ phiếu Việt Nam và cổ phiếu Mỹ. Gõ chữ bất kỳ ở đâu trên chart là hộp tìm mã
+    hiện ra — tìm được cả mã lẫn tên công ty, không cần gõ dấu.</p>
+
+    <h4>Thanh trên cùng</h4>
+    <dl>
+      <dt>Khung thời gian</dt><dd>Mỗi nến đại diện bao lâu. Crypto có đủ từ 1 phút; cổ phiếu chỉ từ 1 giờ trở lên vì nguồn dữ liệu không có khung nhỏ hơn đủ sâu.</dd>
+      <dt>Bảng</dt><dd>Ẩn/hiện cột bên phải.</dd>
+      <dt>GEX / Vùng giá</dt><dd>Với BTC và ETH: vẽ các mức quyền chọn (xem dưới). Với cổ phiếu: vẽ vùng giá giao dịch nhiều nhất, vì cổ phiếu Việt Nam không có quyền chọn riêng lẻ nên không có gamma.</dd>
+      <dt>Tín hiệu</dt><dd>Chỉ có ở cổ phiếu VN. Vẽ điểm vào/ra lệnh theo bộ quy tắc đã công bố ở tab Tín hiệu — không tính lại, nên luôn khớp với hồ sơ bên đó.</dd>
+      <dt>Chỉ báo</dt><dd>Thêm/bớt chỉ báo kỹ thuật. Có 62 loại, chia theo nhóm.</dd>
+    </dl>
+
+    <h4>Cột bên phải</h4>
+    <dl>
+      <dt>Watchlist</dt><dd>Danh sách theo dõi, lưu trong trình duyệt. Trộn được cả crypto lẫn cổ phiếu.</dd>
+      <dt>Sổ lệnh · Big Tape · Net $</dt><dd>Chỉ crypto. Lệnh chờ mua/bán thời gian thực, các lệnh lớn vừa khớp, và tiền ròng tại từng mức giá. Việt Nam không công bố các dữ liệu này.</dd>
+      <dt>Dòng tiền</dt><dd>Chỉ cổ phiếu VN. Sổ lệnh ba mức, khối ngoại mua bán trong phiên, room ngoại còn lại và khối lượng thoả thuận — dấu vết giao dịch của tổ chức.</dd>
+      <dt>Đa khung</dt><dd>Trạng thái ba khung thời gian cùng lúc. Ba khung đồng thuận thì tin cậy hơn; mâu thuẫn nghĩa là rủi ro cao hơn bình thường.</dd>
+    </dl>
+
+    <h4>Các mức trên chart (BTC/ETH)</h4>
+    <dl>
+      <dt>Tường gamma</dt><dd>Mức giá tập trung nhiều quyền chọn nhất. Nhà tạo lập phải phòng hộ quanh đó, nên giá thường bị hút về hoặc bật lại.</dd>
+      <dt>Gamma flip</dt><dd>Ranh giới đổi chế độ: trên mức này biến động thường bị dập tắt, dưới thì bị khuếch đại.</dd>
+      <dt>Max pain</dt><dd>Mức giá khiến nhiều hợp đồng quyền chọn hết hạn vô giá trị nhất.</dd>
+      <dt>POC / Vùng giá trị</dt><dd>Với cổ phiếu: mức giá khớp nhiều nhất và vùng chứa 70% khối lượng. Đây là nơi đám đông đã tích luỹ, nên thường đóng vai trò hỗ trợ hoặc kháng cự.</dd>
+    </dl>
+
+    <h4>Thao tác</h4>
+    <dl>
+      <dt>Gõ chữ</dt><dd>Mở tìm mã ở bất kỳ đâu. ↑↓ chọn, Enter mở, Esc đóng.</dd>
+      <dt>Thanh trái</dt><dd>34 công cụ vẽ. Bấm lại nút đang chọn, hoặc Esc, để thoát chế độ vẽ.</dd>
+      <dt>Ctrl+Z / Ctrl+Y</dt><dd>Hoàn tác và làm lại hình vẽ.</dd>
+      <dt>Cuộn sang trái</dt><dd>Tự tải thêm lịch sử cho tới khi nguồn hết dữ liệu.</dd>
+    </dl>
+
+    <p><b>Nguồn dữ liệu.</b> Crypto từ Binance (dự phòng Hyperliquid), cổ phiếu VN từ VPS,
+    cổ phiếu Mỹ từ dữ liệu trễ đã lưu sẵn. Crypto và VN gọi trực tiếp từ trình duyệt của bạn
+    nên là giá hiện tại; mã Mỹ là giá cuối phiên gần nhất.</p>
+    <p>Số liệu tham khảo, không phải khuyến nghị đầu tư.</p>
+  </div>
+</dialog>
 
 <dialog id="alert-dialog" class="alert-dialog" aria-labelledby="alert-title">
   <div class="alert-head">
@@ -924,6 +989,15 @@ el.gexToggle.addEventListener("click",()=>{
   try{localStorage.setItem("leon_gex_overlay",gexOverlay?"1":"0")}catch(e){}
   scheduleDraw();
 });
+{
+  const helpDialog=document.getElementById("help-dialog");
+  const helpOpen=document.getElementById("help-open");
+  const helpClose=document.getElementById("help-close");
+  if(helpOpen&&helpDialog){
+    helpOpen.addEventListener("click",()=>helpDialog.showModal());
+    if(helpClose) helpClose.addEventListener("click",()=>helpDialog.close());
+  }
+}
 el.sigToggle.setAttribute("aria-pressed",String(signalOverlay));
 el.sigToggle.addEventListener("click",()=>{
   signalOverlay=!signalOverlay;
