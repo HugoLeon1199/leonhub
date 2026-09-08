@@ -210,20 +210,52 @@ function hubHref(tab, params = {}){
   return `../../hub/?${q}`;
 }
 
-function followLink(node){
+/* These rows are not <a> elements -- a table row cannot be one -- so the
+   browser's own link behaviour has to be reproduced rather than inherited.
+   Plain click navigates the whole hub; Ctrl/Cmd-click, middle-click and
+   Shift-click open a new tab or window, which is what anyone comparing two
+   tickers expects and what a bare click handler silently swallowed. */
+function linkTarget(node){
   const href = node?.dataset?.href;
+  return href ? new URL(href, location.href).href : null;
+}
+
+function followLink(node, newTab){
+  const href = linkTarget(node);
   if(!href) return;
-  window.top.location.href = new URL(href, location.href).href;
+  if(newTab){
+    window.open(href, "_blank", "noopener");
+    return;
+  }
+  // The page runs inside the hub's iframe, so a same-tab navigation has to
+  // replace the top document or the tab would open nested inside itself.
+  window.top.location.href = href;
 }
 
 document.addEventListener("click", event => {
   const node = event.target.closest("[data-href]");
-  if(node) followLink(node);
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, event.ctrlKey || event.metaKey || event.shiftKey);
+});
+/* Middle-click needs both handlers. `mousedown` is where the browser decides
+   to start autoscroll, and leaving that to happen suppresses the auxclick that
+   follows -- so the default has to be cancelled there, and the navigation done
+   on auxclick, which is the only event carrying button 1. */
+document.addEventListener("mousedown", event => {
+  if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+});
+document.addEventListener("auxclick", event => {
+  if(event.button !== 1) return;
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, true);
 });
 document.addEventListener("keydown", event => {
   if((event.key === "Enter" || event.key === " ") && event.target.matches("[data-href]")){
     event.preventDefault();
-    followLink(event.target);
+    followLink(event.target, event.ctrlKey || event.metaKey || event.shiftKey);
   }
 });
 
