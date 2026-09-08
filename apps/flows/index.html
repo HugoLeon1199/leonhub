@@ -150,7 +150,13 @@ function money(v){
   if(v == null || !isFinite(v)) return "—";
   const sign = v >= 0 ? "+" : "−";
   const abs = Math.abs(v);
-  return abs >= 1000 ? `${sign}${fmt(abs/1000, 2)}B` : `${sign}${fmt(abs, 0)}M`;
+  // Values are in millions. Two decimals at the billion scale threw away the
+  // last three digits: BTC's 3,443.8M and ETH's 3,441.2M both rendered as
+  // "+3.44B", so two genuinely different figures read as identical. Millions
+  // are kept up to ten billion, where the extra digits still fit and still
+  // carry meaning.
+  if(abs >= 10000) return `${sign}${fmt(abs/1000, 2)}B`;
+  return `${sign}${fmt(abs, 0)}M`;
 }
 
 fetch("../../data/flows.json", {cache:"no-cache"})

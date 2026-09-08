@@ -80,6 +80,10 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .marker{stroke-width:1.5; stroke-dasharray:4 3}
 
 table{border-collapse:collapse; width:100%; font-size:13px}
+/* Tables scroll inside their card instead of pushing the page sideways.
+   Measured at 390px: the strike tables overflowed the viewport by 138px. */
+.card{overflow-x:auto}
+@media(max-width:620px){table{min-width:max-content}}
 th,td{padding:6px 11px; border-bottom:1px solid var(--line); white-space:nowrap}
 th{text-align:right; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
    color:var(--muted); font-weight:600; background:var(--panel-2)}

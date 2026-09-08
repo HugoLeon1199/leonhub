@@ -65,6 +65,11 @@ th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
 td{text-align:right; font-variant-numeric:tabular-nums}
 tr:last-child td{border-bottom:0}
 .scroll{max-height:420px; overflow:auto}
+/* Every table scrolls in its own box rather than pushing the page sideways.
+   Measured at 390px: the ladder, regime and open-position tables overflowed
+   the viewport by 107px because only the closed-trades table had a wrapper. */
+#ladder, #regime, #open, .card{overflow-x:auto}
+table{min-width:max-content}
 .sym{font-weight:700}
 .name{color:var(--muted); font-size:12px; max-width:210px; overflow:hidden;
       text-overflow:ellipsis; display:inline-block; vertical-align:bottom}
