@@ -114,14 +114,20 @@ main{flex:1; position:relative; min-height:0}
 
 /* Each tab is an independent page. Keeping them as separate documents means a
    broken app never takes the hub down with it, and each can be deployed alone. */
-/* `primary` decides the visible row; everything else lives behind "Khác". The
-   row is ordered by how much the tab is worth opening: pages standing on the
-   point-in-time warehouse come first, and a page whose numbers are still
-   illustrative stays in the menu until it has real data behind it. */
+/* `primary` decides the visible row; everything else lives behind "Khác".
+   The row reads as a session rather than a ranking: the daily summary first,
+   then the chart it sends you to, then the asset classes in the order a reader
+   here actually holds them (VN equities, US equities, crypto, property), then
+   the derived pages that interpret them, and news last. */
 const TABS = [
-  { key:"chart",   name:"Chart", icon:"⌁", src:"../apps/chart/", primary:true },
   { key:"brief", name:"Tổng quan", icon:"◈", src:"../apps/brief/", primary:true },
-  { key:"stocks", name:"Cổ phiếu", icon:"▦", src:"../apps/stocks/", primary:true },
+  { key:"chart",   name:"Chart", icon:"⌁", src:"../apps/chart/", primary:true },
+  { key:"stocks", name:"Cổ phiếu Việt", icon:"▦", src:"../apps/stocks/", primary:true },
+  { key:"us", name:"Cổ phiếu Mỹ", icon:"🇺🇸", src:"../apps/us/", primary:true },
+  // The crypto counterpart to the equity screener: the chart tab shows one
+  // instrument and GEX covers two, so nothing answered "what is moving across
+  // the whole market" until this.
+  { key:"crypto", name:"Crypto", icon:"◈", src:"../apps/crypto/", primary:true },
   // The real-estate history cannot be backfilled, which makes it the one tab
   // whose value strictly increases with every day it stays collected.
   { key:"bds", name:"Bất động sản", icon:"⌂", src:"../apps/bds/", primary:true },
@@ -131,13 +137,8 @@ const TABS = [
   // hub's theme and survives that domain being unreachable. Its feeds are still
   // fetched from there -- see the note in apps/news/index.html.
   { key:"news", name:"Tin tức", icon:"▤", src:"../apps/news/", primary:true },
-  // The crypto counterpart to the equity screener: the chart tab shows one
-  // instrument and GEX covers two, so nothing answered "what is moving across
-  // the whole market" until this.
-  { key:"crypto", name:"Crypto", icon:"◈", src:"../apps/crypto/", primary:true },
   { key:"flows", name:"Dòng tiền ETF", icon:"⇄", src:"../apps/flows/" },
   { key:"positioning", name:"Positioning", icon:"🎯", src:"../apps/positioning/" },
-  { key:"us", name:"Cổ phiếu Mỹ", icon:"🇺🇸", src:"../apps/us/" },
   { key:"wealth", name:"Tài chính", icon:"🌿", src:"../apps/wealth/" },
   { key:"training", name:"Training", icon:"▷", src:"../apps/training/" },
   { key:"quant", name:"Quant", icon:"⚗", src:"../apps/quant/" },
@@ -147,7 +148,9 @@ const TABS = [
   // from the primary tab bar so 1,751 ticker pages do not become a ninth silo.
   { key:"ticker",  name:"Chi tiết mã", icon:"", src:"../apps/ticker/", hidden:true },
 ];
-const DEFAULT_TAB = "chart";
+// The summary is the landing page: it says what changed since yesterday and
+// links onward. Chart is where you go once you know what to look at.
+const DEFAULT_TAB = "brief";
 
 const tabBar = document.getElementById("tabs");
 const paneHost = document.getElementById("panes");
