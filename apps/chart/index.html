@@ -269,6 +269,11 @@ main{flex:1; position:relative; min-height:0;min-width:0}
 .liq-row{display:grid;grid-template-columns:34px 1fr 1fr;gap:6px;padding:4px 7px;border-bottom:1px solid var(--line);
   font-size:10.5px;font-variant-numeric:tabular-nums}
 .liq-row span:nth-child(n+2){text-align:right}
+.liq-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.liq-stat{background:var(--panel);padding:7px 8px}
+.liq-stat span{display:block;color:var(--muted);font-size:9.5px;letter-spacing:.02em}
+.liq-stat b{display:block;font-size:13px;font-variant-numeric:tabular-nums;margin-top:1px}
+.liq-stat small{display:block;color:var(--muted);font-size:9px;margin-top:1px}
 .level-card{padding:8px 7px;border-bottom:1px solid var(--line)}.level-head{display:flex;justify-content:space-between;gap:8px;font-size:11px}.level-head b{font-variant-numeric:tabular-nums}.level-head small{color:var(--muted)}.level-bar{display:flex;height:4px;margin:6px 0;border-radius:2px;overflow:hidden;background:var(--line)}.level-bar i:nth-child(1){background:var(--down)}.level-bar i:nth-child(2){background:#a78bfa}.level-bar i:nth-child(3){background:var(--warn)}.level-bar i:nth-child(4){background:var(--up)}.level-stats{display:flex;justify-content:space-between;color:var(--muted);font-size:9px}
 .side-empty{padding:22px 8px;text-align:center;color:var(--muted);font-size:11px}
 .side-closed .market-side{display:none}
@@ -476,7 +481,7 @@ footer b{color:var(--text); font-weight:600}
       <dt>Watchlist</dt><dd>Danh sách theo dõi, lưu trong trình duyệt. Trộn được cả crypto lẫn cổ phiếu.</dd>
       <dt>Sổ lệnh · Net $</dt><dd>Chỉ crypto. Lệnh chờ mua/bán thời gian thực và tiền ròng tại từng mức giá. Việt Nam không công bố các dữ liệu này.</dd>
       <dt>Big Tape</dt><dd>Chỉ crypto. Các lệnh lớn vừa khớp trên nhiều sàn cùng lúc, mỗi dòng ghi rõ sàn nào in ra: <i>OKX</i> và <i>BYBIT</i> là hợp đồng vĩnh cửu, <i>BINANCE-S</i> là giao ngay. Một lệnh 5 triệu đô trên một sàn khác hẳn cùng khối lượng đó đánh vào cả ba. Dòng đầu tổng kết mua, bán và chênh lệch ròng.</dd>
-      <dt>Đòn bẩy</dt><dd>Chỉ crypto. Bên long hay short đang mang nhiều vị thế hơn, và các vùng giá dễ bị quét theo từng mức đòn bẩy giả định. Đây là <b>ước lượng</b>, không phải bản đồ thanh lý thật — không sàn nào công bố dữ liệu đó.</dd>
+      <dt>Đòn bẩy</dt><dd>Chỉ crypto, tự cập nhật 2,5 phút một lần. Gồm: bên long hay short đang mang nhiều vị thế hơn và vùng giá dễ bị quét theo từng mức đòn bẩy (đây là <b>ước lượng</b>, không phải bản đồ thanh lý thật — không sàn nào công bố dữ liệu đó); <i>Đám đông</i> là tỉ lệ tài khoản nhỏ lẻ, <i>Cá lớn</i> là tỉ lệ theo quy mô vị thế của nhóm dẫn đầu — hai số trái chiều nghĩa là đám đông đang ở phía dễ bị ép ra; <i>COT</i> là vị thế quỹ đầu cơ trên sàn CME theo báo cáo CFTC thật, công bố mỗi tuần nên luôn trễ vài ngày; <i>Fear/Greed</i> là chỉ số tâm lý crypto. Cuối panel là tóm tắt vị thế quyền chọn của BTC/ETH.</dd>
       <dt>Dòng tiền</dt><dd>Chỉ cổ phiếu VN. Sổ lệnh ba mức, khối ngoại mua bán trong phiên, room ngoại còn lại và khối lượng thoả thuận — dấu vết giao dịch của tổ chức.</dd>
       <dt>Đa khung</dt><dd>Trạng thái ba khung thời gian cùng lúc. Ba khung đồng thuận thì tin cậy hơn; mâu thuẫn nghĩa là rủi ro cao hơn bình thường.</dd>
     </dl>
@@ -907,7 +912,7 @@ async function renderVnFlow(sym){
   box.innerHTML = html || '<div class="side-empty">Không có dữ liệu dòng tiền cho mã này.</div>';
 }
 
-function closeMicrostructure(){clearInterval(bookTimer);bookTimer=null;if(tradeWs){tradeWs.onmessage=tradeWs.onclose=tradeWs.onerror=null;try{tradeWs.close()}catch(e){}tradeWs=null}closeExtraTape()}
+function closeMicrostructure(){clearInterval(bookTimer);bookTimer=null;clearInterval(liqTimer);liqTimer=null;if(tradeWs){tradeWs.onmessage=tradeWs.onclose=tradeWs.onerror=null;try{tradeWs.close()}catch(e){}tradeWs=null}closeExtraTape()}
 async function refreshBook(sym,token){
   if(token!==inflight)return;
   try{const r=await fetch(`https://api.binance.com/api/v3/depth?symbol=${sym}USDT&limit=20`);if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;renderBookData(d,sym)
@@ -1038,25 +1043,61 @@ async function openExtraTape(sym, token){
    What it does answer honestly: which side is carrying more exposure right
    now, and roughly where that exposure sits relative to price. */
 const LEV_BUCKETS = [10, 25, 50, 100];   // assumed leverage tiers
-let liqState = null;
+let liqState = null, liqTimer = null;
+
+// CFTC market names for the coins that have a regulated futures contract. The
+// COT report only covers those two; every other coin correctly shows nothing.
+const COT_MARKETS = {
+  BTC: "BITCOIN - CHICAGO MERCANTILE EXCHANGE",
+  ETH: "ETHER CASH SETTLED - CHICAGO MERCANTILE EXCHANGE",
+};
 
 async function loadLiquidation(sym, token){
   liqState = {loading:true};
   renderLiquidation();
+  const json = url => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+
   try{
-    const [oi, ratio] = await Promise.all([
-      fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${sym}USDT&period=5m&limit=1`).then(r => r.ok ? r.json() : null),
-      fetch(`https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=${sym}USDT&period=5m&limit=1`).then(r => r.ok ? r.json() : null),
+    const [oi, top, crowd, fng, cot] = await Promise.all([
+      json(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${sym}USDT&period=5m&limit=1`),
+      json(`https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=${sym}USDT&period=5m&limit=1`),
+      // Retail accounts, weighted one vote each, against the top traders'
+      // actual position size above. When the two disagree it is usually the
+      // crowd that is offside.
+      json(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${sym}USDT&period=5m&limit=1`),
+      json("https://api.alternative.me/fng/?limit=1"),
+      COT_MARKETS[sym]
+        ? json(`https://publicreporting.cftc.gov/resource/6dca-aqww.json?$limit=1&$order=report_date_as_yyyy_mm_dd%20DESC&market_and_exchange_names=${encodeURIComponent(COT_MARKETS[sym])}`)
+        : Promise.resolve(null),
     ]);
     if(token !== inflight) return;
+
     const oiValue = +(oi?.[0]?.sumOpenInterestValue);
-    const longShare = +(ratio?.[0]?.longAccount);
+    const longShare = +(top?.[0]?.longAccount);
     if(!isFinite(oiValue) || !isFinite(longShare)){ liqState = null; renderLiquidation(); return; }
+
+    let cotState = null;
+    const row = cot?.[0];
+    if(row){
+      const long = +row.noncomm_positions_long_all, short = +row.noncomm_positions_short_all;
+      if(isFinite(long) && isFinite(short)){
+        cotState = {
+          net: long - short,
+          date: String(row.report_date_as_yyyy_mm_dd || "").slice(0, 10),
+        };
+      }
+    }
+
     liqState = {
       loading:false,
       longNotional: oiValue * longShare,
       shortNotional: oiValue * (1 - longShare),
       spot: currentBars.at(-1)?.close || null,
+      whale: +(top?.[0]?.longShortRatio),
+      crowd: +(crowd?.[0]?.longShortRatio),
+      fng: fng?.data?.[0] ? {value:+fng.data[0].value, label:fng.data[0].value_classification} : null,
+      cot: cotState,
+      at: Date.now(),
     };
   }catch(e){ liqState = null; }
   if(token === inflight) renderLiquidation();
@@ -1081,6 +1122,32 @@ function renderLiquidation(){
     short: spot * (1 + 1 / lev),
   })) : [];
 
+  // Crowd vs whale: retail accounts one vote each, against the top traders'
+  // position size. Agreement is a consensus; disagreement usually means the
+  // crowd is the side that will be forced out.
+  const {whale, crowd, fng, cot} = liqState;
+  const side = v => v == null || !isFinite(v) ? "—" : v >= 1 ? "long" : "short";
+  const cls = v => v == null || !isFinite(v) ? "" : v >= 1 ? "up" : "down";
+  const stat = (k, v, sub, c) =>
+    `<div class="liq-stat"><span>${k}</span><b class="${c || ""}">${v}</b>`
+    + (sub ? `<small>${sub}</small>` : "") + `</div>`;
+
+  let crowdBlock = "";
+  if(isFinite(crowd) || isFinite(whale) || fng || cot){
+    const agree = isFinite(crowd) && isFinite(whale) && ((crowd >= 1) === (whale >= 1));
+    crowdBlock =
+      `<div class="side-summary"><span>Vị thế người chơi</span>`
+      + `<span class="dimtxt">${isFinite(crowd) && isFinite(whale) ? (agree ? "đồng thuận" : "trái chiều") : ""}</span></div>`
+      + `<div class="liq-stats">`
+        + (isFinite(crowd) ? stat("Đám đông", crowd.toFixed(2), side(crowd), cls(crowd)) : "")
+        + (isFinite(whale) ? stat("Cá lớn", whale.toFixed(2), side(whale), cls(whale)) : "")
+        + (cot ? stat("COT", (cot.net >= 0 ? "+" : "−") + compact(Math.abs(cot.net)),
+            `net ${cot.net >= 0 ? "long" : "short"} · ${cot.date}`, cot.net >= 0 ? "up" : "down") : "")
+        + (fng ? stat("Fear/Greed", fng.value, fng.label,
+            fng.value >= 55 ? "up" : fng.value <= 45 ? "down" : "") : "")
+      + `</div>`;
+  }
+
   box.innerHTML =
     `<div class="side-summary"><span>Áp lực đòn bẩy</span>`
       + `<span class="${tone}">${heavier} nặng hơn${ratio ? ` · ${(heavier === "Long" ? ratio : 1 / ratio).toFixed(2)}×` : ""}</span></div>`
@@ -1094,10 +1161,39 @@ function renderLiquidation(){
             + `<span class="down">${nf(r.long, r.long < 100 ? 2 : 0)}</span>`
             + `<span class="up">${nf(r.short, r.short < 100 ? 2 : 0)}</span></div>`).join("")
       : "")
+    + crowdBlock
+    + gexBlock()
     + `<div class="side-summary" style="display:block;line-height:1.5">`
-      + `Đây là <b>ước lượng</b>, không phải bản đồ thanh lý thật — không sàn nào công bố dữ liệu đó. `
-      + `Tính từ open interest và tỉ lệ tài khoản long/short của Binance, cộng giả định về đòn bẩy. `
-      + `Bên đông người hơn là bên dễ bị quét, vì họ phải thoát cùng lúc.</div>`;
+      + `Áp lực đòn bẩy là <b>ước lượng</b>, không phải bản đồ thanh lý thật — không sàn nào công bố dữ liệu đó. `
+      + `Tính từ open interest và tỉ lệ long/short của Binance cộng giả định về đòn bẩy. `
+      + `Bên đông người hơn là bên dễ bị quét, vì họ phải thoát cùng lúc.`
+      + (cot ? ` COT là số liệu CFTC thật, công bố mỗi tuần nên luôn trễ vài ngày.` : "")
+      + `</div>`;
+}
+
+/* Option positioning, reusing the GEX artifact the Levels tab already loaded.
+   Shown here because leverage and option positioning answer the same question
+   from two directions, and the reader should not have to switch tabs to see
+   both. Only BTC and ETH have a published surface. */
+function gexBlock(){
+  if(!gexMeta) return "";
+  const money = v => v == null || !isFinite(v) ? null : `$${compact(v)}`;
+  const px = v => v == null || !isFinite(v) ? null : nf(v, v < 100 ? 2 : 0);
+  const spot = currentBars.at(-1)?.close;
+  const items = [
+    ["Net GEX", money(gexMeta.net_gex), gexMeta.regime === "positive" ? "dương" : "âm",
+      gexMeta.regime === "positive" ? "up" : "down"],
+    ["Flip", px(gexMeta.gamma_flip),
+      spot && gexMeta.gamma_flip ? (spot > gexMeta.gamma_flip ? "giá trên" : "giá dưới") : null,
+      spot && gexMeta.gamma_flip ? (spot > gexMeta.gamma_flip ? "up" : "down") : ""],
+    ["Max pain", px(gexMeta.max_pain), null, ""],
+  ].filter(x => x[1]);
+  if(!items.length) return "";
+  return `<div class="side-summary"><span>Vị thế quyền chọn</span>`
+    + `<a href="../gex/" target="_top">Xem đầy đủ →</a></div>`
+    + `<div class="liq-stats">` + items.map(([k, v, sub, c]) =>
+        `<div class="liq-stat"><span>${k}</span><b class="${c}">${v}</b>`
+        + (sub ? `<small>${sub}</small>` : "") + `</div>`).join("") + `</div>`;
 }
 
 function closeExtraTape(){
@@ -1188,7 +1284,14 @@ function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML=symbolKind
   :'<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm${x.touch_24h!=null?` · chạm 24h ${Math.round(x.touch_24h*100)}%`:""}</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
 async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH"].includes(sym))return;try{const r=await fetch(`../../data/gex_${sym.toLowerCase()}.json`,{cache:"no-cache"});if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;gexLevels=Array.isArray(d.levels)?d.levels:[];gexMeta=d;renderLevels();scheduleDraw()}catch(e){}}
 function openMicrostructure(sym,token){
-  closeMicrostructure();tapeEvents=[];gexLevels=[];gexMeta=null;netDollar=new Map();netBucket=0;try{tapeMin=Math.max(50000,+(localStorage.getItem(`leon_tapemin_${sym}`)||250000))}catch(e){tapeMin=250000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);openExtraTape(sym,token);loadLiquidation(sym,token);
+  closeMicrostructure();tapeEvents=[];gexLevels=[];gexMeta=null;netDollar=new Map();netBucket=0;try{tapeMin=Math.max(50000,+(localStorage.getItem(`leon_tapemin_${sym}`)||250000))}catch(e){tapeMin=250000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);openExtraTape(sym,token);
+  /* The tape is a live socket, but this panel is polled: Binance publishes open
+     interest and the long/short split on a 5-minute cadence, so refreshing
+     faster returns the same numbers. Without the timer the panel simply froze
+     at whatever was true when the symbol was opened. */
+  loadLiquidation(sym,token);
+  clearInterval(liqTimer);
+  liqTimer=setInterval(()=>{if(token===inflight)loadLiquidation(sym,token)},150000);
   const streamSym=sym.toLowerCase()+"usdt";
   try{tradeWs=new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streamSym}@aggTrade/${streamSym}@depth20@100ms`)}catch(e){return}
   tradeWs.onmessage=ev=>{if(token!==inflight)return;let x;try{const payload=JSON.parse(ev.data);x=payload.data||payload}catch(e){return}if(Array.isArray(x.bids)&&Array.isArray(x.asks)){renderBookData(x,sym);return}if(x.e!=="aggTrade")return;const price=+x.p,qty=+x.q,notional=price*qty;if(!isFinite(notional)||notional<=0)return;addNetDollar(price,notional,x.m?"sell":"buy");if(notional<50000)return;pushTape({at:+x.T,price,notional,side:x.m?"sell":"buy",venue:"BINANCE-S"});renderTape();scheduleLevels()};
