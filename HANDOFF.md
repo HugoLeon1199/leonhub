@@ -1,13 +1,14 @@
 # Handoff
 
-Updated 2026-09-05 by Codex. Read `CLAUDE.md` and
+Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
 `docs/source-gotchas.md` before touching collectors. The Claude plan is:
 
 `C:\Users\LEON_RM\.claude\plans\nh-gi-ho-n-calm-newell.md`
 
 ## Current state
 
-- Branch: `hub-upgrades`; this round starts above `ba0c436`.
+- Branch: `master`; overview changes and the preceding crypto context commit
+  were pushed to the GitHub Pages source branch on 2026-09-08.
 - Local server: PID 3312, `http://127.0.0.1:8811/hub/`.
 - Chart: `http://127.0.0.1:8811/apps/chart/?sym=BTC&tf=30m`.
 - Ticker dossier: `http://127.0.0.1:8811/apps/ticker/?s=VIC`.
@@ -33,9 +34,14 @@ Updated 2026-09-05 by Codex. Read `CLAUDE.md` and
   have recent successful runs. The VN daily workflow remains scheduled for
   16:30 ICT on weekdays but its latest run failed in `vn_equity` while decoding
   an upstream API response; committed `stocks.json` is therefore still dated
-  2026-09-04. Cross-market flows also failed because Farside returned HTTP 403,
-  leaving `flows.json` updated at 2026-09-03. Those collector failures were
-  diagnosed only and remain separate follow-up work.
+  2026-09-04. Cross-market flows also failed because Farside returned HTTP 403
+  to the US GitHub runner. A local collector pass succeeded and republished
+  `flows.json` through 2026-09-04 (the latest available session; 2026-09-07 was
+  the US Labor Day holiday). Restoring unattended ETF refresh still needs a
+  permitted source reachable from CI or a local scheduler.
+- GitHub Pages deployment and App syntax checks both passed for the overview
+  push. Production probes returned HTTP 200 and valid JSON for stocks, BDS,
+  flows, GEX and `data/crypto/context.json`.
 
 ## 2026-09-05 Market Structure live-flow upgrade
 
