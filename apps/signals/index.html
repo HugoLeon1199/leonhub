@@ -91,6 +91,14 @@ tr:last-child td{border-bottom:0}
 .howto-body dd{margin:0; line-height:1.55}
 @media(max-width:620px){.howto-body dl{grid-template-columns:1fr; gap:2px 0}.howto-body dd{margin-bottom:8px}}
 
+/* Things the numbers above depend on but do not show. Marked, not hidden:
+   they change how every figure on the page is read. */
+.caveats{margin-top:12px; padding-top:10px; border-top:1px solid var(--line)}
+.caveats p{margin:0 0 7px; font-size:12px; line-height:1.6; color:var(--muted);
+  padding-left:11px; border-left:2px solid var(--warn); max-width:92ch}
+.caveats p:last-child{margin-bottom:0}
+.foot{padding:7px 12px; font-size:11px; color:var(--muted); border-top:1px solid var(--line)}
+
 .msg{padding:30px 16px; text-align:center; color:var(--muted); font-size:13px}
 .msg code{background:var(--panel-2); padding:2px 6px; border-radius:4px}
 footer{border-top:1px solid var(--line); padding-top:12px; font-size:11px; color:var(--muted);
@@ -110,7 +118,8 @@ nên tỉ lệ thắng trên trang này đến từ chính bộ quy tắc sinh r
   <p><b>Đây không phải khuyến nghị đầu tư.</b> Bộ quy tắc dưới đây là ví dụ minh hoạ cho cách
   công bố một hệ thống có kiểm chứng: tham số được chọn theo thông lệ, không tối ưu hoá.
   Kết quả quá khứ tính trên dữ liệu point-in-time — mỗi lệnh chỉ dùng giá đã biết tại thời điểm đó —
-  nhưng vẫn không đảm bảo điều gì về tương lai, và chưa trừ phí giao dịch hay trượt giá.</p>
+  nhưng vẫn không đảm bảo điều gì về tương lai. Phí và thuế đã được trừ ở cột "sau phí";
+  cột còn lại là trước phí.</p>
 </div>
 
 <details class="howto">
@@ -190,8 +199,14 @@ function render(d){
       "Mục tiêu": d.rules.target,
       "Thời gian giữ tối đa": d.rules.max_hold,
       "Phạm vi": d.rules.universe,
+      ...(d.rules.cost ? {"Chi phí giao dịch": d.rules.cost} : {}),
+      ...(d.rules.regime ? {"Bộ lọc thị trường": d.rules.regime} : {}),
     }).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("") +
-    "</dl>";
+    "</dl>" +
+    // Facts the page used to leave out. They change how every number above is
+    // read, so they sit with the rules rather than in a footnote.
+    (d.caveats ? '<div class="caveats">' + Object.values(d.caveats)
+      .map(v => `<p>${v}</p>`).join("") + "</div>" : "");
 
   if(!s.trades){
     el("body").innerHTML = '<div class="msg">Chưa đủ lịch sử giá để sinh tín hiệu.</div>';
@@ -205,11 +220,25 @@ function render(d){
     {k:"R trung bình", v:(s.avg_r >= 0 ? "+" : "") + s.avg_r.toFixed(2),
      cls:s.avg_r >= 0 ? "pos" : "neg", n:"mỗi lệnh"},
     {k:"Tổng R", v:(s.total_r >= 0 ? "+" : "") + fmt(s.total_r, 1),
-     cls:s.total_r >= 0 ? "pos" : "neg", n:"cộng dồn"},
+     cls:s.total_r >= 0 ? "pos" : "neg", n:"trước phí"},
+    // Both figures, side by side. The gross says whether the rule finds
+    // anything; the net says whether what it finds survives being traded.
+    ...(s.net ? [{k:"Tổng R sau phí",
+      v:(s.net.total_r >= 0 ? "+" : "") + fmt(s.net.total_r, 1),
+      cls:s.net.total_r >= 0 ? "pos" : "neg",
+      n:`đã trừ ${s.net.cost_pct}% mỗi vòng`}] : []),
     {k:"Sụt giảm tối đa", v:fmt(s.max_drawdown_r, 1) + "R",
      cls:"neg", n:"từ đỉnh đường vốn"},
     {k:"Lãi TB / Lỗ TB", v:`${s.avg_win_r ?? "—"} / ${s.avg_loss_r ?? "—"}`,
      n:"tính bằng R"},
+    ...(s.expectancy_r != null ? [{k:"Kỳ vọng mỗi lệnh",
+      v:(s.expectancy_r >= 0 ? "+" : "") + s.expectancy_r.toFixed(2) + "R",
+      cls:s.expectancy_r >= 0 ? "pos" : "neg",
+      n:"tỉ lệ thắng × lãi TB − tỉ lệ thua × lỗ TB"}] : []),
+    ...(s.profit_factor != null ? [{k:"Profit factor", v:s.profit_factor.toFixed(2),
+      cls:s.profit_factor >= 1 ? "pos" : "neg", n:"tổng lãi / tổng lỗ"}] : []),
+    ...(s.worst_losing_streak ? [{k:"Chuỗi thua dài nhất",
+      v:fmt(s.worst_losing_streak) + " lệnh", n:"liên tiếp"}] : []),
     {k:"Đang mở", v:fmt((d.open || []).length), n:"chưa có kết quả"},
   ];
   // Cách các lệnh kết thúc nói lên nguyên nhân lỗ rõ hơn tỉ lệ thắng: một quy
@@ -248,7 +277,9 @@ function render(d){
      looking good; saying why it lost is what makes the rest credible. */
   const b = d.benchmark && d.benchmark.median_return_pct;
   const reading = s.total_r < 0
-    ? `<b class="neg">Bộ quy tắc này đang lỗ ${Math.abs(s.total_r).toFixed(0)}R trong kỳ.</b> ` +
+    ? `<b class="neg">Bộ quy tắc này đang lỗ ${Math.abs(s.total_r).toFixed(0)}R trong kỳ` +
+      (s.net && s.net.total_r != null
+        ? `, và ${Math.abs(s.net.total_r).toFixed(0)}R sau khi trừ phí` : "") + `.</b> ` +
       (b != null && b < 0
         ? `Đó là kết quả dự đoán được: đây là hệ thống chỉ mua lên theo đà tăng, ` +
           `trong khi trung vị thị trường cùng kỳ giảm ${Math.abs(b).toFixed(1)}%. ` +
@@ -268,6 +299,7 @@ function render(d){
     `không phải tiền — nên nó không phụ thuộc vào việc bạn đặt bao nhiêu vốn mỗi lệnh.</p>` +
     `<div class="card pad" id="equity"></div></section>` +
     `<div id="ladder"></div>` +
+    `<div id="regime"></div>` +
     (d.open && d.open.length
       ? `<section><h2 class="sec">Lệnh đang mở</h2>` +
         `<p class="cap">Chưa có kết quả, nên không được tính vào thống kê phía trên.</p>` +
@@ -279,6 +311,7 @@ function render(d){
 
   drawEquity(el("equity"), d.closed || []);
   drawLadder(el("ladder"), d.layer_ladder, d.layers_required);
+  drawRegime(el("regime"), d.regime_compare);
   if(d.open && d.open.length) drawOpen(el("open"), d.open);
   drawClosed(el("closed"), d.closed || []);
 
@@ -325,10 +358,15 @@ function drawEquity(host, closed){
   host.innerHTML = svg.join("");
 }
 
+/* Open positions carry their current mark. Entry, stop and target alone left
+   the one question a reader actually has -- is this winning right now --
+   answerable only by looking the price up somewhere else. */
 function drawOpen(host, rows){
+  const marked = rows.some(r => r.ur != null);
+  const head = ["Mã","Tên","Vào lúc","Giá vào","Dừng lỗ","Mục tiêu"]
+    .concat(marked ? ["Giá hiện tại","R tạm tính","Đã giữ"] : []);
   host.innerHTML =
-    "<table><thead><tr>" +
-    ["Mã","Tên","Vào lúc","Giá vào","Dừng lỗ","Mục tiêu"].map(t => `<th>${t}</th>`).join("") +
+    "<table><thead><tr>" + head.map(t => `<th>${t}</th>`).join("") +
     "</tr></thead><tbody>" +
     rows.map(r =>
       `<tr><td><span class="sym">${r.s}</span></td>` +
@@ -336,7 +374,43 @@ function drawOpen(host, rows){
       `<td class="dim">${r.d}</td>` +
       `<td>${fmt(r.entry)}</td>` +
       `<td class="neg">${fmt(r.stop)}</td>` +
-      `<td class="pos">${fmt(r.target)}</td></tr>`).join("") +
+      `<td class="pos">${fmt(r.target)}</td>` +
+      (marked
+        ? `<td>${r.now != null ? fmt(r.now) : "—"}</td>` +
+          `<td class="${r.ur == null ? "" : r.ur >= 0 ? "pos" : "neg"}">` +
+          `${r.ur == null ? "—" : (r.ur >= 0 ? "+" : "") + r.ur.toFixed(2) + "R"}</td>` +
+          `<td class="dim">${r.held != null ? r.held + " phiên" : "—"}</td>`
+        : "") +
+      "</tr>").join("") +
+    "</tbody></table>" +
+    (marked && rows[0]?.as_of
+      ? `<div class="foot">Giá tạm tính theo phiên ${rows[0].as_of}; chưa trừ phí.</div>`
+      : "");
+}
+
+/* What the market filter would do, on the same terms as the layer ladder.
+   Published even though it is switched off -- especially because it is: the
+   reason for leaving it off is a measurement, and the measurement belongs on
+   the page rather than only in the commit that made the call. */
+function drawRegime(host, compare){
+  if(!compare || !compare.rows || compare.rows.length < 2){ host.innerHTML = ""; return; }
+  const label = {off:"Không lọc", on:"Có lọc"};
+  host.innerHTML =
+    `<h2>Bộ lọc thị trường đáng giá bao nhiêu</h2>` +
+    `<p class="sub">Cùng một quy tắc, chạy lại với bộ lọc bật và tắt. ` +
+    `Hiện đang <b>${compare.applied ? "BẬT" : "TẮT"}</b>.</p>` +
+    "<table><thead><tr>" +
+    ["Cấu hình","Số lệnh","Tỉ lệ thắng","R trung bình","Tổng R","Sụt giảm"]
+      .map(t => `<th>${t}</th>`).join("") +
+    "</tr></thead><tbody>" +
+    compare.rows.map(r =>
+      `<tr${(compare.applied ? r.filter === "on" : r.filter === "off") ? ' class="on"' : ""}>` +
+      `<td><b>${label[r.filter] || r.filter}</b></td>` +
+      `<td>${fmt(r.trades)}</td>` +
+      `<td>${r.hit_rate ?? "—"}%</td>` +
+      `<td class="${r.avg_r >= 0 ? "pos" : "neg"}">${r.avg_r != null ? r.avg_r.toFixed(3) : "—"}</td>` +
+      `<td class="${r.total_r >= 0 ? "pos" : "neg"}">${fmt(r.total_r, 1)}</td>` +
+      `<td class="neg">${fmt(r.max_drawdown_r, 1)}</td></tr>`).join("") +
     "</tbody></table>";
 }
 
@@ -377,10 +451,12 @@ function drawLadder(host, ladder, chosen){
 }
 
 function drawClosed(host, rows){
+  const net = rows.some(r => r.rn != null);
+  const head = ["Mã","Tên","Vào","Ra","Giá vào","Giá ra","Kết quả"]
+    .concat(net ? ["Sau phí"] : [])
+    .concat(["Dòng tiền lúc vào","Lý do đóng"]);
   host.innerHTML =
-    "<table><thead><tr>" +
-    ["Mã","Tên","Vào","Ra","Giá vào","Giá ra","Kết quả","Dòng tiền lúc vào","Lý do đóng"]
-      .map(t => `<th>${t}</th>`).join("") +
+    "<table><thead><tr>" + head.map(t => `<th>${t}</th>`).join("") +
     "</tr></thead><tbody>" +
     rows.map(r =>
       `<tr><td><span class="sym">${r.s}</span></td>` +
@@ -388,6 +464,10 @@ function drawClosed(host, rows){
       `<td class="dim">${r.d}</td><td class="dim">${r.x}</td>` +
       `<td>${fmt(r.entry)}</td><td>${fmt(r.exit)}</td>` +
       `<td class="${r.r >= 0 ? "pos" : "neg"}"><b>${r.r >= 0 ? "+" : ""}${r.r.toFixed(2)}R</b></td>` +
+      (net
+        ? `<td class="${r.rn == null ? "" : r.rn >= 0 ? "pos" : "neg"}">` +
+          `${r.rn == null ? "—" : (r.rn >= 0 ? "+" : "") + r.rn.toFixed(2) + "R"}</td>`
+        : "") +
       `<td class="dim">${layerCell(r.L)}</td>` +
       `<td class="dim">${EXIT_LABEL[r.why] ?? r.why}</td></tr>`).join("") +
     "</tbody></table>";

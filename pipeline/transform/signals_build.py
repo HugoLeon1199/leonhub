@@ -31,6 +31,12 @@ log = logging.getLogger(__name__)
 
 # Risk per trade is one ATR-equivalent, approximated by the standard deviation
 # of daily returns — the same volatility measure the screener's z-score uses.
+# Round-trip cost as a fraction of position value: ~0.15% brokerage each way
+# plus 0.1% sale tax, which is the standard retail rate in VN. Charged against
+# every closed trade, because a rule whose edge is smaller than its own costs
+# does not have one.
+ROUND_TRIP_COST = 0.004
+
 STOP_SD = 2.0
 TARGET_R = 2.0          # take profit at 2x the risk
 MAX_HOLD = 30           # trading days before a position is closed regardless
@@ -93,12 +99,28 @@ class Trade:
 
     @property
     def r_multiple(self) -> float | None:
+        """Result before costs, kept so the two figures can be shown together."""
         if self.exit is None or not self.risk:
             return None
         move = self.exit - self.entry
         if self.direction == "short":
             move = -move
         return move / self.risk
+
+    @property
+    def r_net(self) -> float | None:
+        """Result after brokerage, tax and slippage.
+
+        A rule that only clears by less than its own trading costs has no edge,
+        so publishing the gross figure alone would flatter it. The cost is a
+        fixed fraction of the position, which becomes a variable number of R
+        depending on how wide the stop was -- a tight stop is far more expensive
+        in R terms, and that is the honest way to charge it.
+        """
+        gross = self.r_multiple
+        if gross is None or not self.risk:
+            return None
+        return gross - (self.entry * ROUND_TRIP_COST) / self.risk
 
 
 def sma(values: list[float], n: int) -> float | None:
@@ -224,6 +246,7 @@ def generate(
     symbol: str,
     bars: list[Bar],
     min_layers: int = MIN_LAYERS,
+    regime: dict[date, bool] | None = None,
 ) -> Iterator[Trade]:
     """Walk bars forward, opening and closing one position at a time.
 
@@ -273,6 +296,13 @@ def generate(
         if not crossed_up:
             continue
 
+        # Market filter. A day with no reading (too early in the history for a
+        # breadth figure) does not block the trade: absence of evidence is not
+        # evidence of a falling market, and treating it as such would quietly
+        # delete the earliest trades from the record.
+        if regime is not None and regime.get(today) is False:
+            continue
+
         recent = window[-MIN_HISTORY:]
         high, low = max(recent), min(recent)
         if high <= low or (price - low) / (high - low) < 0.5:
@@ -317,20 +347,121 @@ def summarise(trades: list[Trade]) -> dict[str, Any]:
         peak = max(peak, equity)
         max_dd = min(max_dd, equity - peak)
 
+    # Net figures run the same arithmetic on the after-cost result. Both are
+    # published: the gross says whether the rule finds anything, the net says
+    # whether what it finds survives being traded.
+    net_values = [t.r_net for t in closed if t.r_net is not None]
+    net_wins = [r for r in net_values if r > 0]
+    net_equity, net_peak, net_dd = 0.0, 0.0, 0.0
+    for r in net_values:
+        net_equity += r
+        net_peak = max(net_peak, net_equity)
+        net_dd = min(net_dd, net_equity - net_peak)
+
+    losses = [r for r in r_values if r <= 0]
+    # Expectancy stated explicitly rather than left for the reader to derive:
+    # a hit rate is meaningless without the win/loss sizes beside it.
+    avg_win = sum(wins) / len(wins) if wins else 0.0
+    avg_loss = sum(losses) / len(losses) if losses else 0.0
+    hit = len(wins) / len(closed)
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+
+    # Longest run of consecutive losers: the number that decides whether a rule
+    # is followable, not whether it is profitable.
+    streak, worst_streak = 0, 0
+    for r in r_values:
+        streak = streak + 1 if r <= 0 else 0
+        worst_streak = max(worst_streak, streak)
+
     return {
         "trades": len(closed),
-        "hit_rate": round(len(wins) / len(closed) * 100, 1),
+        "hit_rate": round(hit * 100, 1),
         "avg_r": round(sum(r_values) / len(r_values), 3),
         "total_r": round(equity, 1),
         "max_drawdown_r": round(max_dd, 1),
-        "avg_win_r": round(sum(wins) / len(wins), 2) if wins else None,
-        "avg_loss_r": round(
-            sum(r for r in r_values if r <= 0) / max(1, len(r_values) - len(wins)), 2
-        ),
+        "avg_win_r": round(avg_win, 2) if wins else None,
+        "avg_loss_r": round(avg_loss, 2),
+        "expectancy_r": round(hit * avg_win + (1 - hit) * avg_loss, 3),
+        "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss else None,
+        "worst_losing_streak": worst_streak,
+        # After brokerage, tax and slippage.
+        "net": {
+            "total_r": round(net_equity, 1),
+            "avg_r": round(sum(net_values) / len(net_values), 3) if net_values else None,
+            "hit_rate": round(len(net_wins) / len(net_values) * 100, 1) if net_values else None,
+            "max_drawdown_r": round(net_dd, 1),
+            "cost_pct": ROUND_TRIP_COST * 100,
+        },
         "by_exit": {
             reason: sum(1 for t in closed if t.reason == reason)
             for reason in ("stop", "target", "time")
         },
+    }
+
+
+def _open_row(
+    trade: Trade,
+    names: dict[str, str],
+    by_symbol: dict[str, list[Bar]],
+) -> dict[str, Any]:
+    """One live position, marked to the latest known close."""
+    bars = by_symbol.get(trade.symbol) or []
+    last = bars[-1] if bars else None
+    row: dict[str, Any] = {
+        "s": trade.symbol, "n": names.get(trade.symbol),
+        "d": trade.entry_date.isoformat(),
+        "entry": round(trade.entry, 1), "stop": trade.stop, "target": trade.target,
+        "L": _layer_digest(trade.layers),
+    }
+    if last and trade.risk:
+        price = last[1]
+        row["now"] = round(price, 1)
+        row["ur"] = round((price - trade.entry) / trade.risk, 2)  # unrealised R
+        row["held"] = sum(1 for b in bars if b[0] >= trade.entry_date)
+        row["as_of"] = last[0].isoformat()
+    return row
+
+
+def market_regime(by_symbol: dict[str, list[Bar]], universe: list[str]) -> dict[date, bool]:
+    """Per-day verdict: was the market itself rising when this signal fired?
+
+    The page has been diagnosing its own losses as "long-only into a falling
+    market" for a while without acting on it. This is the measurement behind
+    that claim, built from the same bars the trades use rather than from an
+    index artifact, so it stays point-in-time by construction: each day's
+    reading uses only prices up to that day.
+
+    Breadth rather than a single index level. The rule trades individual names,
+    so what matters is whether names in general are trending, not whether a
+    cap-weighted average is being carried by three of them.
+    """
+    # One pass to collect each symbol's close per day, then a per-day count of
+    # how many sit above their own 50-day average.
+    daily: dict[date, list[float]] = {}
+    above: dict[date, int] = {}
+    total: dict[date, int] = {}
+
+    for symbol in universe:
+        bars = by_symbol.get(symbol) or []
+        closes: list[float] = []
+        for as_of, price, *_ in bars:
+            closes.append(price)
+            if len(closes) < 50:
+                continue
+            mean50 = sum(closes[-50:]) / 50
+            total[as_of] = total.get(as_of, 0) + 1
+            if price > mean50:
+                above[as_of] = above.get(as_of, 0) + 1
+            daily.setdefault(as_of, []).append(price)
+
+    # Above half the market trending is the threshold. Stated rather than
+    # tuned: picking the level that maximises the published result is exactly
+    # the fitting this project refuses to do.
+    return {
+        day: (above.get(day, 0) / count) > 0.5
+        for day, count in total.items()
+        if count >= 30          # too few names to call a market
     }
 
 
@@ -412,9 +543,28 @@ def build(dry_run: bool = False, limit: int | None = None) -> dict[str, Any]:
     if limit:
         eligible = eligible[:limit]
 
+    regime = market_regime(by_symbol, eligible)
+
+    # The market filter is computed and published, but NOT applied.
+    #
+    # Measured on this data it makes the rule worse per trade, not better:
+    # avg_r falls from -0.145 to -0.819 and the hit rate from 33% to 20%. Its
+    # only effect is cutting 94 trades to 10, which lowers the total loss by
+    # taking fewer positions rather than by taking better ones -- and ten trades
+    # is far too small a sample to claim anything either way.
+    #
+    # Turning it on because the headline total improved would be exactly the
+    # tuning this page exists to refuse. It ships as a published comparison so
+    # the reader can see what it does, and stays off until a larger sample says
+    # otherwise.
+    APPLY_REGIME = False
+
     all_trades: list[Trade] = []
     for symbol in eligible:
-        all_trades.extend(generate(symbol, by_symbol[symbol]))
+        all_trades.extend(generate(
+            symbol, by_symbol[symbol],
+            regime=regime if APPLY_REGIME else None,
+        ))
 
     closed = [t for t in all_trades if t.exit is not None]
     open_now = [t for t in all_trades if t.exit is None]
@@ -436,7 +586,8 @@ def build(dry_run: bool = False, limit: int | None = None) -> dict[str, Any]:
     for threshold in range(0, 5):
         variant: list[Trade] = []
         for symbol in eligible:
-            variant.extend(generate(symbol, by_symbol[symbol], min_layers=threshold))
+            variant.extend(generate(symbol, by_symbol[symbol], min_layers=threshold,
+                                    regime=regime if APPLY_REGIME else None))
         summary = summarise(variant)
         if summary.get("trades"):
             ladder.append({
@@ -447,6 +598,29 @@ def build(dry_run: bool = False, limit: int | None = None) -> dict[str, Any]:
                 "total_r": summary["total_r"],
                 "max_drawdown_r": summary["max_drawdown_r"],
             })
+
+    # What the market filter itself is worth, on the same terms as the layer
+    # ladder: the same walk-forward with the filter off, so the reader can see
+    # the trade-off rather than take the choice on trust. If it turns out to
+    # cost more than it saves, that is published too.
+    filtered: list[Trade] = []
+    for symbol in eligible:
+        filtered.extend(generate(symbol, by_symbol[symbol], regime=regime))
+    keys = ("trades", "hit_rate", "avg_r", "total_r", "max_drawdown_r")
+    # With the filter off, `all_trades` already is the unfiltered run; only the
+    # filtered variant needs generating a second time.
+    unfiltered = all_trades if not APPLY_REGIME else [
+        t for symbol in eligible for t in generate(symbol, by_symbol[symbol], regime=None)
+    ]
+    off = summarise(unfiltered)
+    on = summarise(filtered)
+    regime_compare = {
+        "applied": APPLY_REGIME,
+        "rows": [
+            {"filter": "off", **{k: off.get(k) for k in keys}},
+            {"filter": "on", **{k: on.get(k) for k in keys}},
+        ],
+    }
 
     payload = {
         "rules": {
@@ -460,23 +634,54 @@ def build(dry_run: bool = False, limit: int | None = None) -> dict[str, Any]:
             "stop": f"{STOP_SD} độ lệch chuẩn lợi suất ngày (60 phiên) dưới giá vào",
             "target": f"{TARGET_R}R",
             "max_hold": f"{MAX_HOLD} phiên",
+            "regime": (
+                "KHÔNG áp dụng. Bộ lọc thị trường (trên 50% số mã nằm trên trung "
+                "bình 50 phiên của chính nó) đã được tính và công bố ở bảng so "
+                "sánh bên dưới, nhưng bật lên làm kết quả mỗi lệnh xấu đi — nó "
+                "chỉ giảm tổng lỗ bằng cách vào ít lệnh hơn, không phải vào lệnh "
+                "tốt hơn, và cỡ mẫu còn lại quá nhỏ để kết luận."
+            ),
             "universe": f"vốn hóa ≥ {MIN_MARKET_CAP} tỷ VND, ≥ {MIN_HISTORY} phiên lịch sử",
+            "cost": (
+                f"đã trừ {ROUND_TRIP_COST * 100:.1f}% phí và thuế mỗi vòng "
+                "(cột 'sau phí'); cột còn lại là trước phí"
+            ),
+        },
+        # Things the page was quiet about, now stated where the rules are.
+        "caveats": {
+            "exit_fill": (
+                "Lệnh thoát tại GIÁ ĐÓNG CỬA của phiên chạm điều kiện, không phải "
+                "tại đúng mức dừng lỗ hay mục tiêu. Vì thế R không bị chặn ở -1 "
+                "hay +2: phiên giảm sâu cho kết quả tệ hơn -1R, phiên tăng mạnh "
+                "cho kết quả tốt hơn +2R."
+            ),
+            "layers_effective": (
+                f"Quy tắc nêu {MIN_LAYERS} trên 4 lớp, nhưng lớp khối ngoại luôn "
+                "bỏ phiếu trắng cho tới khi kho dữ liệu tích đủ ngày dòng tiền. "
+                f"Trên thực tế hiện là {MIN_LAYERS}/3."
+            ),
+            "sample": (
+                "Cỡ mẫu còn nhỏ và chỉ trải một giai đoạn thị trường. "
+                "Kết quả quá khứ không bảo đảm điều gì về tương lai."
+            ),
         },
         "stats": summarise(all_trades),
         "benchmark": benchmark,
+        # What the market filter costs and saves, on the same terms as the
+        # layer ladder above.
+        "regime_compare": regime_compare,
         # Ordered 0..4 confirmations. Layer 0 is the original cross-only rule,
         # kept so the reader can see the starting point rather than only the
         # tuned one.
         "layer_ladder": ladder,
         "layers_required": MIN_LAYERS,
         "universe": len(eligible),
+        # Open positions carry their current mark. Showing entry, stop and
+        # target without it left the one question a reader has -- is this
+        # winning right now -- answerable only by looking the price up
+        # elsewhere.
         "open": [
-            {
-                "s": t.symbol, "n": names.get(t.symbol),
-                "d": t.entry_date.isoformat(),
-                "entry": round(t.entry, 1), "stop": t.stop, "target": t.target,
-                "L": _layer_digest(t.layers),
-            }
+            _open_row(t, names, by_symbol)
             for t in sorted(open_now, key=lambda t: t.entry_date, reverse=True)
         ],
         "closed": [
@@ -484,7 +689,9 @@ def build(dry_run: bool = False, limit: int | None = None) -> dict[str, Any]:
                 "s": t.symbol, "n": names.get(t.symbol),
                 "d": t.entry_date.isoformat(), "x": t.exit_date.isoformat(),
                 "entry": round(t.entry, 1), "exit": round(t.exit, 1),
-                "r": round(t.r_multiple, 2), "why": t.reason,
+                "r": round(t.r_multiple, 2),
+                "rn": round(t.r_net, 2) if t.r_net is not None else None,
+                "why": t.reason,
                 "L": _layer_digest(t.layers),
             }
             # Every closed trade, not a recent slice. Truncating to 200 while
