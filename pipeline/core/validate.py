@@ -663,8 +663,79 @@ def validate_bds_listings(payload: dict[str, Any], previous: dict[str, Any] | No
     return rep
 
 
+def validate_crypto_profiles(payload: dict[str, Any], previous: dict[str, Any] | None) -> Report:
+    """Guard the per-coin dossiers.
+
+    The failure worth catching here is a supply figure that contradicts itself:
+    circulating above max supply, or a fully-diluted valuation below market cap.
+    Both are arithmetically impossible and both render as a confident number on
+    the page rather than as an error.
+    """
+    rep = Report()
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        rep.error("crypto profile index is empty")
+        return rep
+
+    symbols = [row.get("s") for row in rows]
+    if len(set(symbols)) != len(symbols) or any(not s for s in symbols):
+        rep.error("crypto profile index has a missing or duplicate symbol")
+
+    # Several coins share a ticker, so the symbol -> CoinGecko id mapping can
+    # silently attach the wrong asset's description and market cap to a row.
+    # Market cap divided by circulating supply must land near the traded price;
+    # when it does not, the profile belongs to a different coin.
+    board = {r["s"]: r for r in ((read_json("crypto.json") or {}).get("rows") or []) if r.get("s")}
+
+    missing, impossible, mismatched, described = [], [], [], 0
+    for row in rows:
+        symbol = row.get("s")
+        profile = read_json(f"crypto/{symbol}.json")
+        if profile is None:
+            missing.append(symbol)
+            continue
+        if profile.get("desc"):
+            described += 1
+
+        quote = board.get(symbol)
+        mc, supply = profile.get("mc"), profile.get("supply")
+        if quote and isinstance(quote.get("p"), (int, float)) and quote["p"] > 0 \
+           and isinstance(mc, (int, float)) and isinstance(supply, (int, float)) and supply > 0:
+            implied = mc / supply
+            # A factor of two either way absorbs the timing gap between the two
+            # sources; a wrong coin is normally out by orders of magnitude.
+            if not (0.5 < implied / quote["p"] < 2):
+                mismatched.append(symbol)
+        supply, max_supply = profile.get("supply"), profile.get("max_supply")
+        if isinstance(supply, (int, float)) and isinstance(max_supply, (int, float)) and max_supply > 0:
+            # A 1% tolerance: CoinGecko's two figures are snapshotted at
+            # slightly different moments and can disagree at the margin.
+            if supply > max_supply * 1.01:
+                impossible.append(symbol)
+                continue
+        mc, fdv = profile.get("mc"), profile.get("fdv")
+        if isinstance(mc, (int, float)) and isinstance(fdv, (int, float)) and fdv > 0 and mc > fdv * 1.01:
+            impossible.append(symbol)
+
+    if missing:
+        rep.error(f"{len(missing)} coins in the index have no profile file (first: {missing[0]})")
+    if impossible:
+        rep.error(f"{len(impossible)} profiles carry impossible supply/valuation (first: {impossible[0]})")
+    if mismatched:
+        rep.error(
+            f"{len(mismatched)} profiles imply a price unlike the traded one "
+            f"(first: {mismatched[0]}) — the symbol probably resolved to a different coin"
+        )
+    if described < len(rows) * 0.5:
+        rep.warn(f"only {described}/{len(rows)} coin profiles carry a description")
+
+    rep.stats.update(coins=len(rows), with_description=described)
+    return rep
+
+
 VALIDATORS = {
     "stocks.json": validate_stocks,
+    "crypto/index.json": validate_crypto_profiles,
     "bds.json": validate_bds,
     "bds/listings/index.json": validate_bds_listings,
     "us.json": validate_us,
@@ -686,6 +757,7 @@ _TAKES_PAYLOAD = {
     "flows.json", "signals.json", "news_ticker.json", "gex_btc.json",
     "gex_eth.json", "ticker/manifest.json", "breadth.json",
     "bds/listings/index.json",
+    "crypto/index.json",
 }
 
 
