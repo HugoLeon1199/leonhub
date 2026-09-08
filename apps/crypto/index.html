@@ -76,6 +76,34 @@ td{font-variant-numeric:tabular-nums; border-bottom:1px solid var(--line)}
   flex:0 0 auto; padding:9px 12px; background:var(--panel); border-top:1px solid var(--line);
   font-size:11.5px; color:var(--muted); line-height:1.5;
 }
+/* ---- coin dossier drawer ---- */
+tbody tr[data-sym]{cursor:pointer}
+tbody tr[data-sym]:hover{background:var(--panel-2)}
+tbody tr[data-sym]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(420px,100vw);z-index:40;
+  background:var(--panel);border-left:1px solid var(--line);box-shadow:-18px 0 50px #0007;
+  transform:translateX(100%);transition:transform .18s ease;display:flex;flex-direction:column}
+.drawer.open{transform:none}
+.drawer-head{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--line)}
+.drawer-head b{flex:1;font-size:15px;letter-spacing:.4px}
+.drawer-head button{border:1px solid var(--line);background:var(--panel-2);color:var(--text);
+  border-radius:6px;padding:4px 9px;cursor:pointer;font:12px inherit}
+.drawer-body{flex:1;overflow:auto;padding:14px 15px 24px}
+.dh{margin:16px 0 6px;font-size:14px}
+.dtags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.dtags span{font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:2px 8px}
+.ddesc{margin:0 0 14px;font-size:12.5px;line-height:1.65;color:var(--muted)}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:8px;overflow:hidden}
+.dcell{background:var(--panel);padding:9px 10px}
+.dcell span{display:block;color:var(--muted);font-size:10px}
+.dcell b{display:block;font-size:15px;font-variant-numeric:tabular-nums;margin-top:2px}
+.dcell small{display:block;color:var(--muted);font-size:9.5px;margin-top:2px;line-height:1.4}
+.dlinks{margin:14px 0 10px;font-size:12.5px}
+.dlinks a{color:var(--accent);text-decoration:none;margin-right:12px}
+.dlinks a:hover{text-decoration:underline}
+.dnote{font-size:11px;color:var(--muted);line-height:1.55;border-top:1px solid var(--line);padding-top:10px}
+@media(max-width:620px){.dgrid{grid-template-columns:1fr}}
+
 /* ---- "how to read this" panel ----
    Collapsed by default: a reader who already knows the vocabulary should not
    scroll past an explanation to reach the numbers. */
@@ -125,8 +153,17 @@ td{font-variant-numeric:tabular-nums; border-bottom:1px solid var(--line)}
       <dt>Số lệnh</dt><dd>Số giao dịch khớp trong 24 giờ. Nhiều lệnh nhỏ khác hẳn ít lệnh lớn — dùng cùng "lệnh trung bình" để phân biệt.</dd>
       <dt>Lệnh trung bình</dt><dd>Giá trị giao dịch chia số lệnh. Cao bất thường thường là dấu vết của tiền lớn.</dd>
     </dl>
-    <p><b>Nguồn.</b> Binance, lấy trực tiếp trong trình duyệt của bạn tại thời điểm mở trang.
-    Không lưu lịch sử, nên đây là ảnh chụp hiện tại chứ không phải chuỗi thời gian.</p>
+    <p><b>Bấm vào một dòng</b> để mở hồ sơ đồng đó: mô tả dự án, vốn hoá, nguồn cung đang lưu
+    hành so với tối đa, đỉnh lịch sử và biến động 7 ngày / 30 ngày / 1 năm.</p>
+    <dl>
+      <dt>Vốn hoá</dt><dd>Giá nhân số lượng <i>đang lưu hành</i>. Đây là quy mô thật của đồng đó, khác hẳn giá một đơn vị — một đồng giá $0,001 có thể lớn hơn đồng giá $100.</dd>
+      <dt>FDV</dt><dd>Vốn hoá nếu <i>toàn bộ</i> nguồn cung đã lưu hành. FDV lớn hơn vốn hoá nhiều nghĩa là còn nhiều token sẽ được phát hành, và mỗi đợt phát hành là một lần pha loãng.</dd>
+      <dt>Đã phát hành</dt><dd>Phần trăm nguồn cung tối đa đã ra thị trường. Thấp nghĩa là áp lực bán từ việc mở khoá token còn ở phía trước.</dd>
+      <dt>Đỉnh lịch sử</dt><dd>Giá cao nhất từng đạt và khoảng cách hiện tại so với nó.</dd>
+    </dl>
+    <p><b>Nguồn.</b> Giá, thanh khoản và biến động 24 giờ lấy trực tiếp từ Binance trong trình
+    duyệt của bạn — là số hiện tại. Mô tả, vốn hoá và nguồn cung lấy từ CoinGecko theo đợt cập
+    nhật định kỳ nên có thể trễ hơn giá; trang ghi rõ điều này ở cuối mỗi hồ sơ.</p>
   </div>
 </details>
 
@@ -137,12 +174,26 @@ td{font-variant-numeric:tabular-nums; border-bottom:1px solid var(--line)}
 
 <div class="note" id="note"></div>
 
+<aside class="drawer" id="drawer" aria-label="Hồ sơ coin">
+  <div class="drawer-head">
+    <b id="drawerTitle">—</b>
+    <button type="button" id="drawerClose" aria-label="Đóng">✕</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
 const fmt = (v, d = 2) => v == null ? "—"
   : Number(v).toLocaleString("en-US", {maximumFractionDigits: d, minimumFractionDigits: d});
 const int = v => v == null ? "—" : Number(v).toLocaleString("en-US");
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nf = (v, d = 2) => v == null || !isFinite(v) ? "—"
+  : Number(v).toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+// Market caps run to the trillions; a raw number there is unreadable.
+const compact = v => v == null || !isFinite(v) ? "—"
+  : Intl.NumberFormat("en-US", {notation:"compact", maximumFractionDigits:2}).format(v);
 
 /* Price needs a variable precision: a coin at 79,000 and one at 0.000012 cannot
    share a format, and rounding the second to two decimals prints 0.00. */
@@ -255,9 +306,98 @@ function render(){
     th.textContent = COLS.find(c => c.k === th.dataset.k).t
       + (th.dataset.k === sortKey ? (sortDir < 0 ? " ↓" : " ↑") : ""));
   $("rows").innerHTML = rows.length
-    ? rows.map(r => `<tr>${COLS.map(c => `<td>${c.f(r)}</td>`).join("")}</tr>`).join("")
+    ? rows.map(r => `<tr data-sym="${r.s}" tabindex="0">${COLS.map(c => `<td>${c.f(r)}</td>`).join("")}</tr>`).join("")
     : '<tr><td colspan="7" class="msg">Không có cặp nào khớp bộ lọc.</td></tr>';
 }
+
+/* ---------- coin detail ----------
+   The equity board opens a per-ticker dossier; this one did not open anything,
+   so a reader who did not already know what SUI or RENDER is got a symbol and a
+   percentage. Profiles are published as static files by
+   pipeline/sources/crypto_profiles.py because CoinGecko rate-limits hard --
+   letting each reader's browser call it would burn a shared quota and start
+   returning 429 to everyone. */
+const PROFILES = {};
+
+async function openCoin(sym){
+  const box = $("drawer"), body = $("drawerBody");
+  if(!box) return;
+  $("drawerTitle").textContent = sym;
+  body.innerHTML = '<div class="msg">Đang tải hồ sơ…</div>';
+  box.classList.add("open");
+
+  if(PROFILES[sym] === undefined){
+    PROFILES[sym] = await fetch(`../../data/crypto/${encodeURIComponent(sym)}.json`, {cache:"no-cache"})
+      .then(r => r.ok ? r.json() : null).catch(() => null);
+  }
+  const p = PROFILES[sym];
+  const row = ROWS.find(r => r.s === sym) || {};
+
+  // Live board figures first: they are today's, and the profile is a periodic
+  // snapshot. Mixing them without saying which is which would be the misread.
+  const money = v => v == null || !isFinite(v) ? "—" : "$" + compact(v);
+  const pct = v => v == null || !isFinite(v) ? "—"
+    : `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(2)}%</span>`;
+  const cell = (k, v, sub) => `<div class="dcell"><span>${k}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ""}</div>`;
+
+  let html = `<div class="dgrid">`
+    + cell("Giá", row.p != null ? nf(row.p, row.p < 1 ? 6 : 2) : "—", "USDT")
+    + cell("24 giờ", pct(row.chp))
+    + cell("Thanh khoản 24h", money(row.v != null ? row.v * 1e6 : null), "giá trị giao dịch")
+    + cell("Vị trí trong biên", row.pos != null ? row.pos : "—", "0 = đáy, 100 = đỉnh 24h")
+    + `</div>`;
+
+  if(!p){
+    html += `<div class="msg">Chưa có hồ sơ cho mã này. Chạy `
+      + `<code>python -m pipeline.sources.crypto_profiles</code> để bổ sung.</div>`;
+    body.innerHTML = html;
+    return;
+  }
+
+  // Dilution: circulating against max supply is the one thing a price chart
+  // cannot show, and it is why FDV can dwarf market cap.
+  const dilution = p.supply && p.max_supply ? p.supply / p.max_supply * 100 : null;
+
+  html += `<h3 class="dh">${esc(p.n)}${p.rank ? ` · hạng ${p.rank}` : ""}</h3>`;
+  if(p.cat?.length) html += `<div class="dtags">${p.cat.map(c => `<span>${esc(c)}</span>`).join("")}</div>`;
+  if(p.desc) html += `<p class="ddesc">${esc(p.desc)}</p>`;
+
+  html += `<div class="dgrid">`
+    + cell("Vốn hoá", money(p.mc))
+    + cell("FDV", money(p.fdv), "nếu toàn bộ nguồn cung lưu hành")
+    + cell("Đang lưu hành", p.supply ? compact(p.supply) : "—",
+        p.max_supply ? `trên tối đa ${compact(p.max_supply)}` : "không giới hạn nguồn cung")
+    + (dilution != null ? cell("Đã phát hành", dilution.toFixed(1) + "%", "phần còn lại sẽ pha loãng dần") : "")
+    + cell("Đỉnh lịch sử", p.ath ? nf(p.ath, p.ath < 1 ? 6 : 2) : "—",
+        p.ath_date ? `${p.ath_date}${p.ath_pct != null ? ` · hiện thấp hơn ${Math.abs(p.ath_pct).toFixed(0)}%` : ""}` : "")
+    + cell("7 ngày", pct(p.d7))
+    + cell("30 ngày", pct(p.d30))
+    + cell("1 năm", pct(p.d1y))
+    + `</div>`;
+
+  html += `<div class="dlinks">`
+    + `<a href="../chart/?sym=${encodeURIComponent(sym)}&tf=1h" target="_top">Mở biểu đồ →</a>`
+    + (p.home ? ` <a href="${esc(p.home)}" target="_blank" rel="noopener noreferrer">Trang chủ dự án →</a>` : "")
+    + `</div>`
+    + `<div class="dnote">Giá và thanh khoản là số hiện tại từ Binance. Vốn hoá, nguồn cung và `
+    + `mô tả lấy từ CoinGecko theo đợt cập nhật định kỳ, nên có thể trễ hơn giá.</div>`;
+
+  body.innerHTML = html;
+}
+
+$("rows").addEventListener("click", e => {
+  const tr = e.target.closest("tr[data-sym]");
+  if(tr) openCoin(tr.dataset.sym);
+});
+$("rows").addEventListener("keydown", e => {
+  if(e.key !== "Enter") return;
+  const tr = e.target.closest("tr[data-sym]");
+  if(tr) openCoin(tr.dataset.sym);
+});
+$("drawerClose").onclick = () => $("drawer").classList.remove("open");
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape") $("drawer").classList.remove("open");
+});
 
 ["q","vMin","cMin","cMax"].forEach(id =>
   $(id).addEventListener(id === "q" ? "input" : "change", render));
