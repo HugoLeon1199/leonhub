@@ -4,7 +4,7 @@ Audit ngày 2026-09-04. Mục tiêu của tài liệu này là để phiên Clau
 theo biết chính xác phần nào đã có, phần nào chỉ thiếu UI, phần nào cần collector
 mới, và phần nào không nên sao chép nguyên trạng.
 
-## Cập nhật triển khai 2026-09-04 (Codex, phần này ghi đè trạng thái cũ bên dưới)
+## Cập nhật triển khai 2026-09-08 (Codex, phần này ghi đè trạng thái cũ bên dưới)
 
 - **G4 đã xong:** 14 timeframe chính thức cùng hỗ trợ bởi Binance/Hyperliquid
   (`1m` đến `1M`), tám khung thường dùng hiện trực tiếp và sáu khung ở menu
@@ -32,15 +32,16 @@ mới, và phần nào không nên sao chép nguyên trạng.
   statement rows. Artifact lazy có 1.719 ticker/1.719 dossier/1.697 statement,
   1.044.029 ratio points, 46,39 MiB; validator chặn nếu dossier <95% hoặc
   statement <90% để nguồn hỏng không âm thầm publish trang rỗng.
-- **Valuation guard đã xong, valuation engine chưa bịa:** BĐS/holding dùng
-  NAV/SOTP khi đủ dữ liệu tài sản; bank/securities/insurance cần RIM; doanh nghiệp
-  thường chỉ DCF khi có FCF. Thiếu input thì UI từ chối in fair value thay vì
-  rơi về một con số vô lý.
+- **Valuation scenario cơ sở đã xong:** bank/securities/insurance dùng RIM từ
+  vốn chủ và ROE chuẩn hóa 5 năm; doanh nghiệp còn lại dùng lợi nhuận lịch sử
+  chiết khấu 10 năm. UI công bố good/base/cautious, cost of capital, terminal
+  growth, margin of safety, share count, input period, confidence và dòng lợi
+  nhuận đã chiết khấu. BĐS/holding như VIC luôn gắn nhãn low-confidence earnings
+  proxy và cảnh báo không phải NAV/SOTP.
 
-Phần thật sự còn thiếu sau vòng này: valuation scenario engine có assumptions
-đã kiểm tra, macro/narrative có fact references, chart workspace nhiều ô/loại
-chart và timeframe tự do, cùng CVD/footprint/liquidation lịch sử. Không được đổi
-nhãn các phần trên thành “đã xong” chỉ vì đã có card giao diện.
+Phần thật sự còn thiếu sau vòng này: NAV/SOTP theo dự án, DCF dựa trên capex/FCF,
+valuation snapshot/backtest, macro/narrative có fact references, chart workspace
+nhiều ô/loại chart và timeframe tự do, cùng CVD/footprint/liquidation lịch sử.
 
 ## Kết luận ngắn
 
@@ -49,8 +50,8 @@ nhãn các phần trên thành “đã xong” chỉ vì đã có card giao di�
   workspace: 43 layout, tối đa 16 chart, 10 loại chart và timeframe tùy ý.
 - Trang ticker LEON nay đã là dossier lazy-load rộng toàn thị trường: profile,
   BCTC, quản trị/sở hữu, sự kiện, chart giá, ratio history và peer comparison.
-  Khoảng thiếu lớn còn lại là valuation scenario engine và narrative có dẫn
-  facts, không còn là độ phủ dữ liệu/giao diện cơ bản.
+  Định giá lịch sử/RIM đã chạy; khoảng thiếu lớn còn lại là NAV/SOTP/FCF sâu,
+  snapshot sai số và narrative có dẫn facts.
 - LEON có lợi thế thật ở 1.751 mã, percentile tám năm theo quý, foreign flow,
   room ngoại, SSI book, tín hiệu công khai và provenance giá. Không được bỏ các
   phần này chỉ để giống giao diện mẫu.
@@ -221,7 +222,7 @@ governance/events, macro hay AI dossier.
 | Subsidiaries | Chưa lưu | Collector `Company.subsidiaries()` |
 | Corporate events | Chưa lưu | Collector `Company.events()` |
 | Macro state | Chưa có ticker mount | Có thể tái dùng brief/news inputs nhưng cần artifact riêng |
-| Valuation DCF/RIM/NAV | Chưa có | Chỉ làm sau khi statement inputs qua validation |
+| Valuation scenario | Có RIM + discounted earnings | Còn NAV/SOTP, capex-FCF DCF và snapshot/backtest |
 | AI overview/moat | Chưa có | Sinh có citations/facts/timestamp/confidence; không bake hallucination |
 | Ticker news breadth | Có nhưng rất hẹp | Giữ precision; thêm aliases/sources có kiểm thử thay vì body matching |
 | Search/watchlist | Chưa có trên ticker | Dùng chung component với chart/stocks, không copy ba bản state |
@@ -326,8 +327,8 @@ lazy-load; price/card labels nói rõ period.
 
 1. Ingest income/balance/cash-flow, normalize item IDs/unit/sign/annual vs Q.
 2. Derive chart families theo ngành và verify bằng ít nhất 10 mã/nhóm.
-3. Implement suitability router + DCF/RIM/NAV refusal rules.
-4. Add scenarios, assumptions and valuation snapshot history.
+3. ~~Implement suitability router + RIM/earnings scenarios.~~ Đã xong.
+4. Add project NAV, capex-FCF DCF, editable assumptions and valuation snapshot history.
 
 ### B2.4 — narrative
 

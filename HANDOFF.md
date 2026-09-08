@@ -17,6 +17,16 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
 
 ## 2026-09-08 VN ticker navigation, freshness and evidence
 
+- Valuation is now an explicit historical scenario engine instead of a refusal
+  card. Financial firms use a 10-year residual-income model (current equity,
+  normalized 5Y ROE, 25% payout default and ROE fade); other firms use a
+  10-year discounted-earnings proxy based on median 5Y NPAT and robust
+  profit/revenue growth. Both publish good/base/cautious results, cost of
+  capital, terminal growth, current diluted share count, 30% margin of safety,
+  confidence, input period and projected discounted flows. VIC renders a low-
+  confidence earnings-power estimate plus an explicit warning that it is not
+  project-level NAV/SOTP. Headless Chrome QA covered VIC, FPT and VCB; scenarios
+  were monotonic and units rendered as VND/share.
 - Each ticker dossier now has a prominent `Mở Chart LEON` action. It routes
   through `hub/?tab=chart&sym=<ticker>&tf=1d`, so the currently viewed VN code
   opens directly in LEON's own full chart workspace at the supported daily
@@ -216,11 +226,10 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
   charts, and industry peer median/rank/sample-size comparison.
 - Existing LEON advantages remain: foreign flow/room, SSI level-1 depth,
   momentum, disclosed signals and strict headline-only news matching.
-- Valuation router is intentionally a guard, not a fake calculator: property/
-  holding companies require NAV/SOTP asset inputs; banks/securities/insurance
-  require RIM inputs; other companies require usable FCF for DCF. Without those
-  inputs it refuses to print fair value. Vietcap analyst target is shown as a
-  source opinion, never presented as LEON intrinsic value.
+- Valuation now has a transparent numeric scenario layer: RIM for financials
+  and discounted historical earnings for other firms. Property/holding output
+  is deliberately labelled a low-confidence earnings proxy, not NAV/SOTP.
+  Vietcap analyst target remains a separately attributed source opinion.
 
 ## Source boundary
 
@@ -254,9 +263,10 @@ python -m pipeline.core.validate
 
 Do not reopen completed G4/H2/H3/H4/B2 data/UI work. Remaining parity work is:
 
-1. A valuation engine with validated inputs, industry-specific RIM/NAV/SOTP/DCF,
-   scenarios, assumption provenance and snapshot history. The guard/refusal
-   layer exists; the numeric engine does not.
+1. Full asset/FCF valuation depth: project-level NAV/SOTP for property/holdings,
+   capex-based FCF DCF for ordinary firms, assumption editing and persisted
+   valuation snapshots/backtests. The current historical earnings/RIM scenario
+   engine is live, but those deeper input families are not.
 2. Macro and company narrative with fact references, model/generated timestamp
    and confidence. Do not generate prose from unvalidated facts.
 3. Multi-chart workspace (reference has many layouts/up to 16 panes), alternate
