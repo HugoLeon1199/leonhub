@@ -733,9 +733,62 @@ def validate_crypto_profiles(payload: dict[str, Any], previous: dict[str, Any] |
     return rep
 
 
+def validate_crypto_context(payload: dict[str, Any], previous: dict[str, Any] | None) -> Report:
+    """Guard the market-context artifact.
+
+    Each figure comes from a different API, so the check is per-metric bounds
+    rather than a shape test: a source that changes unit (TH/s to EH/s, a
+    percentage to a fraction) keeps returning valid JSON and starts publishing a
+    number three orders of magnitude wrong.
+    """
+    rep = Report()
+    if not isinstance(payload, dict) or len(payload) < 3:
+        rep.error("crypto context is empty or missing most sections")
+        return rep
+
+    # (path, low, high) -- wide enough to survive real market moves, narrow
+    # enough that a unit change cannot pass.
+    bounds = [
+        ("market.dom_btc", 20.0, 90.0),
+        ("market.dom_eth", 2.0, 40.0),
+        ("mvrv.value", 0.2, 10.0),
+        ("fng.value", 0.0, 100.0),
+        # TH/s, per the endpoint's own `unit` field: 880,650,223 TH/s is
+        # 881 EH/s, which matches the network's published hash rate. The band
+        # spans roughly 100 to 100,000 EH/s.
+        ("network.hashrate", 1e8, 1e11),
+        ("network.tx", 50_000.0, 2_000_000.0),
+        ("tvl.value", 1e9, 1e13),
+        ("market.mcap", 1e11, 1e14),
+    ]
+    outside = []
+    for path, low, high in bounds:
+        section, key = path.split(".")
+        value = (payload.get(section) or {}).get(key)
+        if value is None:
+            continue
+        if not isinstance(value, (int, float)) or not (low <= value <= high):
+            outside.append(f"{path}={value}")
+
+    if outside:
+        rep.error(
+            f"{len(outside)} context metrics outside their plausible range "
+            f"({', '.join(outside[:3])}) — a source unit probably changed"
+        )
+    if payload.get("failed"):
+        rep.warn(f"context sources failed: {', '.join(payload['failed'][:4])}")
+
+    present = [k for k in ("network", "market", "mvrv", "tvl", "fng") if payload.get(k)]
+    if len(present) < 3:
+        rep.error(f"only {len(present)} of 5 context sections present: {present}")
+    rep.stats.update(sections=len(present), checked=len(bounds) - len(outside))
+    return rep
+
+
 VALIDATORS = {
     "stocks.json": validate_stocks,
     "crypto/index.json": validate_crypto_profiles,
+    "crypto/context.json": validate_crypto_context,
     "bds.json": validate_bds,
     "bds/listings/index.json": validate_bds_listings,
     "us.json": validate_us,
@@ -758,6 +811,7 @@ _TAKES_PAYLOAD = {
     "gex_eth.json", "ticker/manifest.json", "breadth.json",
     "bds/listings/index.json",
     "crypto/index.json",
+    "crypto/context.json",
 }
 
 

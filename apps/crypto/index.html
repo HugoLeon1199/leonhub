@@ -76,6 +76,20 @@ td{font-variant-numeric:tabular-nums; border-bottom:1px solid var(--line)}
   flex:0 0 auto; padding:9px 12px; background:var(--panel); border-top:1px solid var(--line);
   font-size:11.5px; color:var(--muted); line-height:1.5;
 }
+/* ---- market context strip ---- */
+.ctx{margin:0 12px 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel);overflow:hidden;flex:0 0 auto}
+.ctx[hidden]{display:none}
+.ctx-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.ctx-head b{font-size:12px}
+.ctx-head span{font-size:10.5px;color:var(--muted)}
+.ctiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:1px;background:var(--line)}
+.ctile{background:var(--panel);padding:8px 11px;min-width:0}
+.ctile span{display:block;color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctile b{display:block;font-size:15px;font-variant-numeric:tabular-nums;margin-top:2px}
+.ctile small{display:block;color:var(--muted);font-size:9.5px;margin-top:2px}
+.ctile i{font-style:normal}
+.ctile i.up{color:var(--up)} .ctile i.down{color:var(--down)}
+
 /* ---- coin dossier drawer ---- */
 tbody tr[data-sym]{cursor:pointer}
 tbody tr[data-sym]:hover{background:var(--panel-2)}
@@ -139,6 +153,8 @@ tbody tr[data-sym]:focus-visible{outline:2px solid var(--accent);outline-offset:
   <span class="count" id="count">Đang tải…</span>
 </div>
 
+<div class="ctx" id="ctx" hidden></div>
+
 <div class="presets" id="presets"></div>
 
 <details class="howto">
@@ -152,6 +168,16 @@ tbody tr[data-sym]:focus-visible{outline:2px solid var(--accent);outline-offset:
       <dt>Vị trí trong biên</dt><dd>Giá hiện tại nằm ở đâu giữa đáy và đỉnh 24 giờ: 100 là đang ở đỉnh, 0 là đáy. Cao kèm tăng mạnh nghĩa là đang phá lên; thấp kèm giảm nghĩa là đang bị bán xuống.</dd>
       <dt>Số lệnh</dt><dd>Số giao dịch khớp trong 24 giờ. Nhiều lệnh nhỏ khác hẳn ít lệnh lớn — dùng cùng "lệnh trung bình" để phân biệt.</dd>
       <dt>Lệnh trung bình</dt><dd>Giá trị giao dịch chia số lệnh. Cao bất thường thường là dấu vết của tiền lớn.</dd>
+    </dl>
+    <p><b>Dải trên cùng — bối cảnh thị trường.</b> Trả lời câu "nền chung đang thế nào"
+    trước khi xét từng đồng. Toàn bộ là số đo được, ghi rõ nguồn.</p>
+    <dl>
+      <dt>BTC thống trị</dt><dd>Bitcoin chiếm bao nhiêu phần vốn hoá toàn thị trường. Tăng nghĩa là tiền đang rút khỏi altcoin về BTC; giảm nghĩa là khẩu vị rủi ro đang mở rộng.</dd>
+      <dt>MVRV</dt><dd>Giá thị trường chia giá vốn trung bình của toàn bộ coin trên chuỗi. Dưới 1 nghĩa là người nắm giữ trung bình đang lỗ — vùng này lịch sử thường là đáy. Trên 3,5 là vùng đỉnh chu kỳ.</dd>
+      <dt>Hash rate</dt><dd>Tổng sức đào của mạng Bitcoin. Tăng nghĩa là thợ đào đầu tư thêm; giảm mạnh đột ngột thường đi kèm sự kiện thật (giá xuống dưới chi phí đào, mất điện vùng lớn).</dd>
+      <dt>Giao dịch / Địa chỉ hoạt động</dt><dd>Mức sử dụng thật của mạng, độc lập với giá. Giá tăng mà hoạt động giảm là phân kỳ đáng chú ý.</dd>
+      <dt>TVL DeFi</dt><dd>Tổng tài sản đang khoá trong các giao thức DeFi. Thước đo tiền đang làm việc trên chuỗi thay vì nằm trên sàn.</dd>
+      <dt>Tâm lý</dt><dd>Chỉ số Fear &amp; Greed 0-100, kèm trung bình 7 ngày để phân biệt một phiên cực đoan với tâm lý kéo dài.</dd>
     </dl>
     <p><b>Bấm vào một dòng</b> để mở hồ sơ đồng đó: mô tả dự án, vốn hoá, nguồn cung đang lưu
     hành so với tối đa, đỉnh lịch sử và biến động 7 ngày / 30 ngày / 1 năm.</p>
@@ -309,6 +335,58 @@ function render(){
     ? rows.map(r => `<tr data-sym="${r.s}" tabindex="0">${COLS.map(c => `<td>${c.f(r)}</td>`).join("")}</tr>`).join("")
     : '<tr><td colspan="7" class="msg">Không có cặp nào khớp bộ lọc.</td></tr>';
 }
+
+/* ---------- market context ----------
+   A price move only means something against what the network around it is
+   doing. These are measured figures with named sources -- no generated
+   narrative, because a paragraph written from headlines reads as authoritative
+   and cannot be checked. Where a label is applied it states the threshold that
+   produced it, so the reader can disagree with the rule rather than the verdict. */
+async function loadContext(){
+  const box = $("ctx");
+  const c = await fetch("../../data/crypto/context.json", {cache:"no-cache"})
+    .then(r => r.ok ? r.json() : null).catch(() => null);
+  if(!c){ return; }
+
+  const chg = v => v == null || !isFinite(v) ? ""
+    : `<i class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(2)}%</i>`;
+  const tile = (k, v, sub) => `<div class="ctile"><span>${k}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ""}</div>`;
+
+  const items = [];
+  if(c.market?.mcap != null)
+    items.push(tile("Vốn hoá toàn thị trường", "$" + compact(c.market.mcap), chg(c.market.mcap_24h) + " 24 giờ"));
+  if(c.market?.dom_btc != null)
+    items.push(tile("BTC thống trị", c.market.dom_btc.toFixed(1) + "%",
+      c.market.dom_eth != null ? `ETH ${c.market.dom_eth.toFixed(1)}%` : ""));
+  if(c.fng)
+    items.push(tile("Tâm lý", `${c.fng.value} · ${esc(c.fng.label || "")}`,
+      c.fng.avg_7d != null ? `trung bình 7 ngày ${c.fng.avg_7d}` : ""));
+  if(c.mvrv?.value != null){
+    // MVRV compares price to the average cost basis of all coins on chain.
+    // Below 1 the median holder is underwater; the cycle-top zone has
+    // historically been above 3.5.
+    const m = c.mvrv.value;
+    const read = m < 1 ? "dưới giá vốn" : m < 2 ? "vùng hợp lý" : m < 3.5 ? "cao" : "vùng đỉnh chu kỳ";
+    items.push(tile("MVRV", m.toFixed(2), `${read} · &lt;1 lỗ, &gt;3,5 đỉnh`));
+  }
+  if(c.network?.hashrate != null)
+    // blockchain.info reports in TH/s; the industry quotes EH/s, and 880,650
+    // TH/s is a number nobody reads as "the network is at 881 exahash".
+    items.push(tile("Hash rate", (c.network.hashrate / 1e6).toFixed(0) + " EH/s", chg(c.network.hashrate_7d) + " 7 ngày"));
+  if(c.network?.tx != null)
+    items.push(tile("Giao dịch / ngày", compact(c.network.tx), chg(c.network.tx_7d) + " 7 ngày"));
+  if(c.network?.addresses != null)
+    items.push(tile("Địa chỉ hoạt động", compact(c.network.addresses), chg(c.network.addresses_7d) + " 7 ngày"));
+  if(c.tvl?.value != null)
+    items.push(tile("TVL DeFi", "$" + compact(c.tvl.value), chg(c.tvl.chg_7d) + " 7 ngày"));
+
+  if(!items.length) return;
+  box.innerHTML = `<div class="ctx-head"><b>Bối cảnh thị trường</b>`
+    + `<span>Số đo từ ${c.sources ? c.sources.length : 0} nguồn công khai · cập nhật ${esc((c.updated_at || "").slice(0, 10))}</span></div>`
+    + `<div class="ctiles">${items.join("")}</div>`;
+  box.hidden = false;
+}
+loadContext();
 
 /* ---------- coin detail ----------
    The equity board opens a per-ticker dossier; this one did not open anything,
