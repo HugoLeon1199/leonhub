@@ -36,8 +36,33 @@ serving. Price history comes from VPS instead (`histdatafeed.vps.com.vn`,
 TradingView UDF shape), which also proved more accurate — it carries the current
 session's close where DNSE lagged a day and disagreed on the prior one.
 
-**SSI iBoard pins CORS to `iboard.ssi.com.vn`** and refuses three exchange calls
-made back to back. Pipeline-side only, with a few seconds between calls.
+**SSI iBoard is not an API we are entitled to, and it blocks by IP.** The
+endpoint carries no key; the collector reaches it by sending
+`Referer: iboard.ssi.com.vn` to impersonate SSI's own web client. Measured
+2026-09-08: the third back-to-back call returns 403, and after that the block is
+on the IP rather than the request — spacing calls 6, 8 and 10 seconds apart all
+returned 403, and it was still refusing eight minutes later. A daily job resting
+on it is one burst away from silence. SSI does publish a real API (FastConnect
+Data, `fc-data.ssi.com.vn`, ConsumerID/ConsumerSecret/PrivateKey with RS256) but
+it requires an SSI trading account and in-branch registration. `vps_board.py` is
+the primary source for these fields now; `ssi_board.py` remains as a fallback
+and cross-check for whoever holds those credentials.
+
+**VPS `fRoom` is scaled down by ten.** Remaining foreign room comes back as
+348,204,472 for VIC where the real figure is 3,482,044,728 — 44.8% of
+7,762,186,429 listed shares, which is what SSI independently reports. Left
+uncorrected it understates available foreign room by 90%, and the number looks
+entirely plausible. `vps_board.py` multiplies by ten and re-audits every run
+against listed shares and the published room percentage, because the constant is
+measured rather than documented and could change without notice. SBS is a real
+outlier rather than a bug: the source itself reports 105.6% room, and both feeds
+agree on it.
+
+**The VPS board truncates a long symbol list silently.** 400 requested returns
+350 rows, 200 returns 174 — no error, just fewer rows. Batch well inside that
+and check which symbols came back rather than assuming the request was honoured.
+Of 1,751 board symbols it returns 1,522; the 229 absent are delisted or untraded
+UPCOM names, none of which traded in the last session.
 
 **Yahoo Finance's chart endpoint has no CORS header.** US OHLCV is collected
 pipeline-side into `data/us.json`; browser code must not call the endpoint
