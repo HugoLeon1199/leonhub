@@ -17,6 +17,10 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
 
 ## 2026-09-08 VN ticker navigation, freshness and evidence
 
+- Each ticker dossier now has a prominent `Mở Chart LEON` action. It routes
+  through `hub/?tab=chart&sym=<ticker>&tf=1d`, so the currently viewed VN code
+  opens directly in LEON's own full chart workspace at the supported daily
+  interval; the existing inline five-year chart and TradingView escape remain.
 - `apps/stocks/index.html`: both the MÃ and full TÊN are now links to the same
   ticker dossier. The name column has an explicit readable width and wraps by
   words; the footer separates the market session date from the exact artifact
