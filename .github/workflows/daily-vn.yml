@@ -56,14 +56,25 @@ jobs:
           restore-keys: warehouse-
 
       - name: Collect price board and foreign flow
+        id: vietcap_board
         run: python -m pipeline.sources.vn_equity --what board
+        continue-on-error: true
 
       # Second source: adds book depth and foreign ownership room, and
       # cross-checks the first — the two agreed to 0.0007% on market-wide
       # foreign net when this was set up.
       - name: Collect SSI board
+        id: ssi_board
         run: python -m pipeline.sources.ssi_board --with-depth
         continue-on-error: true
+
+      # Vietcap/VNStock occasionally returns an HTML/error body where its
+      # wrapper expects JSON. SSI writes the same eq_quote contract, so it is a
+      # valid daily fallback. Do not hide a total outage: stop when neither
+      # source produced a usable board.
+      - name: Require at least one quote source
+        if: steps.vietcap_board.outcome != 'success' && steps.ssi_board.outcome != 'success'
+        run: exit 1
 
       # Fills any ticker whose price history is still thin. Skips those already
       # covered, so after the first full pass this is a no-op most days. Not

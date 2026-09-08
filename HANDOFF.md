@@ -42,6 +42,12 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
 - GitHub Pages deployment and App syntax checks both passed for the overview
   push. Production probes returned HTTP 200 and valid JSON for stocks, BDS,
   flows, GEX and `data/crypto/context.json`.
+- `.github/workflows/daily-vn.yml` now lets the proven SSI quote collector act
+  as a fallback when the VNStock/Vietcap wrapper fails before board collection.
+  A guard still fails the workflow if both quote sources fail, so this does not
+  turn a total source outage into a green stale-data build. Do not manually run
+  the close workflow during a live VN session; the next scheduled post-close
+  run is the first honest end-to-end confirmation.
 
 ## 2026-09-05 Market Structure live-flow upgrade
 
