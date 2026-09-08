@@ -105,6 +105,23 @@ Fetch `ctVal` from `/api/v5/public/instruments` per instrument rather than
 hard-coding it, and skip the venue when the multiplier cannot be read, since a
 wrong notional silently corrupts the buy/sell totals beside it.
 
+**CoinGecko rate-limits every route, including `coins/markets`.** Six calls back
+to back all returned 429, the block persisted at six seconds apart, and the
+window reset after roughly seventy seconds. The symbol-map sweep has to be
+paced like the per-coin calls; fetching six pages in a row failed the whole run
+before a single profile was written. This is also why profiles are published as
+static files rather than fetched from the browser: each reader would burn one
+shared quota.
+
+**CoinGecko keeps delisted and migrated tokens under their old symbol.** `GAL`
+resolves to "GAL (migrated to Gravity - G)" at $0.33 while Binance trades a
+different GAL at $2.54 — a 7.7x error that renders as a confident market cap.
+Symbol collisions are the norm, not the exception: `TON` at rank 829 is Tokamak
+Network, not Toncoin. Two defences, both needed — the name is checked for
+migration markers, and market cap over circulating supply must land within 2x of
+the traded price or the profile is discarded. Depth alone does not fix this;
+searching further down the ranked list finds *more* wrong matches, not fewer.
+
 **Binance rejects an entire batched `ticker/24hr` request if any one symbol is
 unknown to it.** A single VN ticker starred into the chart watchlist therefore
 blanked the price of every crypto beside it. Quotes are now partitioned by

@@ -64,24 +64,43 @@ def _trim(text: str, limit: int = MAX_DESC) -> str | None:
     return (cut[: stop + 1] if stop > limit * 0.5 else cut.rstrip()) + " …"
 
 
-def symbol_map(client: HttpClient, pages: int = 3) -> dict[str, str]:
+def symbol_map(client: HttpClient, pages: int = 6) -> dict[str, str]:
     """Binance-style symbol -> CoinGecko id, highest market cap wins.
 
     Walking the ranked list in order means the first time a symbol is seen it
     is on the largest coin carrying it, so later duplicates are discarded.
+
+    Six pages (1,500 coins) rather than three: the board lists names ranked in
+    the 800s, and a shallower sweep left them unresolved. Depth alone does not
+    make a match correct -- `TON` at rank 829 is Tokamak Network, not Toncoin --
+    so the price cross-check in `collect` is what decides whether a resolved id
+    is actually the traded asset.
     """
     mapping: dict[str, str] = {}
     for page in range(1, pages + 1):
-        rows = client.get_json(
-            MARKETS_URL,
-            params={
-                "vs_currency": "usd",
-                "order": "market_cap_desc",
-                "per_page": 250,
-                "page": page,
-                "sparkline": "false",
-            },
-        )
+        # The markets endpoint is rate-limited like every other CoinGecko route:
+        # six pages fetched back to back exhausted the window and failed the
+        # whole run before a single profile was written. Pace it like the
+        # per-coin calls below.
+        if page > 1:
+            import time
+            time.sleep(DELAY)
+        try:
+            rows = client.get_json(
+                MARKETS_URL,
+                params={
+                    "vs_currency": "usd",
+                    "order": "market_cap_desc",
+                    "per_page": 250,
+                    "page": page,
+                    "sparkline": "false",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            # A refused page costs coverage, not the run: whatever was mapped
+            # before it is still usable, and the next pass fills the rest.
+            log.warning("symbol map page %d failed: %s", page, exc)
+            break
         if not isinstance(rows, list) or not rows:
             break
         for row in rows:
@@ -90,6 +109,13 @@ def symbol_map(client: HttpClient, pages: int = 3) -> dict[str, str]:
             if symbol and coin_id and symbol not in mapping:
                 mapping[symbol] = coin_id
     return mapping
+
+
+# CoinGecko keeps delisted and migrated tokens under their old symbol, so a
+# ticker that a exchange has since reassigned resolves to the dead asset: GAL
+# returned "GAL (migrated to Gravity - G)" at $0.33 against a traded $2.54.
+# The name is where the migration is announced, so that is what is checked.
+_DEAD_MARKERS = ("migrated to", "deprecated", "(old)", "[old]", "delisted", "sunset")
 
 
 def to_profile(payload: dict[str, Any], symbol: str) -> dict[str, Any] | None:
@@ -104,6 +130,10 @@ def to_profile(payload: dict[str, Any], symbol: str) -> dict[str, Any] | None:
 
     name = payload.get("name")
     if not name:
+        return None
+    lowered = name.lower()
+    if any(marker in lowered for marker in _DEAD_MARKERS):
+        log.info("%s: skipping %r -- superseded token", symbol, name)
         return None
 
     return {
@@ -147,8 +177,12 @@ def collect(
     run_id = uuid.uuid4().hex[:12]
     client = HttpClient(delay=delay, retries=2, timeout=25)
 
+    board = read_json("crypto.json") or {}
+    board_prices = {
+        r["s"]: r["p"] for r in (board.get("rows") or [])
+        if r.get("s") and isinstance(r.get("p"), (int, float)) and r["p"] > 0
+    }
     if not symbols:
-        board = read_json("crypto.json") or {}
         rows = board.get("rows") or []
         # The board is already ordered by turnover, so taking the head means the
         # coins anyone is likely to open are the ones that get a profile.
@@ -157,7 +191,7 @@ def collect(
     log.info("resolving %d symbols against the CoinGecko id list", len(symbols))
     mapping = symbol_map(client)
 
-    written, skipped, missing, failed = 0, 0, [], []
+    written, skipped, missing, failed, mismatched = 0, 0, [], [], []
     index: list[dict[str, Any]] = []
 
     for symbol in symbols:
@@ -165,8 +199,14 @@ def collect(
         if not coin_id:
             missing.append(symbol)
             continue
-        if skip_existing and read_json(f"crypto/{symbol}.json"):
+        existing = read_json(f"crypto/{symbol}.json") if skip_existing else None
+        if existing:
+            # Skipping the fetch must not skip the index entry, or a resumed run
+            # publishes an index naming only the coins it happened to refresh
+            # and the UI reports every earlier profile as missing.
             skipped += 1
+            index.append({"s": existing.get("s", symbol), "n": existing.get("n"),
+                          "rank": existing.get("rank")})
             continue
         try:
             payload = client.get_json(
@@ -190,6 +230,21 @@ def collect(
             failed.append(symbol)
             continue
 
+        # Last line of defence against a wrong-but-plausible match. Market cap
+        # over circulating supply must land near the traded price; a different
+        # coin wearing the same ticker is normally out by a large factor. Catch
+        # it here rather than publishing a file the validator will reject.
+        quoted = board_prices.get(symbol.upper())
+        if quoted and profile.get("mc") and profile.get("supply"):
+            implied = profile["mc"] / profile["supply"]
+            if not (0.5 < implied / quoted < 2):
+                log.warning(
+                    "%s: implied %.6f vs traded %.6f -- symbol resolved to a different coin",
+                    symbol, implied, quoted,
+                )
+                mismatched.append(symbol)
+                continue
+
         index.append({"s": profile["s"], "n": profile["n"], "rank": profile["rank"]})
         if not dry_run:
             write_json(f"crypto/{symbol.upper()}.json", profile)
@@ -210,6 +265,7 @@ def collect(
         "unresolved": missing[:10],
         "unresolved_count": len(missing),
         "failed": failed[:10],
+        "mismatched": mismatched,
     }
 
 
