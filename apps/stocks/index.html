@@ -78,7 +78,8 @@ td{text-align:right; font-variant-numeric:tabular-nums}
 tbody tr:hover td{background:var(--panel-2)}
 tbody tr:hover td:first-child{background:var(--panel-2)}
 .sym{font-weight:700; letter-spacing:.3px}
-.name{color:var(--muted); font-size:12px; max-width:230px; overflow:hidden; text-overflow:ellipsis}
+.name{display:block; color:var(--muted); font-size:12px; width:240px; max-width:240px; white-space:normal; overflow-wrap:break-word; line-height:1.35}
+.name:hover{color:var(--accent); text-decoration:underline}
 .up{color:var(--up)} .down{color:var(--down)} .dim{color:var(--muted)} .warn{color:var(--warn)}
 
 /* A percentile bar reads faster than the number alone: it says "cheap for this
@@ -313,9 +314,13 @@ fetch("../../data/stocks.json", {cache:"no-cache"})
     render();
     // The trading session the data describes, not today's date: a file three
     // days stale would otherwise stamp itself with the moment it was opened.
-    el("upd").textContent = META.as_of
-      ? new Date(META.as_of).toLocaleDateString("vi-VN")
+    const session = META.as_of
+      ? new Date(`${META.as_of}T00:00:00+07:00`).toLocaleDateString("vi-VN", {timeZone:"Asia/Ho_Chi_Minh"})
       : "—";
+    const built = META.updated_at
+      ? new Date(META.updated_at).toLocaleString("vi-VN", {timeZone:"Asia/Ho_Chi_Minh", hour12:false}) + " ICT"
+      : "chưa có giờ đóng gói";
+    el("upd").textContent = `phiên ${session} · đóng gói ${built}`;
     const withF = rows.filter(r => r.pe != null || r.pb != null).length;
     const priced = rows.filter(r => r.p != null).length;
     // "Có khớp lệnh" (had a matched trade) is only true of rows with neither
@@ -466,12 +471,13 @@ function passes(r, f){
 const fmt = (v, d) => v == null || !isFinite(v)
   ? '<span class="dim">—</span>'
   : v.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+const html = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 function cell(row, col){
   const v = row[col.k];
   switch(col.kind){
-    case "sym":  return `<a class="sym" href="../../hub/?tab=ticker&s=${encodeURIComponent(v ?? "")}" target="_top" title="Mở hồ sơ ${v ?? ""}">${v ?? ""}</a>`;
-    case "name": return `<span class="name">${v ?? ""}</span>`;
+    case "sym":  return `<a class="sym" href="../../hub/?tab=ticker&s=${encodeURIComponent(v ?? "")}" target="_top" title="Mở hồ sơ ${html(v)}">${html(v)}</a>`;
+    case "name": return `<a class="name" href="../../hub/?tab=ticker&s=${encodeURIComponent(row.s ?? "")}" target="_top" title="Mở hồ sơ ${html(row.s)}">${html(v)}</a>`;
     case "text": return v ? `<span class="dim">${v}</span>` : '<span class="dim">—</span>';
     case "price": {
       // p can come from three places: today's close, an older session this

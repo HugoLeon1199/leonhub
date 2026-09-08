@@ -1,6 +1,11 @@
 name: Ticker news links
 
 on:
+  # Independent daily run keeps company news moving even when the much larger
+  # VN quote/fundamental workflow fails upstream. The workflow_run trigger
+  # below still refreshes immediately after a successful VN close build.
+  schedule:
+    - cron: "15 10 * * *"   # 17:15 ICT daily
   workflow_run:
     workflows: ["VN daily data"]
     types: [completed]

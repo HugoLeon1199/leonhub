@@ -15,6 +15,39 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
 - Do not reset the worktree. Use `git log -1` for the latest local commit; this
   handoff deliberately does not self-reference a commit hash.
 
+## 2026-09-08 VN ticker navigation, freshness and evidence
+
+- `apps/stocks/index.html`: both the MÃ and full TÊN are now links to the same
+  ticker dossier. The name column has an explicit readable width and wraps by
+  words; the footer separates the market session date from the exact artifact
+  build time, always formatted in ICT.
+- `apps/ticker/index.html`: every data section now displays its own honest
+  freshness badge. Market panels show the source session plus build time,
+  Vietcap dossier panels show collector time plus build time, signals/news show
+  their artifact times, and the VPS chart shows both its latest bar date and
+  the exact browser check time. A failed VPS request is timestamped as a failed
+  check rather than silently leaving “loading”.
+- Added `Lợi thế cạnh tranh — bằng chứng định lượng`: industry-relative scale,
+  margins/capital efficiency/leverage and multi-year profit durability. It is
+  deliberately an evidence panel, not an AI moat verdict; brand, network
+  effects, switching costs and intangible/regulatory advantages remain
+  unscored until a cited factual input exists.
+- The existing industry valuation router remains intact. VIC still uses the
+  NAV/SOTP guard and refuses to print a numeric fair value without project,
+  legal-progress, net-debt and asset-value inputs. The public Turtle VIC page
+  was used as a feature reference only; its private pipeline/model was not
+  copied.
+- Refreshed ticker news locally from 500 current digest articles: 11 strict
+  headline matches across 6 symbols. VIC now has three latest articles dated
+  2026-09-07. `.github/workflows/news.yml` also has an independent daily 17:15
+  ICT schedule, so news no longer waits for the larger VN workflow to succeed.
+- Verification: Chrome headless visual QA at 1440px covered the stocks table
+  and the VIC dossier; names/timestamps/moat/valuation/chart rendered cleanly.
+  Targeted validation passes for stocks, news, signals and ticker manifest;
+  `git diff --check` passes. The all-artifact gate is currently red only on the
+  unrelated concurrently generated `data/crypto/index.json` GAL profile/price
+  mismatch; those crypto files were not staged or changed by this work.
+
 ## 2026-09-08 overview names and deep links
 
 - `apps/brief/index.html` no longer truncates long company names with an
