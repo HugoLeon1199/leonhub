@@ -90,6 +90,21 @@ and volume, `fRoom`, and `ptVol` (put-through/thoả thuận). SSI iBoard has ri
 data but restricts CORS to its own board, which is why that one runs
 pipeline-side and this one does not.
 
+**`fstream.binance.com` completes the WebSocket handshake and never pushes a
+frame** from a browser on this origin — the futures stream is geo-blocked the
+same way the futures REST API is, but silently: the socket opens, `onerror`
+never fires, and the venue simply looks quiet. Verified 2026-09-08 by tracing
+frame events: OKX, Bybit and Binance *spot* all delivered, `fstream` delivered
+nothing. Do not subscribe to it as a tape source; a blocked venue that looks
+idle is worse than an absent one.
+
+**OKX quotes trade size in CONTRACTS, not coins.** `BTC-USDT-SWAP` is 0.01 BTC
+per contract, `ETH-USDT-SWAP` 0.1, `SOL-USDT-SWAP` 1. Multiplying price by the
+raw `sz` overstates a BTC print by 100x — a $50K trade renders as a $5M whale.
+Fetch `ctVal` from `/api/v5/public/instruments` per instrument rather than
+hard-coding it, and skip the venue when the multiplier cannot be read, since a
+wrong notional silently corrupts the buy/sell totals beside it.
+
 **Binance rejects an entire batched `ticker/24hr` request if any one symbol is
 unknown to it.** A single VN ticker starred into the chart watchlist therefore
 blanked the price of every crypto beside it. Quotes are now partitioned by
