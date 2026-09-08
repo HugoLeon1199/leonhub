@@ -9,11 +9,45 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
 
 - Branch: `master`; overview changes and the preceding crypto context commit
   were pushed to the GitHub Pages source branch on 2026-09-08.
+- Latest completed feature push before this handoff note is `8821072`: the VN
+  valuation scenario engine. GitHub Pages deployment and App syntax both
+  completed successfully; production route is
+  `https://leonquant.com/hub/?tab=ticker&s=VIC`.
 - Local server: PID 3312, `http://127.0.0.1:8811/hub/`.
 - Chart: `http://127.0.0.1:8811/apps/chart/?sym=BTC&tf=30m`.
 - Ticker dossier: `http://127.0.0.1:8811/apps/ticker/?s=VIC`.
 - Do not reset the worktree. Use `git log -1` for the latest local commit; this
   handoff deliberately does not self-reference a commit hash.
+
+## Next Claude: start here
+
+1. Preserve the worktree. `data/crypto/index.json` and the many untracked
+   `data/crypto/*.json` files belong to a separate concurrent crypto-profile
+   run. Do not stage, delete or rewrite them while continuing VN ticker work.
+2. Re-open VIC, FPT and VCB in production before changing valuation. The live
+   model is entirely in `apps/ticker/index.html`: `discountRate`,
+   `earningsScenario`, `residualIncomeScenario` and `valuationModel`.
+3. Current model boundary: financials use RIM; non-financials use discounted
+   normalized earnings. Property/holding output is explicitly low confidence
+   and not NAV. Do not silently rename the VIC estimate to NAV/SOTP.
+4. If the user continues valuation work, the next real inputs are `cfa19`
+   capex plus interest-bearing debt for FCF DCF, project/segment assets for
+   property NAV/SOTP, user-editable assumptions, and persisted valuation
+   snapshots so forecast error can be backtested.
+5. Check the scheduled `VN daily data` run after 16:30 ICT. The SSI fallback
+   was committed in `69b39b5`, but its first post-close end-to-end CI success
+   was still pending when this note was written. Ticker news now also runs
+   independently every day at 17:15 ICT.
+6. Before handing off or deploying, run:
+
+   ```powershell
+   python -m pipeline.core.check_apps
+   python -m pipeline.core.validate stocks.json news_ticker.json signals.json ticker/manifest.json
+   git diff --check
+   ```
+
+   The full validator currently fails only on the unrelated generated GAL
+   crypto profile/price identity mismatch; do not “fix” it as part of VN scope.
 
 ## 2026-09-08 VN ticker navigation, freshness and evidence
 
@@ -46,11 +80,11 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
   deliberately an evidence panel, not an AI moat verdict; brand, network
   effects, switching costs and intangible/regulatory advantages remain
   unscored until a cited factual input exists.
-- The existing industry valuation router remains intact. VIC still uses the
-  NAV/SOTP guard and refuses to print a numeric fair value without project,
-  legal-progress, net-debt and asset-value inputs. The public Turtle VIC page
-  was used as a feature reference only; its private pipeline/model was not
-  copied.
+- The public Turtle VIC page was used only to compare visible methodology:
+  historical parameters, discounted-NPAT fallback and three scenarios. LEON's
+  implementation is original and more explicit about the VIC result being an
+  earnings-power proxy rather than project-level NAV/SOTP; Turtle's private
+  pipeline/model was not copied.
 - Refreshed ticker news locally from 500 current digest articles: 11 strict
   headline matches across 6 symbols. VIC now has three latest articles dated
   2026-09-07. `.github/workflows/news.yml` also has an independent daily 17:15
@@ -255,9 +289,11 @@ python -m pipeline.core.validate
   no-op build does not manufacture per-symbol changes.
 - Headless Chrome visual QA at 1600x1000 covered watchlist, order book, Big Tape,
   Levels, `2h` and `1M`. Order book moved live; Level percentages summed to 100.
-- Ticker QA at 1440x3000 covered VIC, VCB and ordinary company AAA. Price charts,
-  statement families, ratio cards, peer rows and valuation refusal rendered.
-  The VCB pass caught and verified the CIR sign fix.
+- Historical pre-engine ticker QA at 1440x3000 covered VIC, VCB and ordinary
+  company AAA. Price charts, statement families, ratio cards, peer rows and the
+  then-current valuation refusal rendered. The newer scenario-engine QA is
+  recorded near the top of this file. The VCB pass caught and verified the CIR
+  sign fix.
 
 ## What is genuinely still missing
 
