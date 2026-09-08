@@ -14,6 +14,29 @@ Updated 2026-09-05 by Codex. Read `CLAUDE.md` and
 - Do not reset the worktree. Use `git log -1` for the latest local commit; this
   handoff deliberately does not self-reference a commit hash.
 
+## 2026-09-08 overview names and deep links
+
+- `apps/brief/index.html` no longer truncates long company names with an
+  ellipsis. Names wrap so the full published `stocks.json` company name remains
+  readable.
+- Every actionable overview row is now a keyboard-accessible link. Equity rows
+  open the matching ticker dossier, BDS rows open the exact district/province/
+  category filters, and the crypto, ETF, GEX, breadth and foreign-flow tiles
+  route to their corresponding hub tabs.
+- `apps/bds/index.html` now consumes overview deep-link parameters (`q`,
+  `province`, `region`, `category`, `cat`) after its facets load. Normal direct
+  visits keep the prior default-province behavior.
+- Verification: all 35 inline app scripts parse, the full published-data gate
+  passes, and `git diff --check` passes. Windows Computer Use was unavailable
+  in this session, so no new screenshot claim is made.
+- Live schedule audit on 2026-09-08: BDS, US, GEX and intraday depth workflows
+  have recent successful runs. The VN daily workflow remains scheduled for
+  16:30 ICT on weekdays but its latest run failed in `vn_equity` while decoding
+  an upstream API response; committed `stocks.json` is therefore still dated
+  2026-09-04. Cross-market flows also failed because Farside returned HTTP 403,
+  leaving `flows.json` updated at 2026-09-03. Those collector failures were
+  diagnosed only and remain separate follow-up work.
+
 ## 2026-09-05 Market Structure live-flow upgrade
 
 - `apps/gex/index.html` now combines two explicitly separated layers:

@@ -63,8 +63,11 @@ th:nth-child(2),td:nth-child(2){text-align:left}
 tr:last-child td{border-bottom:0}
 td{text-align:right; font-variant-numeric:tabular-nums}
 .sym{font-weight:700}
-.name{color:var(--muted); font-size:12px; max-width:220px; overflow:hidden;
-      text-overflow:ellipsis; display:inline-block; vertical-align:bottom}
+.name{color:var(--muted); font-size:12px; white-space:normal; overflow-wrap:anywhere;
+      display:inline-block; vertical-align:bottom}
+.clickable{cursor:pointer; transition:background .12s ease}
+tr.clickable:hover, tr.clickable:focus-visible{background:var(--panel-2); outline:none}
+.tile.clickable:hover, .tile.clickable:focus-visible{background:var(--panel-2); outline:2px solid var(--accent); outline-offset:-2px}
 
 .two{display:grid; grid-template-columns:1fr 1fr; gap:14px}
 @media(max-width:720px){ .two{grid-template-columns:1fr} }
@@ -173,10 +176,15 @@ function signed(v, d = 2){
   return `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(d)}</span>`;
 }
 
-function tile(label, value, change, hint){
+function tile(label, value, change, hint, href){
   const box = document.createElement("div");
-  box.className = "tile";
+  box.className = "tile" + (href ? " clickable" : "");
   if(hint) box.title = hint;
+  if(href){
+    box.dataset.href = href;
+    box.tabIndex = 0;
+    box.setAttribute("role", "link");
+  }
   box.innerHTML =
     `<span class="k">${label}</span>` +
     `<span class="v">${value}</span>` +
@@ -184,14 +192,40 @@ function tile(label, value, change, hint){
   return box;
 }
 
-function table(rows, columns){
+function table(rows, columns, rowHref){
   if(!rows.length) return '<div class="empty">Không có dữ liệu phù hợp.</div>';
   const head = columns.map(c => `<th>${c.t}</th>`).join("");
-  const body = rows.map(r =>
-    "<tr>" + columns.map(c => `<td>${c.f(r)}</td>`).join("") + "</tr>"
-  ).join("");
+  const body = rows.map(r => {
+    const href = rowHref && rowHref(r);
+    const attrs = href
+      ? ` class="clickable" data-href="${href}" tabindex="0" role="link"`
+      : "";
+    return `<tr${attrs}>` + columns.map(c => `<td>${c.f(r)}</td>`).join("") + "</tr>";
+  }).join("");
   return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
+
+function hubHref(tab, params = {}){
+  const q = new URLSearchParams({tab, ...params});
+  return `../../hub/?${q}`;
+}
+
+function followLink(node){
+  const href = node?.dataset?.href;
+  if(!href) return;
+  window.top.location.href = new URL(href, location.href).href;
+}
+
+document.addEventListener("click", event => {
+  const node = event.target.closest("[data-href]");
+  if(node) followLink(node);
+});
+document.addEventListener("keydown", event => {
+  if((event.key === "Enter" || event.key === " ") && event.target.matches("[data-href]")){
+    event.preventDefault();
+    followLink(event.target);
+  }
+});
 
 /* ---------- crypto tape: fetched in the browser, so Binance's geo-block on
      US datacenter IPs never applies ---------- */
@@ -212,7 +246,8 @@ async function cryptoTiles(){
       c.name,
       num(c.price, c.price < 10 ? 3 : 0),
       signed(c.change) + ' <span class="dim">24h</span>',
-      `${c.sym}/USDT trên Binance`
+      `${c.sym}/USDT trên Binance`,
+      hubHref("chart", {sym:c.sym})
     ));
   });
 }
@@ -243,7 +278,8 @@ async function equities(){
       "Độ rộng thị trường",
       `${up} / ${down}`,
       `<span class="dim">mã tăng / giảm</span>`,
-      "Trong số các mã có khớp lệnh phiên gần nhất"
+      "Trong số các mã có khớp lệnh phiên gần nhất",
+      hubHref("stocks")
     ));
   }
 
@@ -254,7 +290,8 @@ async function equities(){
       "Khối ngoại ròng",
       (net >= 0 ? "+" : "") + num(net, 0),
       `<span class="dim">tỷ VND, toàn thị trường</span>`,
-      "Tổng giá trị mua trừ bán của nhà đầu tư nước ngoài"
+      "Tổng giá trị mua trừ bán của nhà đầu tư nước ngoài",
+      hubHref("stocks")
     ));
   }
 
@@ -267,8 +304,9 @@ async function equities(){
 
   const buys = [...flows].sort((a,b) => b.f1 - a.f1).slice(0, 8);
   const sells = [...flows].sort((a,b) => a.f1 - b.f1).slice(0, 8);
-  el("fBuy").innerHTML = table(buys, flowCols);
-  el("fSell").innerHTML = table(sells, flowCols);
+  const tickerHref = r => hubHref("ticker", {s:r.s});
+  el("fBuy").innerHTML = table(buys, flowCols, tickerHref);
+  el("fSell").innerHTML = table(sells, flowCols, tickerHref);
 
   /* "Unusual" measured against each ticker's own volatility rather than a flat
      percentage: a 3% day is a shrug for a small cap and an event for VCB.
@@ -291,7 +329,7 @@ async function equities(){
         {t:"Z-score",  f:r => `<b class="${r.z > 0 ? "up" : "down"}">${r.z > 0 ? "+" : ""}${r.z.toFixed(1)}σ</b>`},
         {t:"Vị trí 52T", f:r => r.pos52 != null ? `<span class="dim">${r.pos52}</span>` : '<span class="dim">—</span>'},
         {t:"Vốn hóa",  f:r => num(r.mc, 0)},
-      ])
+      ], tickerHref)
     : '<div class="empty">Không có mã nào biến động vượt 2 độ lệch chuẩn hôm nay.</div>';
 
   // "Cheap versus its own history" is the read a raw P/E cannot give: it needs
@@ -318,7 +356,7 @@ async function equities(){
       `${100 - r.pe_p}% số quý</span>`},
     {t:"ROE %",    f:r => num(r.roe, 1)},
     {t:"Vốn hóa",  f:r => num(r.mc, 0)},
-  ]);
+  ], tickerHref);
 
   const withF = rows.filter(r => r.pe != null).length;
   el("cover").textContent = `${rows.length} mã · ${withF} có chỉ số cơ bản`;
@@ -350,7 +388,7 @@ async function realEstate(){
     {t:"Giá/m² (tr)",  f:r => num(r.p, 1)},
     {t:"Lợi suất %",   f:r => `<span class="up">${num(r.y, 2)}</span>`},
     {t:"Mẫu",          f:r => `<span class="dim">${r.n}</span>`},
-  ]);
+  ], r => hubHref("bds", {q:r.d, province:r.rs, region:r.r, category:r.i, cat:r.cs}));
 }
 
 /* ---------- institutional flows ---------- */
@@ -370,7 +408,8 @@ async function etfFlows(){
       label,
       `${b >= 0 ? "+" : "−"}${Math.abs(b).toFixed(2)}B`,
       `<span class="dim">20 phiên, USD</span>`,
-      "Tiền ròng vào các quỹ ETF giao ngay tại Mỹ trong 20 phiên gần nhất"
+      "Tiền ròng vào các quỹ ETF giao ngay tại Mỹ trong 20 phiên gần nhất",
+      hubHref("flows")
     ));
   });
 }
@@ -391,7 +430,8 @@ async function gamma(){
       ? `flip ${Math.round(d.gamma_flip).toLocaleString("en-US")}` : "—"}</span>`,
     positive
       ? `Phòng hộ của nhà tạo lập nén biến động. Giá đang ${aboveFlip ? "trên" : "dưới"} mức flip.`
-      : `Phòng hộ của nhà tạo lập khuếch đại biến động. Giá đang ${aboveFlip ? "trên" : "dưới"} mức flip.`
+      : `Phòng hộ của nhà tạo lập khuếch đại biến động. Giá đang ${aboveFlip ? "trên" : "dưới"} mức flip.`,
+    hubHref("gex")
   ));
 }
 

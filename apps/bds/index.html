@@ -156,11 +156,29 @@ Promise.all([
 });
 
 function init(){
-  fillLegalCoverage();buildKpis();buildFacets();buildHead();buildMap();setDefaultProvince();buildTrendPicker();renderTable();renderTrend();
+  fillLegalCoverage();buildKpis();buildFacets();
+  const hasDeepLink=applyUrlFilters();
+  buildHead();buildMap();
+  if(hasDeepLink)renderProfile();else setDefaultProvince();
+  buildTrendPicker();renderTable();renderTrend();
   const upd=DATA.updated_at?new Date(DATA.updated_at):null;
   $("updated").textContent=upd?`Cập nhật ${upd.toLocaleDateString("vi-VN")} · ${DATA.snapshot_days||1} ngày snapshot`:"—";
   $("historyMethod").textContent=`Kho có ${(DATA.raw_observations||0).toLocaleString("vi-VN")} quan sát / ${(DATA.unique_listings||0).toLocaleString("vi-VN")} tin duy nhất, từ ${dateText(DATA.history_from)} đến ${dateText(DATA.history_to)}. ${DATA.snapshot_days<6?"Đang tích lũy lịch sử; chưa đủ điều kiện tính CAGR.":"CAGR cần tối thiểu "+DATA.cagr_min_days+" ngày."}`;
   $("coverage").textContent=`${new Set(DATA.rows.map(r=>r.r+"/"+r.d)).size} quận/huyện · ${DATA.rows.length} dòng · ${(DATA.listings||0).toLocaleString("vi-VN")} mẫu sau lọc`;
+}
+function applyUrlFilters(){
+  const params=new URLSearchParams(location.search);
+  const q=params.get("q");
+  if(q!=null)$("q").value=q;
+  for(const id of ["province","region","category"]){
+    const value=params.get(id);
+    if(value!=null&&[...$(id).options].some(option=>option.value===value))$(id).value=value;
+  }
+  const cat=params.get("cat");
+  if(cat&&CAT_LABEL[cat])mapCat=cat;
+  document.querySelectorAll("#catSeg button").forEach(button=>button.classList.toggle("on",button.dataset.cat===mapCat));
+  selectedProvince=$("province").value;
+  return Boolean(selectedProvince);
 }
 function dateText(v){return v?new Date(v).toLocaleDateString("vi-VN"):"—"}
 function fillLegalCoverage(){const el=$("legalCov");if(!el)return;
