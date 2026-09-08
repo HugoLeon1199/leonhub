@@ -260,6 +260,9 @@ main{flex:1; position:relative; min-height:0;min-width:0}
 .tape-tot{display:flex;flex-wrap:wrap;gap:4px 10px;padding:6px;border-bottom:1px solid var(--line);font-size:10px;
   font-variant-numeric:tabular-nums;color:var(--muted)}
 .tape-tot b{color:var(--text)}.dimtxt{color:var(--muted);opacity:.8}
+.tape-clear{margin-left:auto;border:1px solid var(--line);background:transparent;color:var(--muted);
+  border-radius:4px;padding:1px 6px;cursor:pointer;font:9.5px inherit}
+.tape-clear:hover{color:var(--down);border-color:var(--down)}
 /* Leverage pressure */
 .liq-bars{padding:8px 7px;display:grid;gap:6px}
 .liq-bar{display:grid;grid-template-columns:38px 1fr auto;gap:7px;align-items:center;font-size:10.5px}
@@ -480,7 +483,7 @@ footer b{color:var(--text); font-weight:600}
     <dl>
       <dt>Watchlist</dt><dd>Danh sách theo dõi, lưu trong trình duyệt. Trộn được cả crypto lẫn cổ phiếu.</dd>
       <dt>Sổ lệnh · Net $</dt><dd>Chỉ crypto. Lệnh chờ mua/bán thời gian thực và tiền ròng tại từng mức giá. Việt Nam không công bố các dữ liệu này.</dd>
-      <dt>Big Tape</dt><dd>Chỉ crypto. Các lệnh lớn vừa khớp trên nhiều sàn cùng lúc, mỗi dòng ghi rõ sàn nào in ra: <i>OKX</i> và <i>BYBIT</i> là hợp đồng vĩnh cửu, <i>BINANCE-S</i> là giao ngay. Một lệnh 5 triệu đô trên một sàn khác hẳn cùng khối lượng đó đánh vào cả ba. Dòng đầu tổng kết mua, bán và chênh lệch ròng.</dd>
+      <dt>Big Tape</dt><dd>Chỉ crypto. Các lệnh lớn vừa khớp trên nhiều sàn cùng lúc, mỗi dòng ghi rõ sàn nào in ra: <i>OKX</i> và <i>BYBIT</i> là hợp đồng vĩnh cửu, <i>BINANCE-S</i> là giao ngay. Một lệnh 5 triệu đô trên một sàn khác hẳn cùng khối lượng đó đánh vào cả ba. Dòng đầu tổng kết mua, bán và chênh lệch ròng, kèm mốc thời gian sớm nhất còn giữ. Lịch sử được lưu lại trong trình duyệt này (tối đa 3 ngày gần nhất) nên đóng tab mở lại vẫn còn — nhưng chỉ máy này có, và chỉ ghi được những lúc bạn đang mở trang.</dd>
       <dt>Đòn bẩy</dt><dd>Chỉ crypto, tự cập nhật 2,5 phút một lần. Gồm: bên long hay short đang mang nhiều vị thế hơn và vùng giá dễ bị quét theo từng mức đòn bẩy (đây là <b>ước lượng</b>, không phải bản đồ thanh lý thật — không sàn nào công bố dữ liệu đó); <i>Đám đông</i> là tỉ lệ tài khoản nhỏ lẻ, <i>Cá lớn</i> là tỉ lệ theo quy mô vị thế của nhóm dẫn đầu — hai số trái chiều nghĩa là đám đông đang ở phía dễ bị ép ra; <i>COT</i> là vị thế quỹ đầu cơ trên sàn CME theo báo cáo CFTC thật, công bố mỗi tuần nên luôn trễ vài ngày; <i>Fear/Greed</i> là chỉ số tâm lý crypto. Cuối panel là tóm tắt vị thế quyền chọn của BTC/ETH.</dd>
       <dt>Dòng tiền</dt><dd>Chỉ cổ phiếu VN. Sổ lệnh ba mức, khối ngoại mua bán trong phiên, room ngoại còn lại và khối lượng thoả thuận — dấu vết giao dịch của tổ chức.</dd>
       <dt>Đa khung</dt><dd>Trạng thái ba khung thời gian cùng lúc. Ba khung đồng thuận thì tin cậy hơn; mâu thuẫn nghĩa là rủi ro cao hơn bình thường.</dd>
@@ -925,6 +928,50 @@ function renderBookData(d,sym=symbol){const asks=(d.asks||[]).slice(0,10).revers
    three. Each row carries the venue that printed it so the reader can tell
    those apart, and the header totals buy against sell so the balance is
    readable without adding the rows up by eye. */
+/* Tape history.
+   The sockets only deliver while the tab is open, so without this every prior
+   session was lost and "Big Tape" meant "since you opened this page". Kept in
+   localStorage per symbol: it survives a reload and a closed tab, but lives
+   only in this browser -- there is no server to sync it to, and the panel says
+   so rather than implying a shared record.
+
+   At ~83 bytes an event, the cap below is ~160 KB per symbol, well inside the
+   ~5 MB origin budget even with several symbols watched. */
+const TAPE_STORE_MAX = 2000;
+const TAPE_STORE_DAYS = 3;
+
+function tapeKey(sym){ return `leon_tape_${sym}`; }
+
+function loadTapeHistory(sym){
+  let stored = [];
+  try{ stored = JSON.parse(localStorage.getItem(tapeKey(sym)) || "[]"); }catch(e){}
+  if(!Array.isArray(stored)) return [];
+  // Old prints stop being useful and would otherwise accumulate forever.
+  const cutoff = Date.now() - TAPE_STORE_DAYS * 86400000;
+  return stored.filter(x => x && x.at > cutoff);
+}
+
+let tapeSaveTimer = null;
+function writeTapeHistory(sym){
+  try{
+    localStorage.setItem(tapeKey(sym), JSON.stringify(tapeEvents.slice(-TAPE_STORE_MAX)));
+  }catch(e){ /* quota full or storage blocked: history is a convenience */ }
+}
+function saveTapeHistory(sym){
+  // Debounced: a busy market fires this hundreds of times a minute, and
+  // serialising 2,000 events on every print would stall the render loop.
+  clearTimeout(tapeSaveTimer);
+  tapeSaveTimer = setTimeout(() => writeTapeHistory(sym), 3000);
+}
+/* A reload or a closed tab lands mid-debounce and used to drop everything
+   written since the last flush -- measured: 17 prints on screen, 7 persisted.
+   `pagehide` covers both, and fires on mobile backgrounding where `unload`
+   does not. */
+addEventListener("pagehide", () => {
+  clearTimeout(tapeSaveTimer);
+  if(tapeEvents.length) writeTapeHistory(symbol);
+});
+
 const TAPE_VENUES = {
   "BINANCE":  {label:"BINANCE", cls:"v-binance"},
   "BINANCE-S":{label:"BINANCE-S", cls:"v-binance"},
@@ -950,7 +997,12 @@ function renderTape(){
     +`<div class="tape-tot"><span>Lệnh <b>${shown.length}</b></span>`
     +`<span class="up">Mua $${compact(buy)}</span><span class="down">Bán $${compact(sell)}</span>`
     +`<span class="${net>=0?"up":"down"}">Net ${net>=0?"+":"−"}$${compact(Math.abs(net))}</span></div>`
-    +(biggest?`<div class="tape-tot"><span class="dimtxt">Lớn nhất</span><span>$${compact(biggest.notional)} · ${TAPE_VENUES[biggest.venue]?.label||biggest.venue}</span></div>`:"");
+    +(biggest?`<div class="tape-tot"><span class="dimtxt">Lớn nhất</span><span>$${compact(biggest.notional)} · ${TAPE_VENUES[biggest.venue]?.label||biggest.venue}</span></div>`:"")
+    // How far back the record actually reaches. Without it "Net -$48M" is a
+    // total over an unknown window, which is not a number anyone can act on.
+    +(shown.length?`<div class="tape-tot"><span class="dimtxt">Từ</span>`
+      +`<span>${new Date(shown[0].at).toLocaleString("vi-VN",{hour12:false,day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>`
+      +`<button type="button" id="tape-clear" class="tape-clear">Xoá</button></div>`:"");
 
   el.sideTape.innerHTML=head+(rows.length
     ? rows.map(x=>{const v=TAPE_VENUES[x.venue]||{label:x.venue,cls:""};
@@ -981,8 +1033,14 @@ async function okxContractValue(inst){
 }
 
 function pushTape(event){
+  // Reconnecting a socket can replay recent trades, and the restored history
+  // already holds them. Same venue, same millisecond, same size is the same
+  // print -- two genuinely distinct trades do not collide on all three.
+  const recent = tapeEvents.length > 40 ? tapeEvents.slice(-40) : tapeEvents;
+  if(recent.some(x => x.at === event.at && x.venue === event.venue && x.notional === event.notional)) return;
   tapeEvents.push(event);
-  if(tapeEvents.length > 1500) tapeEvents.shift();
+  if(tapeEvents.length > TAPE_STORE_MAX) tapeEvents.shift();
+  saveTapeHistory(symbol);
 }
 
 async function openExtraTape(sym, token){
@@ -1284,7 +1342,10 @@ function renderLevels(){if(!gexLevels.length){el.sideLevels.innerHTML=symbolKind
   :'<div class="side-empty">Level Behavior hiện có cho BTC/ETH khi artifact GEX đã được cập nhật.</div>';return}const spot=currentBars.at(-1)?.close||0,levels=[...gexLevels].sort((a,b)=>Math.abs(a.strike-spot)-Math.abs(b.strike-spot)).slice(0,10);el.sideLevels.innerHTML='<div class="side-summary"><span>240 nến gần nhất</span><span>Absorb = Big Tape thật</span></div>'+levels.map(x=>{const r=classifyLevel(+x.strike),p=r.pct,shown=r.total?roundedLevelPct(p):{break:0,absorb:0,fake:0,respect:0};return `<div class="level-card"><div class="level-head"><b>${nf(+x.strike,+x.strike<10?3:0)}</b><small>${x.side==='put'?'Put':'Call'} GEX · ${r.total} chạm${x.touch_24h!=null?` · chạm 24h ${Math.round(x.touch_24h*100)}%`:""}</small></div><div class="level-bar"><i style="width:${p.break}%"></i><i style="width:${p.absorb}%"></i><i style="width:${p.fake}%"></i><i style="width:${p.respect}%"></i></div><div class="level-stats"><span>Break ${shown.break}%</span><span>Absorb ${shown.absorb}%</span><span>Fake ${shown.fake}%</span><span>Giữ ${shown.respect}%</span></div></div>`}).join("")}
 async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH"].includes(sym))return;try{const r=await fetch(`../../data/gex_${sym.toLowerCase()}.json`,{cache:"no-cache"});if(!r.ok)throw Error(r.status);const d=await r.json();if(token!==inflight)return;gexLevels=Array.isArray(d.levels)?d.levels:[];gexMeta=d;renderLevels();scheduleDraw()}catch(e){}}
 function openMicrostructure(sym,token){
-  closeMicrostructure();tapeEvents=[];gexLevels=[];gexMeta=null;netDollar=new Map();netBucket=0;try{tapeMin=Math.max(50000,+(localStorage.getItem(`leon_tapemin_${sym}`)||250000))}catch(e){tapeMin=250000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);openExtraTape(sym,token);
+  // Flush the outgoing symbol before its events are replaced, then restore what
+  // this browser already saw for the incoming one rather than starting empty.
+  if(tapeEvents.length && symbol && symbol !== sym){ clearTimeout(tapeSaveTimer); writeTapeHistory(symbol); }
+  closeMicrostructure();tapeEvents=loadTapeHistory(sym);gexLevels=[];gexMeta=null;netDollar=new Map();netBucket=0;try{tapeMin=Math.max(50000,+(localStorage.getItem(`leon_tapemin_${sym}`)||250000))}catch(e){tapeMin=250000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);openExtraTape(sym,token);
   /* The tape is a live socket, but this panel is polled: Binance publishes open
      interest and the long/short split on a 5-minute cadence, so refreshing
      faster returns the same numbers. Without the timer the panel simply froze
@@ -1333,6 +1394,12 @@ document.querySelector(".side-tabs").addEventListener("click",e=>{const b=e.targ
    the ingest floor in the socket handlers -- otherwise lowering the threshold
    reveals nothing, because trades below the ingest floor were never kept. */
 el.sideTape.addEventListener("change",e=>{if(e.target.id!=="tape-min")return;tapeMin=Math.max(50000,+e.target.value||250000);try{localStorage.setItem(`leon_tapemin_${symbol}`,String(tapeMin))}catch(err){}renderTape()});
+el.sideTape.addEventListener("click",e=>{
+  if(e.target.id!=="tape-clear")return;
+  tapeEvents=[];
+  try{localStorage.removeItem(tapeKey(symbol))}catch(err){}
+  renderTape();
+});
 try{setSide(params.get("side")||localStorage.getItem("leon_chart_side_tab")||"watch")}catch(e){setSide("watch")}
 try{if(localStorage.getItem("leon_chart_side")==="0"){document.body.classList.add("side-closed");el.sideToggle.setAttribute("aria-pressed","false")}}catch(e){}
 
