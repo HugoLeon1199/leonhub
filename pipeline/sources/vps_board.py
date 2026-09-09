@@ -53,6 +53,10 @@ DELAY = 1.0
 # chart history. Everything written to eq_quote is plain VND.
 PRICE_SCALE = 1000.0
 
+# Foreign buy/sell VALUE is scaled down by 100 -- see the note in `to_quote`.
+# Measured, not documented, so `_audit_foreign` re-checks it on every run.
+FOREIGN_VALUE_SCALE = 100.0
+
 
 def _num(value: Any) -> float | None:
     if value in (None, "", "-"):
@@ -67,6 +71,11 @@ def _num(value: Any) -> float | None:
 def _price(value: Any) -> float | None:
     raw = _num(value)
     return raw * PRICE_SCALE if raw is not None else None
+
+
+def _scaled(value: Any, factor: float) -> float | None:
+    raw = _num(value)
+    return raw * factor if raw is not None else None
 
 
 def _level(raw: Any) -> tuple[float | None, float | None]:
@@ -102,8 +111,15 @@ def to_quote(rec: dict[str, Any], as_of: date, fetched_at: datetime) -> dict[str
         # Foreign value arrives in plain VND already, unlike the price fields.
         "value": None,             # not published per symbol on this endpoint
         "listed_share": None,      # Vietcap supplies it
-        "foreign_buy_value": _num(rec.get("fBValue")),
-        "foreign_sell_value": _num(rec.get("fSValue")),
+        # fBValue/fSValue arrive scaled down by 100. Dividing the reported
+        # value by the reported volume yields 2,534 for VIC where the traded
+        # price is 251,400 VND; the same factor holds across every symbol
+        # checked (93.6x-100.4x on eight names, the spread being session
+        # average against last price). Left uncorrected, market-wide foreign
+        # flow reads as tens of millions of dong instead of billions -- small
+        # enough to look like a rounding artifact rather than an error.
+        "foreign_buy_value": _scaled(rec.get("fBValue"), FOREIGN_VALUE_SCALE),
+        "foreign_sell_value": _scaled(rec.get("fSValue"), FOREIGN_VALUE_SCALE),
         "foreign_buy_vol": _num(rec.get("fBVol")),
         "foreign_sell_vol": _num(rec.get("fSVolume")),
     }
@@ -153,6 +169,27 @@ def to_metrics(rec: dict[str, Any], as_of: date, fetched_at: datetime) -> list[d
         "fetched_at": fetched_at,
         "meta": json.dumps({"symbol": name, "field": field}),
     } for field, value in fields.items() if value is not None]
+
+
+def _audit_foreign(quotes: list[dict[str, Any]]) -> dict[str, Any]:
+    """Check corrected foreign value against volume x price.
+
+    Value divided by volume must land near the traded price. If the feed drops
+    or adds a factor of 100 the ratio moves by two orders of magnitude, which
+    this catches; a genuine gap of a few percent (session average against last
+    price) does not.
+    """
+    checked, off = 0, []
+    for q in quotes:
+        price = q.get("price")
+        vol, value = q.get("foreign_buy_vol"), q.get("foreign_buy_value")
+        if not price or not vol or not value or vol <= 0:
+            continue
+        checked += 1
+        implied = value / vol
+        if not (0.5 < implied / price < 2):
+            off.append(f"{q['symbol']}={implied:,.0f}v{price:,.0f}")
+    return {"checked": checked, "off_vs_price": len(off), "sample": off[:5]}
 
 
 def _audit_room(metrics: list[dict[str, Any]]) -> dict[str, Any]:
@@ -239,6 +276,10 @@ def collect(symbols: list[str] | None = None, dry_run: bool = False,
     # cannot exceed the listed share count; if it does, the feed changed scale
     # and the correction is now wrong in the other direction.
     room_check = _audit_room(metrics)
+    # Same reasoning as the room audit: the x100 correction is measured rather
+    # than documented, and a feed that changes scale would otherwise publish a
+    # wrong number that still looks like money.
+    foreign_check = _audit_foreign(quotes)
 
     summary = {
         "run_id": run_id,
@@ -248,6 +289,7 @@ def collect(symbols: list[str] | None = None, dry_run: bool = False,
         "missing": len(missing),
         "missing_sample": missing[:8],
         "room_check": room_check,
+        "foreign_check": foreign_check,
     }
     if dry_run:
         return summary

@@ -58,6 +58,16 @@ measured rather than documented and could change without notice. SBS is a real
 outlier rather than a bug: the source itself reports 105.6% room, and both feeds
 agree on it.
 
+**VPS foreign buy/sell VALUE is scaled down by 100** — a different factor from
+`fRoom`'s ten, on the same response. VIC reported `fBValue` 5.34e7 against
+`fBVol` 21,087, an implied 2,534 VND where the traded price was 251,400.
+Measured across eight symbols the ratio held at 93.6x-100.4x, the spread being
+session average against last price. Uncorrected, market-wide foreign flow reads
+as *tens of millions* of dong instead of billions: HPG's real +14.8bn showed as
++0.01bn, small enough to look like a rounding artifact rather than an error.
+`vps_board.py` multiplies by 100 and re-audits value/volume against price on
+every run, since both scale factors are measured rather than documented.
+
 **The VPS board truncates a long symbol list silently.** 400 requested returns
 350 rows, 200 returns 174 — no error, just fewer rows. Batch well inside that
 and check which symbols came back rather than assuming the request was honoured.
