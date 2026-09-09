@@ -77,7 +77,10 @@ th[aria-sort="ascending"] .dir::after{content:" ↑"}
 td{text-align:right; font-variant-numeric:tabular-nums}
 tbody tr:hover td{background:var(--panel-2)}
 tbody tr:hover td:first-child{background:var(--panel-2)}
-.sym{font-weight:700; letter-spacing:.3px}
+/* The ticker link was 22x17px — accurate enough with a mouse, awkward with a
+   finger. Padding the anchor rather than the cell keeps the column width
+   unchanged while giving the target a sensible height. */
+.sym{font-weight:700; letter-spacing:.3px; display:inline-block; padding:5px 4px; margin:-5px -4px}
 .name{display:block; color:var(--muted); font-size:12px; width:240px; max-width:240px; white-space:normal; overflow-wrap:break-word; line-height:1.35}
 .name:hover{color:var(--accent); text-decoration:underline}
 .up{color:var(--up)} .down{color:var(--down)} .dim{color:var(--muted)} .warn{color:var(--warn)}
