@@ -67,12 +67,14 @@ body{
   box-shadow:0 14px 40px #0009; padding:4px;
 }
 .sym-menu[hidden]{display:none}
-.sym-menu button{
+/* Options are anchors so a result can be opened in its own tab; the plain
+   click is still intercepted and switches the chart in place. */
+.sym-menu a{
   display:grid; grid-template-columns:auto 1fr auto; align-items:baseline; gap:8px;
-  width:100%; border:0; background:transparent; color:var(--text);
+  width:100%; border:0; background:transparent; color:var(--text); text-decoration:none;
   padding:7px 8px; border-radius:6px; cursor:pointer; text-align:left; font:inherit;
 }
-.sym-menu button:hover,.sym-menu button[aria-selected="true"]{background:var(--panel-2)}
+.sym-menu a:hover,.sym-menu a[aria-selected="true"]{background:var(--panel-2); text-decoration:none}
 .sym-menu b{font-size:12.5px; font-weight:700; letter-spacing:.3px}
 .sym-menu span{font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .sym-menu i{font-style:normal; font-size:9.5px; color:var(--muted); opacity:.8; white-space:nowrap}
@@ -754,7 +756,7 @@ function updateWatchButton(){const on=watchlist.includes(symbol);el.watchAdd.tex
 function renderWatchlist(){
   updateWatchButton();
   const tools=`<div class="side-summary"><select id="watch-list-select" style="max-width:112px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px">${Object.keys(watchLists).map(n=>`<option${n===activeWatchList?" selected":""}>${n.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}</option>`).join("")}</select><span><button class="watch-rm" data-watch-new title="Danh sách mới">＋</button><button class="watch-rm" data-watch-export title="Xuất CSV">⇩</button><button class="watch-rm" data-watch-import title="Nhập CSV">⇧</button><input id="watch-file" type="file" accept=".csv,text/csv" hidden></span></div>`;
-  const rows=watchlist.length?watchlist.map(sym=>{const q=watchQuotes[sym]||{},tone=q.ch==null?"":q.ch>=0?"up":"down";return `<div class="watch-row" data-watch="${sym}"><b>${sym}</b><span class="${tone}">${q.p==null?"—":nf(q.p,q.p<1?5:2)}${q.ch==null?"":`<small style="display:block">${q.ch>=0?"+":""}${q.ch.toFixed(2)}%</small>`}</span><button class="watch-rm" type="button" data-remove="${sym}" title="Bỏ ${sym}">×</button></div>`}).join(""):'<div class="side-empty">Nhấn ☆ để thêm mã đang xem.</div>';
+  const rows=watchlist.length?watchlist.map(sym=>{const q=watchQuotes[sym]||{},tone=q.ch==null?"":q.ch>=0?"up":"down";return `<div class="watch-row" data-watch="${sym}" data-href="../../hub/?tab=chart&sym=${encodeURIComponent(sym)}&tf=${encodeURIComponent(timeframe)}" title="Bấm để đổi mã — Ctrl/⌘ + bấm hoặc chuột giữa để mở ở tab mới"><b>${sym}</b><span class="${tone}">${q.p==null?"—":nf(q.p,q.p<1?5:2)}${q.ch==null?"":`<small style="display:block">${q.ch>=0?"+":""}${q.ch.toFixed(2)}%</small>`}</span><button class="watch-rm" type="button" data-remove="${sym}" title="Bỏ ${sym}">×</button></div>`}).join(""):'<div class="side-empty">Nhấn ☆ để thêm mã đang xem.</div>';
   el.sideWatch.innerHTML=tools+rows;
 }
 /* Quotes are fetched per market. Binance rejects the WHOLE batched request if
@@ -777,6 +779,91 @@ async function refreshWatchQuotes(){
   }
   renderWatchlist();
 }
+/* These rows are not <a> elements -- a table row cannot be one -- so the
+   browser's own link behaviour has to be reproduced rather than inherited.
+   Plain click navigates the whole hub; Ctrl/Cmd-click, middle-click and
+   Shift-click open a new tab or window, which is what anyone comparing two
+   tickers expects and what a bare click handler silently swallowed.
+
+   This file holds the canonical copy. Every other app pastes it verbatim
+   between the same sentinels, and pipeline/core/check_linkable.py fails the
+   build if any copy drifts. It is inlined rather than shared through
+   <script src> on purpose: check_apps.py skips scripts with a src attribute,
+   so a shared file would sit outside the only JavaScript gate this repo has,
+   and sw.js caches same-origin assets by path with no cache busting. */
+// LEON-LINKABLE-BEGIN v1
+function linkTarget(node){
+  const href = node?.dataset?.href;
+  return href ? new URL(href, location.href).href : null;
+}
+
+function followLink(node, newTab){
+  const href = linkTarget(node);
+  if(!href) return;
+  if(newTab){
+    window.open(href, "_blank", "noopener");
+    return;
+  }
+  // The page runs inside the hub's iframe, so a same-tab navigation has to
+  // replace the top document or the tab would open nested inside itself.
+  window.top.location.href = href;
+}
+
+document.addEventListener("click", event => {
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, event.ctrlKey || event.metaKey || event.shiftKey);
+});
+/* Middle-click needs both handlers. `mousedown` is where the browser decides
+   to start autoscroll, and leaving that to happen suppresses the auxclick that
+   follows -- so the default has to be cancelled there, and the navigation done
+   on auxclick, which is the only event carrying button 1. */
+document.addEventListener("mousedown", event => {
+  if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+});
+document.addEventListener("auxclick", event => {
+  if(event.button !== 1) return;
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, true);
+});
+document.addEventListener("keydown", event => {
+  if((event.key === "Enter" || event.key === " ") && event.target.matches("[data-href]")){
+    event.preventDefault();
+    followLink(event.target, event.ctrlKey || event.metaKey || event.shiftKey);
+  }
+});
+
+/* Some rows already do something useful on a plain click -- open a drawer, or
+   switch the chart's symbol in place -- and that is the better behaviour to
+   keep. Binding those with this instead leaves the plain click alone and adds
+   only the modifier and middle-click paths, so "open in a new tab" works
+   without taking away what the row already did. */
+function bindOpenInNewTab(root){
+  root.addEventListener("click", event => {
+    if(!(event.ctrlKey || event.metaKey || event.shiftKey)) return;
+    const node = event.target.closest("[data-href]");
+    if(!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+    followLink(node, true);
+  }, true);
+  root.addEventListener("mousedown", event => {
+    if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+  });
+  root.addEventListener("auxclick", event => {
+    if(event.button !== 1) return;
+    const node = event.target.closest("[data-href]");
+    if(!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+    followLink(node, true);
+  });
+}
+// LEON-LINKABLE-END
+
 function selectSymbol(next,announce=true){next=String(next||"").trim().toUpperCase();if(!next||next===symbol)return;symbol=next;el.sym.value=symbol;needsFit=true;loadDrawings();loadPriceAlerts();
   // Classification decides both the timeframe strip and which panels apply, so
   // the manifests have to be in hand before the chart is drawn for a symbol
@@ -909,7 +996,7 @@ async function renderVnFlow(sym){
     if(row.roe != null) html += line("ROE", num(row.roe, 1) + "%");
     if(row.pos52 != null) html += line("Vị trí 52T", num(row.pos52, 0));
     if(row.mc != null) html += line("Vốn hoá", compact(row.mc) + " tỷ");
-    html += `<div class="side-summary"><a href="../ticker/?s=${encodeURIComponent(sym)}" target="_top">Xem hồ sơ đầy đủ →</a></div>`;
+    html += `<div class="side-summary"><a href="../../hub/?tab=ticker&amp;s=${encodeURIComponent(sym)}" target="_top">Xem hồ sơ đầy đủ →</a></div>`;
   }
 
   box.innerHTML = html || '<div class="side-empty">Không có dữ liệu dòng tiền cho mã này.</div>';
@@ -1248,7 +1335,7 @@ function gexBlock(){
   ].filter(x => x[1]);
   if(!items.length) return "";
   return `<div class="side-summary"><span>Vị thế quyền chọn</span>`
-    + `<a href="../gex/" target="_top">Xem đầy đủ →</a></div>`
+    + `<a href="../../hub/?tab=gex" target="_top">Xem đầy đủ →</a></div>`
     + `<div class="liq-stats">` + items.map(([k, v, sub, c]) =>
         `<div class="liq-stat"><span>${k}</span><b class="${c}">${v}</b>`
         + (sub ? `<small>${sub}</small>` : "") + `</div>`).join("") + `</div>`;
@@ -4319,7 +4406,7 @@ function renderSignalPane(){
         + `${t.r >= 0 ? "+" : ""}${t.r.toFixed(2)}R</b><span>${t.x}</span></div>`
         + `<div class="sig-m">Vào ${money(t.entry)} · Ra ${money(t.exit)} · ${WHY[t.why] || t.why}</div></div>`).join("");
   }
-  html += '<div class="side-summary"><a href="../signals/" target="_top">Xem quy tắc và toàn bộ hồ sơ →</a></div>';
+  html += '<div class="side-summary"><a href="../../hub/?tab=signals" target="_top">Xem quy tắc và toàn bộ hồ sơ →</a></div>';
   box.innerHTML = html;
 }
 
@@ -5813,9 +5900,9 @@ function renderSearch(rows){
   searchIndex = rows.length ? 0 : -1;
   if(!rows.length){ el.symMenu.hidden = true; return; }
   el.symMenu.innerHTML = rows.map((r, i) =>
-    `<button type="button" role="option" data-sym="${r.sym}" aria-selected="${i === 0}">` +
+    `<a role="option" data-sym="${r.sym}" data-href="../../hub/?tab=chart&sym=${encodeURIComponent(r.sym)}&tf=${encodeURIComponent(timeframe)}" href="../../hub/?tab=chart&sym=${encodeURIComponent(r.sym)}&tf=${encodeURIComponent(timeframe)}" target="_top" aria-selected="${i === 0}">` +
     `<b>${r.sym}</b><span>${r.name ? r.name.replace(/[&<>]/g, "") : ""}</span>` +
-    `<i>${KIND_LABEL[r.kind]}</i></button>`).join("");
+    `<i>${KIND_LABEL[r.kind]}</i></a>`).join("");
   el.symMenu.hidden = false;
 }
 
@@ -5864,11 +5951,19 @@ el.sym.addEventListener("keydown", e => {
 el.symMenu.addEventListener("mousedown", e => {
   // mousedown, not click: blur fires first and would hide the menu.
   const button = e.target.closest("[data-sym]");
-  if(button){ commitSearch(button.dataset.sym); e.preventDefault(); }
+  if(!button) return;
+  /* A modified click means "open this somewhere else", so leave it entirely to
+     the anchor underneath: preventing the default here would swallow the very
+     gesture the reader made. The menu also has to stay put, because hiding it
+     on blur would remove the anchor before the click could land on it. */
+  if(e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+  commitSearch(button.dataset.sym);
+  e.preventDefault();
 });
 document.addEventListener("click", e => {
   if(!el.symMenu.contains(e.target) && e.target !== el.sym) el.symMenu.hidden = true;
 });
+bindOpenInNewTab(document);
 
 function applySharedContext(data){
   if(!data||typeof data!=="object")return;

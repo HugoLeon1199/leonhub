@@ -45,20 +45,23 @@ header{
   padding:0 10px 0 6px; height:32px; border-radius:7px; letter-spacing:-.2px;
   white-space:nowrap; cursor:pointer; flex:0 0 auto;
 }
-.brand:hover{background:var(--panel-2); border-color:var(--line)}
+.brand{text-decoration:none}
+.brand:hover{background:var(--panel-2); border-color:var(--line); text-decoration:none}
 .brand:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
 .brand svg{flex:0 0 auto}
 /* Fifteen tabs will not fit narrow viewports. Scroll rather than shrink: an
    evenly-squeezed row turns every label into an ambiguous truncation. */
 nav{display:flex;gap:2px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none;align-items:center}
 nav::-webkit-scrollbar{display:none}
+/* Tabs are anchors so they can be Ctrl-clicked; the reset undoes the link
+   styling the browser applies and leaves them looking exactly as before. */
 .tab{
   appearance:none; border:0; background:transparent; color:var(--muted);
   font:inherit; font-size:12.5px; padding:6px 11px; border-radius:7px;
   cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:5px;
-  flex:0 0 auto;
+  flex:0 0 auto; text-decoration:none;
 }
-.tab:hover{background:var(--panel-2); color:var(--text)}
+.tab:hover{background:var(--panel-2); color:var(--text); text-decoration:none}
 .tab[aria-selected="true"]{background:var(--accent-dim); color:#fff; font-weight:600}
 :root[data-theme="light"] .tab[aria-selected="true"]{color:#06301f}
 .tab:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
@@ -69,7 +72,7 @@ nav::-webkit-scrollbar{display:none}
 }
 .icon-btn:hover{color:var(--text)}
 .more-menu{position:fixed;right:8px;top:calc(var(--top-h) + 6px);z-index:30;width:260px;padding:7px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 45px #0008;display:grid;grid-template-columns:1fr 1fr;gap:5px}
-.more-menu[hidden]{display:none}.more-menu button{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:7px;padding:9px;text-align:left;cursor:pointer}.more-menu button:hover,.more-menu button.on{background:var(--panel-2);color:var(--text);border-color:var(--line)}
+.more-menu[hidden]{display:none}.more-menu a{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:7px;padding:9px;text-align:left;cursor:pointer;text-decoration:none;display:block}.more-menu a:hover,.more-menu a.on{background:var(--panel-2);color:var(--text);border-color:var(--line);text-decoration:none}
 
 /* ---- Panel area ---- */
 main{flex:1; position:relative; min-height:0}
@@ -94,14 +97,14 @@ main{flex:1; position:relative; min-height:0}
 <header>
   <!-- The brand is the way back to the default tab: a hub with no home button
        strands anyone who has drilled into a child route. -->
-  <button class="brand" id="home" type="button" title="Về trang chủ" aria-label="Về trang chủ">
+  <a class="brand" id="home" href="?tab=brief" title="Về trang chủ" aria-label="Về trang chủ">
     <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true">
       <rect width="32" height="32" rx="7" fill="var(--accent)" opacity=".16"/>
       <path d="M7 22V10M7 22h7M18 22V10l7 12V10" stroke="var(--accent)" stroke-width="2.6"
             fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     LEON
-  </button>
+  </a>
   <nav id="tabs" role="tablist" aria-label="Khu vực"></nav>
   <button class="icon-btn" id="theme" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện">◐</button>
 </header>
@@ -173,17 +176,28 @@ function childSrc(tab){
   return tab.src + (qs ? (tab.src.includes("?") ? "&" : "?") + qs : "");
 }
 
+/* Tabs are anchors, not buttons, so the browser gives Ctrl/Cmd-click,
+   middle-click and "open link in new tab" for free -- none of which a button
+   can offer, and all of which anyone comparing two tabs reaches for. The href
+   carries the rest of the query string so a tab opened in a new window lands
+   on the same symbol and timeframe the reader was already looking at. */
+function tabHref(key){
+  const params = new URLSearchParams(location.search);
+  params.set("tab", key);
+  return "?" + params.toString();
+}
+
 function build(){
   TABS.forEach(tab => {
     if(!tab.hidden && tab.primary){
-      const btn = document.createElement("button");
+      const btn = document.createElement("a");
       btn.className = "tab";
-      btn.type = "button";
+      btn.href = tabHref(tab.key);
+      btn.dataset.tab = tab.key;
       btn.role = "tab";
       btn.id = "tab-" + tab.key;
       btn.setAttribute("aria-controls", "pane-" + tab.key);
       btn.innerHTML = `<span aria-hidden="true">${tab.icon}</span>${tab.name}`;
-      btn.addEventListener("click", () => select(tab.key, true));
       tabBar.appendChild(btn);
     }
 
@@ -202,12 +216,25 @@ function build(){
   more.onclick = e => { moreMenu.hidden = !moreMenu.hidden; e.stopPropagation(); };
   tabBar.appendChild(more);
   TABS.filter(t => !t.hidden && !t.primary).forEach(tab => {
-    const btn = document.createElement("button");
-    btn.type = "button"; btn.dataset.key = tab.key;
+    const btn = document.createElement("a");
+    btn.href = tabHref(tab.key);
+    btn.dataset.tab = tab.key; btn.dataset.key = tab.key;
     btn.innerHTML = `${tab.icon} ${tab.name}`;
-    btn.onclick = () => { select(tab.key, true); moreMenu.hidden = true; };
     moreMenu.appendChild(btn);
   });
+}
+
+/* Only a plain left click is handled here. Everything the browser does better
+   than we can -- new tab, new window, copy link -- is left to fall through,
+   which is the whole reason these are anchors. */
+function tabClick(event){
+  const link = event.target.closest("a[data-tab]");
+  if(!link) return;
+  if(event.defaultPrevented) return;
+  if(event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  select(link.dataset.tab, true);
+  moreMenu.hidden = true;
 }
 
 function select(key, pushState){
@@ -223,9 +250,14 @@ function select(key, pushState){
     }
     pane.hidden = !active;
   });
+  /* The query string changes as the reader moves around, and the hrefs encode
+     it, so they have to be rebuilt or a Ctrl+click would reopen a stale view. */
+  document.querySelectorAll("a[data-tab]").forEach(link => {
+    link.href = tabHref(link.dataset.tab);
+  });
   const inMore = !tab.primary && !tab.hidden;
   document.getElementById("tab-more").setAttribute("aria-selected", String(inMore));
-  moreMenu.querySelectorAll("button").forEach(button => button.classList.toggle("on", button.dataset.key === tab.key));
+  moreMenu.querySelectorAll("a").forEach(link => link.classList.toggle("on", link.dataset.key === tab.key));
 
   // Load on first view, then leave it mounted so switching back is instant.
   if(!loaded.has(tab.key)){
@@ -263,13 +295,18 @@ tabBar.addEventListener("keydown", e => {
   e.preventDefault();
 });
 
+tabBar.addEventListener("click", tabClick);
+moreMenu.addEventListener("click", tabClick);
 addEventListener("popstate", () => select(currentTab(), false));
 document.addEventListener("click", e => { if(!moreMenu.contains(e.target) && e.target.id !== "tab-more") moreMenu.hidden = true; });
 
 build();
 select(currentTab(), false);
 
-document.getElementById("home").addEventListener("click", () => {
+document.getElementById("home").addEventListener("click", event => {
+  // Same rule as the tabs: let the browser own every modified click.
+  if(event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
   const frame = document.getElementById("pane-" + DEFAULT_TAB);
   const home = TABS.find(t => t.key === DEFAULT_TAB);
   // A second press while already home reloads the tab rather than doing

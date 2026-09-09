@@ -44,8 +44,105 @@
 </details>
 <section class="fxbar" id="fxbar" hidden></section><div class="notice"><b>Phạm vi đúng:</b> đây là giá/khối lượng OHLCV trễ từ Yahoo Finance cho một rổ 40 ETF và cổ phiếu thanh khoản. Không có BCTC hay định giá, vì nguồn này không cung cấp các input đó. Dùng để quan sát xu hướng, không phải khuyến nghị mua bán.</div></main></div><script>
 "use strict";const $=id=>document.getElementById(id),fmt=(v,d=2)=>v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:d,minimumFractionDigits:d});let rows=[],selected=null;
-fetch("../../data/us.json",{cache:"no-cache"}).then(r=>r.json()).then(d=>{rows=d.rows;$("stamp").textContent=`Cập nhật ${new Date(d.updated_at).toLocaleString("vi-VN")} · Yahoo delayed`;selected=rows.find(r=>r.s==="SPY")||rows[0];renderList();render()}).catch(e=>$("list").innerHTML=`<div class="muted" style="padding:20px">Chạy python -m pipeline.sources.us_equity<br>${e}</div>`);
-function renderList(){const q=$("q").value.toLowerCase(),a=rows.filter(r=>!q||`${r.s} ${r.n}`.toLowerCase().includes(q));$("list").innerHTML=a.map(r=>`<div class="item ${r===selected?"on":""}" data-s="${r.s}"><b>${r.s}</b><small>${r.n}</small><span class="num"><b>${fmt(r.p)}</b><br><small class="${r.chp>=0?"pos":"neg"}">${r.chp>0?"+":""}${fmt(r.chp)}%</small></span></div>`).join("");$("list").querySelectorAll(".item").forEach(e=>e.onclick=()=>{selected=rows.find(r=>r.s===e.dataset.s);renderList();render()})}
+
+/* The selected symbol lives in the URL so it can be linked, bookmarked and
+   reopened. Without this a chosen ticker was pure in-page state: there was
+   nothing to copy, nothing to Ctrl+click, and a reload always went back to SPY. */
+/* These rows are not <a> elements -- a table row cannot be one -- so the
+   browser's own link behaviour has to be reproduced rather than inherited.
+   Plain click navigates the whole hub; Ctrl/Cmd-click, middle-click and
+   Shift-click open a new tab or window, which is what anyone comparing two
+   tickers expects and what a bare click handler silently swallowed.
+
+   This file holds the canonical copy. Every other app pastes it verbatim
+   between the same sentinels, and pipeline/core/check_linkable.py fails the
+   build if any copy drifts. It is inlined rather than shared through
+   <script src> on purpose: check_apps.py skips scripts with a src attribute,
+   so a shared file would sit outside the only JavaScript gate this repo has,
+   and sw.js caches same-origin assets by path with no cache busting. */
+// LEON-LINKABLE-BEGIN v1
+function linkTarget(node){
+  const href = node?.dataset?.href;
+  return href ? new URL(href, location.href).href : null;
+}
+
+function followLink(node, newTab){
+  const href = linkTarget(node);
+  if(!href) return;
+  if(newTab){
+    window.open(href, "_blank", "noopener");
+    return;
+  }
+  // The page runs inside the hub's iframe, so a same-tab navigation has to
+  // replace the top document or the tab would open nested inside itself.
+  window.top.location.href = href;
+}
+
+document.addEventListener("click", event => {
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, event.ctrlKey || event.metaKey || event.shiftKey);
+});
+/* Middle-click needs both handlers. `mousedown` is where the browser decides
+   to start autoscroll, and leaving that to happen suppresses the auxclick that
+   follows -- so the default has to be cancelled there, and the navigation done
+   on auxclick, which is the only event carrying button 1. */
+document.addEventListener("mousedown", event => {
+  if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+});
+document.addEventListener("auxclick", event => {
+  if(event.button !== 1) return;
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, true);
+});
+document.addEventListener("keydown", event => {
+  if((event.key === "Enter" || event.key === " ") && event.target.matches("[data-href]")){
+    event.preventDefault();
+    followLink(event.target, event.ctrlKey || event.metaKey || event.shiftKey);
+  }
+});
+
+/* Some rows already do something useful on a plain click -- open a drawer, or
+   switch the chart's symbol in place -- and that is the better behaviour to
+   keep. Binding those with this instead leaves the plain click alone and adds
+   only the modifier and middle-click paths, so "open in a new tab" works
+   without taking away what the row already did. */
+function bindOpenInNewTab(root){
+  root.addEventListener("click", event => {
+    if(!(event.ctrlKey || event.metaKey || event.shiftKey)) return;
+    const node = event.target.closest("[data-href]");
+    if(!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+    followLink(node, true);
+  }, true);
+  root.addEventListener("mousedown", event => {
+    if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+  });
+  root.addEventListener("auxclick", event => {
+    if(event.button !== 1) return;
+    const node = event.target.closest("[data-href]");
+    if(!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+    followLink(node, true);
+  });
+}
+// LEON-LINKABLE-END
+
+function usHref(sym){ return `../../hub/?tab=us&s=${encodeURIComponent(sym)}`; }
+bindOpenInNewTab(document);
+function syncUrl(){
+  if(!selected) return;
+  const params = new URLSearchParams(location.search);
+  params.set("s", selected.s);
+  history.replaceState(null, "", "?" + params.toString());
+}
+fetch("../../data/us.json",{cache:"no-cache"}).then(r=>r.json()).then(d=>{rows=d.rows;$("stamp").textContent=`Cập nhật ${new Date(d.updated_at).toLocaleString("vi-VN")} · Yahoo delayed`;const want=(new URLSearchParams(location.search).get("s")||"").toUpperCase();selected=rows.find(r=>r.s===want)||rows.find(r=>r.s==="SPY")||rows[0];renderList();render();syncUrl()}).catch(e=>$("list").innerHTML=`<div class="muted" style="padding:20px">Chạy python -m pipeline.sources.us_equity<br>${e}</div>`);
+function renderList(){const q=$("q").value.toLowerCase(),a=rows.filter(r=>!q||`${r.s} ${r.n}`.toLowerCase().includes(q));$("list").innerHTML=a.map(r=>`<div class="item ${r===selected?"on":""}" data-s="${r.s}" data-href="${usHref(r.s)}" role="link" tabindex="0" title="Ctrl/⌘ + bấm hoặc bấm chuột giữa để mở ở tab mới"><b>${r.s}</b><small>${r.n}</small><span class="num"><b>${fmt(r.p)}</b><br><small class="${r.chp>=0?"pos":"neg"}">${r.chp>0?"+":""}${fmt(r.chp)}%</small></span></div>`).join("");$("list").querySelectorAll(".item").forEach(e=>e.onclick=()=>{selected=rows.find(r=>r.s===e.dataset.s);renderList();render();syncUrl()})}
 function render(){const r=selected;if(!r)return;$("exchange").textContent=`${r.s} · ${r.e||"US"} · ${new Date(r.asof).toLocaleString("vi-VN")}`;$("name").textContent=r.n;$("price").textContent="$"+fmt(r.p);$("change").className=r.chp>=0?"pos":"neg";$("change").textContent=`${r.chp>0?"+":""}${fmt(r.ch)} (${r.chp>0?"+":""}${fmt(r.chp)}%)`;const state=[['Ngắn hạn · SMA50',r.d==='up'?'Trên xu hướng':'Dưới xu hướng',r.d],['Cấu trúc · SMA200',r.w==='up'?'Trên SMA200':'Dưới SMA200',r.w],['RSI 14',fmt(r.rsi,1),r.rsi>70?'down':r.rsi<30?'up':'']];$("states").innerHTML=state.map(x=>`<div class="state"><small>${x[0]}</small><b class="${x[2]==="up"?"pos":x[2]==="down"?"neg":""}">${x[1]}</b></div>`).join("");const pos=Math.max(0,Math.min(100,(r.p-r.l52)/(r.h52-r.l52)*100));$("metrics").innerHTML=`<div class="metric"><span class="muted">Momentum 1 tháng</span><b class="${r.m1>=0?"pos":"neg"}">${r.m1>0?"+":""}${fmt(r.m1)}%</b></div><div class="metric"><span class="muted">Momentum 3 tháng</span><b class="${r.m3>=0?"pos":"neg"}">${r.m3>0?"+":""}${fmt(r.m3)}%</b></div><div class="metric"><span class="muted">Momentum 6 tháng</span><b class="${r.m6>=0?"pos":"neg"}">${r.m6>0?"+":""}${fmt(r.m6)}%</b></div><div class="metric"><span class="muted">Khối lượng</span><b>${Number(r.v||0).toLocaleString("en-US")}</b></div><div class="metric"><span class="muted">52 tuần</span><b>$${fmt(r.l52)} — $${fmt(r.h52)}</b></div><div class="range"><i style="left:${pos}%"></i></div>`;draw(r.hist)}
 function draw(a){const svg=$("chart"),W=900,H=360,L=52,R=15,T=15,B=30,vals=a.map(x=>x[1]),lo=Math.min(...vals),hi=Math.max(...vals),x=i=>L+i*(W-L-R)/(a.length-1),y=v=>T+(hi-v)*(H-T-B)/(hi-lo);svg.innerHTML="";for(let i=0;i<5;i++){const yy=T+i*(H-T-B)/4,ln=document.createElementNS("http://www.w3.org/2000/svg","line");Object.entries({x1:L,x2:W-R,y1:yy,y2:yy,stroke:css("--line")}).forEach(([k,v])=>ln.setAttribute(k,v));svg.appendChild(ln);const tx=document.createElementNS("http://www.w3.org/2000/svg","text");tx.setAttribute("x",5);tx.setAttribute("y",yy+4);tx.setAttribute("fill",css("--m"));tx.setAttribute("font-size",10);tx.textContent=fmt(hi-i*(hi-lo)/4);svg.appendChild(tx)}const p=document.createElementNS("http://www.w3.org/2000/svg","path");p.setAttribute("d",a.map((v,i)=>(i?"L":"M")+x(i)+","+y(v[1])).join(" "));p.setAttribute("fill","none");p.setAttribute("stroke",a.at(-1)[1]>=a[0][1]?css("--up"):css("--dn"));p.setAttribute("stroke-width",2.5);p.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(p)}function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}$("q").oninput=renderList;
 /* Reference rates, delayed daily closes. Shown here because USD/VND and the

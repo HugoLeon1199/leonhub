@@ -332,7 +332,7 @@ function render(){
     th.textContent = COLS.find(c => c.k === th.dataset.k).t
       + (th.dataset.k === sortKey ? (sortDir < 0 ? " ↓" : " ↑") : ""));
   $("rows").innerHTML = rows.length
-    ? rows.map(r => `<tr data-sym="${r.s}" tabindex="0">${COLS.map(c => `<td>${c.f(r)}</td>`).join("")}</tr>`).join("")
+    ? rows.map(r => `<tr data-sym="${r.s}" tabindex="0" data-href="../../hub/?tab=chart&sym=${encodeURIComponent(r.s)}&tf=1h" title="Bấm để xem chi tiết — Ctrl/⌘ + bấm hoặc chuột giữa để mở biểu đồ ở tab mới">${COLS.map(c => `<td>${c.f(r)}</td>`).join("")}</tr>`).join("")
     : '<tr><td colspan="7" class="msg">Không có cặp nào khớp bộ lọc.</td></tr>';
 }
 
@@ -463,6 +463,92 @@ async function openCoin(sym){
   body.innerHTML = html;
 }
 
+/* These rows are not <a> elements -- a table row cannot be one -- so the
+   browser's own link behaviour has to be reproduced rather than inherited.
+   Plain click navigates the whole hub; Ctrl/Cmd-click, middle-click and
+   Shift-click open a new tab or window, which is what anyone comparing two
+   tickers expects and what a bare click handler silently swallowed.
+
+   This file holds the canonical copy. Every other app pastes it verbatim
+   between the same sentinels, and pipeline/core/check_linkable.py fails the
+   build if any copy drifts. It is inlined rather than shared through
+   <script src> on purpose: check_apps.py skips scripts with a src attribute,
+   so a shared file would sit outside the only JavaScript gate this repo has,
+   and sw.js caches same-origin assets by path with no cache busting. */
+// LEON-LINKABLE-BEGIN v1
+function linkTarget(node){
+  const href = node?.dataset?.href;
+  return href ? new URL(href, location.href).href : null;
+}
+
+function followLink(node, newTab){
+  const href = linkTarget(node);
+  if(!href) return;
+  if(newTab){
+    window.open(href, "_blank", "noopener");
+    return;
+  }
+  // The page runs inside the hub's iframe, so a same-tab navigation has to
+  // replace the top document or the tab would open nested inside itself.
+  window.top.location.href = href;
+}
+
+document.addEventListener("click", event => {
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, event.ctrlKey || event.metaKey || event.shiftKey);
+});
+/* Middle-click needs both handlers. `mousedown` is where the browser decides
+   to start autoscroll, and leaving that to happen suppresses the auxclick that
+   follows -- so the default has to be cancelled there, and the navigation done
+   on auxclick, which is the only event carrying button 1. */
+document.addEventListener("mousedown", event => {
+  if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+});
+document.addEventListener("auxclick", event => {
+  if(event.button !== 1) return;
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, true);
+});
+document.addEventListener("keydown", event => {
+  if((event.key === "Enter" || event.key === " ") && event.target.matches("[data-href]")){
+    event.preventDefault();
+    followLink(event.target, event.ctrlKey || event.metaKey || event.shiftKey);
+  }
+});
+
+/* Some rows already do something useful on a plain click -- open a drawer, or
+   switch the chart's symbol in place -- and that is the better behaviour to
+   keep. Binding those with this instead leaves the plain click alone and adds
+   only the modifier and middle-click paths, so "open in a new tab" works
+   without taking away what the row already did. */
+function bindOpenInNewTab(root){
+  root.addEventListener("click", event => {
+    if(!(event.ctrlKey || event.metaKey || event.shiftKey)) return;
+    const node = event.target.closest("[data-href]");
+    if(!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+    followLink(node, true);
+  }, true);
+  root.addEventListener("mousedown", event => {
+    if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+  });
+  root.addEventListener("auxclick", event => {
+    if(event.button !== 1) return;
+    const node = event.target.closest("[data-href]");
+    if(!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+    followLink(node, true);
+  });
+}
+// LEON-LINKABLE-END
+
+bindOpenInNewTab($("rows"));
 $("rows").addEventListener("click", e => {
   const tr = e.target.closest("tr[data-sym]");
   if(tr) openCoin(tr.dataset.sym);

@@ -3574,9 +3574,9 @@
           </span>
         </div>
         <div class="nav-segment">
-          <div class="nav-links" id="navLinks" data-nav-tabs="1"><a class="nav-hub nav-hub--active" href="/" data-view="digest">Tin 48h</a><a class="nav-hub nav-hub--invest" href="/?view=invest" data-view="invest">Kinh tế đầu tư</a><a class="nav-hub" href="/?view=live" data-view="live">Thế giới <span class="nav-live-badge"><span class="nav-live-dot"></span>LIVE</span></a></div>
-          <a class="nav-tech-link" href="/tech/">Báo Công nghệ &amp; AI</a>
-          <a class="nav-tech-link" href="/cars/">Cars</a>
+          <div class="nav-links" id="navLinks" data-nav-tabs="1"><a class="nav-hub nav-hub--active" href="?view=digest" data-view="digest">Tin 48h</a><a class="nav-hub nav-hub--invest" href="?view=invest" data-view="invest">Kinh tế đầu tư</a><a class="nav-hub" href="?view=live" data-view="live">Thế giới <span class="nav-live-badge"><span class="nav-live-dot"></span>LIVE</span></a></div>
+          <a class="nav-tech-link" href="https://leonquant.com/tech/" target="_blank" rel="noopener noreferrer">Báo Công nghệ &amp; AI</a>
+          <a class="nav-tech-link" href="https://leonquant.com/cars/" target="_blank" rel="noopener noreferrer">Cars</a>
         </div>
       </nav>
       <p class="nav-timestamp" id="navTimestamp" hidden></p>
@@ -4906,11 +4906,13 @@
     }
 
     function digestNavHref() {
-      const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
-      if (path === "/" || path === "" || /\/index\.html$/i.test(path) || /\/landing_page\.html$/i.test(path)) {
-        return path.endsWith(".html") ? path : "/";
-      }
-      return "/";
+      /* Inherited from leonquant.com, where the digest is the site root. Here
+         the app is served from /apps/news/, so an absolute "/" would leave the
+         app entirely -- a plain click was saved by the preventDefault below,
+         but a Ctrl+click followed the raw href and landed on the hub. The view
+         is a query parameter this page already reads on boot, so keep it
+         relative and a new tab opens the view the reader actually asked for. */
+      return "?view=digest";
     }
 
     function liveNavHref() {

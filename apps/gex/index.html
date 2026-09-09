@@ -29,10 +29,12 @@ body{margin:0; background:var(--bg); color:var(--text); min-height:100%;
 .head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:4px}
 h1{font-size:19px; margin:0; font-weight:700; letter-spacing:-.2px}
 .group{display:flex; gap:2px; background:var(--panel-2); padding:2px; border-radius:8px}
-.group button{appearance:none; border:0; background:transparent; color:var(--muted);
-  font:inherit; font-size:12.5px; padding:4px 12px; border-radius:6px; cursor:pointer}
-.group button[aria-pressed="true"]{background:var(--accent); color:#04150f; font-weight:600}
-:root[data-theme="light"] .group button[aria-pressed="true"]{color:#fff}
+/* Symbol chips are anchors so they can be opened in a new tab; the timeframe
+   controls beside them are still buttons, so both need the same styling. */
+.group button,.group a{appearance:none; border:0; background:transparent; color:var(--muted);
+  font:inherit; font-size:12.5px; padding:4px 12px; border-radius:6px; cursor:pointer; text-decoration:none}
+.group button[aria-pressed="true"],.group a[aria-pressed="true"]{background:var(--accent); color:#04150f; font-weight:600}
+:root[data-theme="light"] .group button[aria-pressed="true"],:root[data-theme="light"] .group a[aria-pressed="true"]{color:#fff}
 .sub{color:var(--muted); font-size:12.5px; margin:0 0 16px; max-width:76ch}
 
 .verdict{background:var(--panel); border:1px solid var(--line); border-left-width:3px;
@@ -212,12 +214,18 @@ function usd(v){
   return `${sign}${a.toFixed(0)}`;
 }
 
+/* Anchors rather than buttons so a symbol can be opened in its own tab --
+   comparing BTC and ETH gamma side by side is the obvious thing to want here,
+   and a button offers no way to do it. The plain click still switches in place
+   through replaceState, so nothing reloads for the common case. */
 Object.entries(SYMBOLS).forEach(([key, name]) => {
-  const b = document.createElement("button");
-  b.type = "button";
+  const b = document.createElement("a");
+  b.href = `../../hub/?tab=gex&sym=${encodeURIComponent(key)}`;
   b.textContent = name;
   b.setAttribute("aria-pressed", String(key === current));
-  b.addEventListener("click", () => {
+  b.addEventListener("click", event => {
+    if(event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
     current = key;
     [...el("syms").children].forEach((c, i) =>
       c.setAttribute("aria-pressed", String(Object.keys(SYMBOLS)[i] === key)));

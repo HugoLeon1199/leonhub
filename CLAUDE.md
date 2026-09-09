@@ -66,6 +66,7 @@ python -m pipeline.transform.gex_build
 python -m pipeline.sources.fx_rates
 python -m pipeline.core.validate
 python -m pipeline.core.check_apps                        # parses every app's inline JS
+python -m pipeline.core.check_linkable                    # shared link-behaviour block must not drift
 
 python -m http.server 8811    # http://localhost:8811/hub/
 ```

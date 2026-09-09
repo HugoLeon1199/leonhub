@@ -204,12 +204,106 @@ function currentRows(){
 function num(id){const v=parseFloat($(id).value);return isFinite(v)?v:null}function cmp(a,b){if(a==null)return 1;if(b==null)return-1;return typeof a==="string"?a.localeCompare(b,"vi"):a-b}
 function renderTable(){
   const rows=currentRows();$("resultCount").textContent=`${rows.length}/${DATA.rows.length} dòng`;
-  $("tbody").innerHTML=rows.length?rows.map(r=>`<tr data-slug="${r.slug}" data-cat="${r.cs}">
+  $("tbody").innerHTML=rows.length?rows.map(r=>`<tr data-slug="${r.slug}" data-cat="${r.cs}" data-href="${bdsHref(r.rs,r.cs)}" title="Bấm để xem chi tiết — Ctrl/⌘ + bấm hoặc chuột giữa để mở ở tab mới">
     <td class="district">${esc(r.d)}</td><td>${esc(r.rs)}</td><td class="dim">${esc(r.r)}</td><td>${esc(r.i)}</td>
     <td>${fmt(r.p)}</td><td>${r.g==null?'<span class="dim">chờ dữ liệu</span>':signed(r.g)+'%'}</td><td>${fmt(r.y,2)}</td><td>${verdict(r.v)}</td>
     <td><span class="spread"><span>${fmt(r.p25)}–${fmt(r.p75)}</span><span class="spread-bar"><i style="width:${Math.min(100,Math.max(5,(r.p75-r.p25)/Math.max(r.p,1)*70))}%"></i></span></span></td>
     <td>${fmt(r.tp,2)}</td><td>${fmt(r.dom,0)}</td><td>${r.n.toLocaleString("vi-VN")}</td></tr>`).join(""):'<tr><td colspan="12" class="nodata">Không có ô nào khớp bộ lọc</td></tr>';
   $("tbody").querySelectorAll("tr[data-slug]").forEach(tr=>tr.onclick=()=>openDistrict(tr.dataset.slug,tr.dataset.cat));
+}
+/* The app already reads province/cat from the query string, so a deep link
+   reopens exactly the view the row or province stands for. */
+/* These rows are not <a> elements -- a table row cannot be one -- so the
+   browser's own link behaviour has to be reproduced rather than inherited.
+   Plain click navigates the whole hub; Ctrl/Cmd-click, middle-click and
+   Shift-click open a new tab or window, which is what anyone comparing two
+   tickers expects and what a bare click handler silently swallowed.
+
+   This file holds the canonical copy. Every other app pastes it verbatim
+   between the same sentinels, and pipeline/core/check_linkable.py fails the
+   build if any copy drifts. It is inlined rather than shared through
+   <script src> on purpose: check_apps.py skips scripts with a src attribute,
+   so a shared file would sit outside the only JavaScript gate this repo has,
+   and sw.js caches same-origin assets by path with no cache busting. */
+// LEON-LINKABLE-BEGIN v1
+function linkTarget(node){
+  const href = node?.dataset?.href;
+  return href ? new URL(href, location.href).href : null;
+}
+
+function followLink(node, newTab){
+  const href = linkTarget(node);
+  if(!href) return;
+  if(newTab){
+    window.open(href, "_blank", "noopener");
+    return;
+  }
+  // The page runs inside the hub's iframe, so a same-tab navigation has to
+  // replace the top document or the tab would open nested inside itself.
+  window.top.location.href = href;
+}
+
+document.addEventListener("click", event => {
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, event.ctrlKey || event.metaKey || event.shiftKey);
+});
+/* Middle-click needs both handlers. `mousedown` is where the browser decides
+   to start autoscroll, and leaving that to happen suppresses the auxclick that
+   follows -- so the default has to be cancelled there, and the navigation done
+   on auxclick, which is the only event carrying button 1. */
+document.addEventListener("mousedown", event => {
+  if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+});
+document.addEventListener("auxclick", event => {
+  if(event.button !== 1) return;
+  const node = event.target.closest("[data-href]");
+  if(!node) return;
+  event.preventDefault();
+  followLink(node, true);
+});
+document.addEventListener("keydown", event => {
+  if((event.key === "Enter" || event.key === " ") && event.target.matches("[data-href]")){
+    event.preventDefault();
+    followLink(event.target, event.ctrlKey || event.metaKey || event.shiftKey);
+  }
+});
+
+/* Some rows already do something useful on a plain click -- open a drawer, or
+   switch the chart's symbol in place -- and that is the better behaviour to
+   keep. Binding those with this instead leaves the plain click alone and adds
+   only the modifier and middle-click paths, so "open in a new tab" works
+   without taking away what the row already did. */
+function bindOpenInNewTab(root){
+  root.addEventListener("click", event => {
+    if(!(event.ctrlKey || event.metaKey || event.shiftKey)) return;
+    const node = event.target.closest("[data-href]");
+    if(!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+    followLink(node, true);
+  }, true);
+  root.addEventListener("mousedown", event => {
+    if(event.button === 1 && event.target.closest("[data-href]")) event.preventDefault();
+  });
+  root.addEventListener("auxclick", event => {
+    if(event.button !== 1) return;
+    const node = event.target.closest("[data-href]");
+    if(!node) return;
+    event.preventDefault();
+    event.stopPropagation();
+    followLink(node, true);
+  });
+}
+// LEON-LINKABLE-END
+
+bindOpenInNewTab(document);
+function bdsHref(province,cat){
+  const params=new URLSearchParams({tab:"bds"});
+  if(province)params.set("province",province);
+  if(cat)params.set("cat",cat);
+  return `../../hub/?${params}`;
 }
 function verdict(v){return v==="cheap"?'<span class="badge cheap">Thuê đỡ giá</span>':v==="rich"?'<span class="badge rich">Kỳ vọng cao</span>':v==="fair"?'<span class="badge fair">Cân bằng</span>':'<span class="dim">—</span>'}function signed(v){return `${v>0?"+":""}${fmt(v,1)}`}function esc(v){const d=document.createElement("div");d.textContent=v??"";return d.innerHTML}
 /* ISO date to VN day/month/year. Returned unchanged if it is not a plain
@@ -247,7 +341,7 @@ function buildMap(){
     let border="";edges.forEach(([a,b])=>{const [x1,y1]=xy(a),[x2,y2]=xy(b);border+=`M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`});
     fill.setAttribute("d",d);fill.setAttribute("fill",colorScale(value,values));fill.setAttribute("fill-rule","evenodd");fill.classList.add("province-fill");
     outline.setAttribute("d",border);outline.classList.add("province-outline");
-    group.dataset.province=name;group.classList.add("province-group");group.setAttribute("tabindex","0");group.setAttribute("role","button");group.setAttribute("aria-label",`${name}: ${value==null?"chưa đủ mẫu":fmt(value)+" triệu đồng mỗi mét vuông"}`);if(name===selectedProvince)group.classList.add("selected");
+    group.dataset.province=name;group.dataset.href=bdsHref(name,mapCat);group.classList.add("province-group");group.setAttribute("tabindex","0");group.setAttribute("role","button");group.setAttribute("aria-label",`${name}: ${value==null?"chưa đủ mẫu":fmt(value)+" triệu đồng mỗi mét vuông"}`);if(name===selectedProvince)group.classList.add("selected");
     group.onmousemove=e=>showTip(e,name,value);group.onmouseleave=hideTip;group.onclick=()=>selectProvince(name,true);group.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();selectProvince(name,true)}};
     group.append(fill,outline);svg.appendChild(group);
   });
