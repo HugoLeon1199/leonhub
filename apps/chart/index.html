@@ -259,7 +259,7 @@ main{flex:1; position:relative; min-height:0;min-width:0}
 .tape-row span:nth-child(n+3){text-align:right}.tape-row.buy{color:var(--up)}.tape-row.sell{color:var(--down)}
 .tape-row .venue{font-size:8.5px;letter-spacing:.02em;padding:1px 4px;border-radius:3px;border:1px solid currentColor;opacity:.85;white-space:nowrap}
 .venue.v-binance{color:#e0a83c}.venue.v-okx{color:#58a6ff}.venue.v-bybit{color:#f7a600}.venue.v-hl{color:#a78bfa}
-.tape-tot{display:flex;flex-wrap:wrap;gap:4px 10px;padding:6px;border-bottom:1px solid var(--line);font-size:10px;
+.tape-cov{padding:6px;border-bottom:1px solid var(--line);font-size:10px;color:var(--muted);line-height:1.5}.tape-cov b{color:var(--text)}.tape-cov small{display:block;margin-top:2px;opacity:.85}.tape-modes{display:flex;gap:3px;padding:6px;border-bottom:1px solid var(--line)}.tape-modes button{flex:1;appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font:inherit;font-size:10px;padding:3px 6px;border-radius:5px;cursor:pointer}.tape-modes button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#04150f;font-weight:600}.roll-head{display:flex;justify-content:space-between;gap:8px;padding:6px;font-size:9.5px;color:var(--muted)}.rollup{display:grid;gap:1px;padding:0 6px 6px}.roll-row{display:grid;grid-template-columns:52px 1fr 64px;gap:6px;align-items:center;font-size:9.5px;color:var(--muted)}.roll-t{white-space:nowrap;font-variant-numeric:tabular-nums}.roll-bar{position:relative;height:9px;background:var(--panel-2);border-radius:2px;overflow:hidden}.roll-bar i{position:absolute;top:0;height:100%;display:block;border-radius:2px}.roll-up{background:var(--up)}.roll-down{background:var(--down)}.roll-none{width:100%;margin:0!important;background:repeating-linear-gradient(45deg,var(--line),var(--line) 3px,transparent 3px,transparent 6px);opacity:.6}.roll-row.gap .roll-t,.roll-row.gap .roll-v{opacity:.5}.roll-row.quiet .roll-v{opacity:.55}.roll-v{text-align:right;font-variant-numeric:tabular-nums}.roll-v.up{color:var(--up)}.roll-v.down{color:var(--down)}.tape-tot{display:flex;flex-wrap:wrap;gap:4px 10px;padding:6px;border-bottom:1px solid var(--line);font-size:10px;
   font-variant-numeric:tabular-nums;color:var(--muted)}
 .tape-tot b{color:var(--text)}.dimtxt{color:var(--muted);opacity:.8}
 .tape-clear{margin-left:auto;border:1px solid var(--line);background:transparent;color:var(--muted);
@@ -719,7 +719,7 @@ let watchQuotes={};
 let bookTimer=null;
 let tradeWs=null;
 let tapeEvents=[];
-let tapeMin=500000;
+let tapeMin=500000;  // see TAPE_DISPLAY_DEFAULT
 /* Volume at price, accumulated from every aggTrade rather than only the large
    ones the tape shows. A wall is built by the whole crowd, not by the handful
    of prints big enough to be worth listing, so netdollar has to see the flow
@@ -1022,10 +1022,23 @@ function renderBookData(d,sym=symbol){const asks=(d.asks||[]).slice(0,10).revers
    only in this browser -- there is no server to sync it to, and the panel says
    so rather than implying a shared record.
 
-   At ~83 bytes an event, the cap below is ~160 KB per symbol, well inside the
-   ~5 MB origin budget even with several symbols watched. */
-const TAPE_STORE_MAX = 2000;
-const TAPE_STORE_DAYS = 3;
+   An event serialises to ~100 bytes, so the cap below is ~1.2 MB per symbol.
+   The origin budget is ~5 MB and this app also stores drawings, watchlists,
+   alerts and indicator state, so two busy symbols at this cap is already most
+   of it -- writeTapeHistory halves and retries rather than losing the record.
+
+   TAPE_INGEST_MIN is deliberately equal to the threshold classifyLevel() uses
+   to call a candle an Absorb. Raising it above that would silently empty the
+   Absorb bucket -- every level would reclassify as Respect or Fakeout with no
+   error anywhere -- so the two constants have to move together. The tape the
+   reader actually sees is filtered at tapeMin, which starts far higher. */
+/* What the reader sees by default. The ingest floor keeps everything from
+   $100k up so level classification stays intact, but a tape meant to show
+   size should open on genuinely large prints rather than on everything. */
+const TAPE_DISPLAY_DEFAULT = 500000;
+const TAPE_INGEST_MIN = 100000;
+const TAPE_STORE_MAX = 12000;
+const TAPE_STORE_DAYS = 30;
 
 function tapeKey(sym){ return `leon_tape_${sym}`; }
 
@@ -1040,15 +1053,28 @@ function loadTapeHistory(sym){
 
 let tapeSaveTimer = null;
 function writeTapeHistory(sym){
-  try{
-    localStorage.setItem(tapeKey(sym), JSON.stringify(tapeEvents.slice(-TAPE_STORE_MAX)));
-  }catch(e){ /* quota full or storage blocked: history is a convenience */ }
+  /* A QuotaExceededError aborts the write and leaves the PREVIOUS value in
+     place, so an unhandled throw freezes history at whatever was last stored
+     while the panel keeps reporting coverage it no longer has. Drop the oldest
+     half and retry instead: some of the record is worth more than none, and
+     the coverage line reports what actually survived. */
+  let keep = tapeEvents.slice(-TAPE_STORE_MAX);
+  for(let attempt = 0; attempt < 4; attempt++){
+    try{
+      localStorage.setItem(tapeKey(sym), JSON.stringify(keep));
+      return keep.length;
+    }catch(e){
+      keep = keep.slice(Math.floor(keep.length / 2));
+      if(!keep.length){ try{ localStorage.removeItem(tapeKey(sym)); }catch(err){} return 0; }
+    }
+  }
+  return 0;
 }
 function saveTapeHistory(sym){
   // Debounced: a busy market fires this hundreds of times a minute, and
   // serialising 2,000 events on every print would stall the render loop.
   clearTimeout(tapeSaveTimer);
-  tapeSaveTimer = setTimeout(() => writeTapeHistory(sym), 3000);
+  tapeSaveTimer = setTimeout(() => { writeTapeHistory(sym); writeCoverage(sym); }, 3000);
 }
 /* A reload or a closed tab lands mid-debounce and used to drop everything
    written since the last flush -- measured: 17 prints on screen, 7 persisted.
@@ -1057,6 +1083,7 @@ function saveTapeHistory(sym){
 addEventListener("pagehide", () => {
   clearTimeout(tapeSaveTimer);
   if(tapeEvents.length) writeTapeHistory(symbol);
+  if(covWindows.length) writeCoverage(symbol);
 });
 
 const TAPE_VENUES = {
@@ -1069,7 +1096,97 @@ const TAPE_VENUES = {
 };
 let tapeSockets = [];
 
+
+/* The sockets only deliver while this tab is open, so what the tape holds is a
+   set of observation windows, not a continuous record of the market. Without
+   saying so, "Net -$48M since 09/12" reads as a claim about what the market did
+   over that span, when it means "of that span, this browser watched N hours".
+   Those are different claims and only the second one is true. */
+function covKey(sym){ return `leon_tapecov_${sym}`; }
+const COV_GAP_MS = 5 * 60000;   // a pause longer than this starts a new window
+let covWindows = [], covTouched = 0;
+
+function loadCoverage(sym){
+  let stored = [];
+  try{ stored = JSON.parse(localStorage.getItem(covKey(sym)) || "[]"); }catch(e){}
+  if(!Array.isArray(stored)) return [];
+  const cutoff = Date.now() - TAPE_STORE_DAYS * 86400000;
+  return stored.filter(w => Array.isArray(w) && w.length === 2 && w[1] > cutoff)
+               .map(w => [Math.max(w[0], cutoff), w[1]]);
+}
+function writeCoverage(sym){
+  try{ localStorage.setItem(covKey(sym), JSON.stringify(covWindows.slice(-400))); }catch(e){}
+}
+/* Called on every print but does real work at most twice a minute: extending
+   the open window is the common case and costs one comparison. */
+function touchCoverage(now){
+  const last = covWindows[covWindows.length - 1];
+  if(last && now - last[1] <= COV_GAP_MS){
+    if(now - covTouched < 30000) return;
+    last[1] = now; covTouched = now; return;
+  }
+  covWindows.push([now, now]); covTouched = now;
+}
+function coverageStats(){
+  const observed = covWindows.reduce((a, w) => a + Math.max(0, w[1] - w[0]), 0);
+  const span = TAPE_STORE_DAYS * 86400000;
+  return {sessions: covWindows.length, observed, pct: observed / span * 100};
+}
+function humanDuration(ms){
+  const h = Math.floor(ms / 3600000), m = Math.round(ms % 3600000 / 60000);
+  if(h >= 24) return `${Math.floor(h / 24)} ngày ${h % 24} giờ`;
+  return h ? `${h} giờ ${m} phút` : `${m} phút`;
+}
+
+/* A list of the eighty most recent prints is not a view of a thirty-day record.
+   The rollup buckets the whole retained window so the shape of accumulation is
+   visible at all -- which is what "no comprehensive view" was about.
+
+   Buckets the browser did not observe are drawn as gaps, never as zero net
+   flow: an unobserved hour is missing data, and drawing it flat would state
+   that the market was balanced when nothing was watching. */
+function tapeRollup(events, threshold){
+  if(!covWindows.length) return "";
+  const from = covWindows[0][0], to = Date.now();
+  const hourly = (to - from) <= 48 * 3600000;
+  const bucketMs = hourly ? 3600000 : 86400000;
+  const start = Math.floor(from / bucketMs) * bucketMs;
+  const buckets = new Map();
+  for(let t = start; t <= to; t += bucketMs) buckets.set(t, {buy:0, sell:0, n:0, seen:false});
+  for(const w of covWindows){
+    for(let t = Math.floor(w[0]/bucketMs)*bucketMs; t <= w[1]; t += bucketMs){
+      const b = buckets.get(t); if(b) b.seen = true;
+    }
+  }
+  for(const e of events){
+    if(e.notional < threshold) continue;
+    const b = buckets.get(Math.floor(e.at / bucketMs) * bucketMs);
+    if(!b) continue;
+    b.n++; if(e.side === "buy") b.buy += e.notional; else b.sell += e.notional;
+  }
+  const list = [...buckets.entries()].map(([t, b]) => ({t, ...b, net: b.buy - b.sell}));
+  const scale = Math.max(1, ...list.map(x => Math.abs(x.net)));
+  const label = t => new Date(t).toLocaleString("vi-VN", hourly
+    ? {hour12:false, hour:"2-digit", day:"2-digit", month:"2-digit"}
+    : {day:"2-digit", month:"2-digit"});
+  const bars = list.map(x => {
+    if(!x.seen) return `<div class="roll-row gap" title="${label(x.t)}: không quan sát"><span class="roll-t">${label(x.t)}</span><span class="roll-bar"><i class="roll-none"></i></span><span class="roll-v">—</span></div>`;
+    /* Observed but no qualifying print is a real, different statement from a
+       net of zero: the browser was watching and nothing large traded. */
+    if(!x.n) return `<div class="roll-row quiet" title="${label(x.t)}: có quan sát, không có lệnh nào đạt ngưỡng"><span class="roll-t">${label(x.t)}</span><span class="roll-bar"></span><span class="roll-v">·</span></div>`;
+    const w = Math.abs(x.net) / scale * 50;
+    const side = x.net >= 0 ? "up" : "down";
+    return `<div class="roll-row" title="${label(x.t)}: mua $${compact(x.buy)} · bán $${compact(x.sell)} · ${x.n} lệnh">`
+      + `<span class="roll-t">${label(x.t)}</span>`
+      + `<span class="roll-bar"><i class="roll-${side}" style="width:${w.toFixed(1)}%;margin-left:${(x.net>=0?50:50-w).toFixed(1)}%"></i></span>`
+      + `<span class="roll-v ${side}">${x.net>=0?"+":"−"}$${compact(Math.abs(x.net))}</span></div>`;
+  }).join("");
+  return `<div class="roll-head"><span>${hourly?"Theo giờ":"Theo ngày"} · mua phải, bán trái</span><span class="dimtxt">Ô mờ = không quan sát</span></div><div class="rollup">${bars}</div>`;
+}
+
+let tapeMode="list";
 function renderTape(){
+  const cov=coverageStats();
   const rows=[...tapeEvents].reverse().filter(x=>x.notional>=tapeMin).slice(0,80);
   // Totals span everything above the threshold, not only the rows drawn, so
   // the net figure does not change meaning when the list is truncated.
@@ -1080,7 +1197,7 @@ function renderTape(){
   const biggest=shown.reduce((m,x)=>x.notional>(m?.notional||0)?x:m,null);
 
   const head=`<div class="side-summary"><span>Ngưỡng USD</span>`
-    +`<input id="tape-min" type="number" min="50000" step="50000" value="${tapeMin}" style="width:94px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px"></div>`
+    +`<input id="tape-min" type="number" min="100000" step="100000" value="${tapeMin}" style="width:94px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px"></div>`
     +`<div class="tape-tot"><span>Lệnh <b>${shown.length}</b></span>`
     +`<span class="up">Mua $${compact(buy)}</span><span class="down">Bán $${compact(sell)}</span>`
     +`<span class="${net>=0?"up":"down"}">Net ${net>=0?"+":"−"}$${compact(Math.abs(net))}</span></div>`
@@ -1089,8 +1206,20 @@ function renderTape(){
     // total over an unknown window, which is not a number anyone can act on.
     +(shown.length?`<div class="tape-tot"><span class="dimtxt">Từ</span>`
       +`<span>${new Date(shown[0].at).toLocaleString("vi-VN",{hour12:false,day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>`
-      +`<button type="button" id="tape-clear" class="tape-clear">Xoá</button></div>`:"");
+      +`<button type="button" id="tape-clear" class="tape-clear">Xoá</button></div>`:"")
+    /* The honest half of the panel: the totals above cover only the hours this
+       browser was actually connected, and saying which hours those were is what
+       separates a readable record from a misleading one. */
+    +(cov.sessions?`<div class="tape-cov">Quan sát <b>${cov.sessions}</b> phiên · <b>${humanDuration(cov.observed)}</b> trong ${TAPE_STORE_DAYS} ngày · ${nf(cov.pct,1)}% thời gian`
+      +`<small>Chỉ ghi khi tab này mở — không phải lịch sử đầy đủ của thị trường.</small></div>`:"")
+    +`<div class="tape-modes"><button type="button" data-tape-mode="list" aria-pressed="${tapeMode==="list"}">Danh sách</button>`
+      +`<button type="button" data-tape-mode="roll" aria-pressed="${tapeMode==="roll"}">Tổng hợp</button></div>`;
 
+  if(tapeMode==="roll"){
+    const roll=tapeRollup(tapeEvents,tapeMin);
+    el.sideTape.innerHTML=head+(roll||'<div class="side-empty">Chưa quan sát đủ để tổng hợp.</div>');
+    return;
+  }
   el.sideTape.innerHTML=head+(rows.length
     ? rows.map(x=>{const v=TAPE_VENUES[x.venue]||{label:x.venue,cls:""};
         return `<div class="tape-row ${x.side}"><span>${new Date(x.at).toLocaleTimeString("vi-VN",{hour12:false})}</span>`
@@ -1126,7 +1255,9 @@ function pushTape(event){
   const recent = tapeEvents.length > 40 ? tapeEvents.slice(-40) : tapeEvents;
   if(recent.some(x => x.at === event.at && x.venue === event.venue && x.notional === event.notional)) return;
   tapeEvents.push(event);
-  if(tapeEvents.length > TAPE_STORE_MAX) tapeEvents.shift();
+  touchCoverage(event.at || Date.now());
+  // Trim in batches: shift() per print is O(n) once the cap is 12,000.
+  if(tapeEvents.length > TAPE_STORE_MAX * 1.1) tapeEvents.splice(0, tapeEvents.length - TAPE_STORE_MAX);
   saveTapeHistory(symbol);
 }
 
@@ -1145,7 +1276,7 @@ async function openExtraTape(sym, token){
         let msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
         for(const t of msg.data || []){
           const price = +t.px, notional = price * (+t.sz) * ctVal;
-          if(!isFinite(notional) || notional < 50000) continue;
+          if(!isFinite(notional) || notional < TAPE_INGEST_MIN) continue;
           pushTape({at:+t.ts, price, notional, side:t.side === "buy" ? "buy" : "sell", venue:"OKX"});
         }
         renderTape();
@@ -1170,7 +1301,7 @@ async function openExtraTape(sym, token){
       let msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
       for(const t of msg.data || []){
         const price = +t.p, notional = price * (+t.v);
-        if(!isFinite(notional) || notional < 50000) continue;
+        if(!isFinite(notional) || notional < TAPE_INGEST_MIN) continue;
         pushTape({at:+t.T, price, notional, side:t.S === "Buy" ? "buy" : "sell", venue:"BYBIT"});
       }
       renderTape();
@@ -1431,8 +1562,8 @@ async function loadLevels(sym,token){gexLevels=[];renderLevels();if(!["BTC","ETH
 function openMicrostructure(sym,token){
   // Flush the outgoing symbol before its events are replaced, then restore what
   // this browser already saw for the incoming one rather than starting empty.
-  if(tapeEvents.length && symbol && symbol !== sym){ clearTimeout(tapeSaveTimer); writeTapeHistory(symbol); }
-  closeMicrostructure();tapeEvents=loadTapeHistory(sym);gexLevels=[];gexMeta=null;netDollar=new Map();netBucket=0;try{tapeMin=Math.max(50000,+(localStorage.getItem(`leon_tapemin_${sym}`)||250000))}catch(e){tapeMin=250000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);openExtraTape(sym,token);
+  if(tapeEvents.length && symbol && symbol !== sym){ clearTimeout(tapeSaveTimer); writeTapeHistory(symbol); writeCoverage(symbol); }
+  closeMicrostructure();tapeEvents=loadTapeHistory(sym);covWindows=loadCoverage(sym);covTouched=0;gexLevels=[];gexMeta=null;netDollar=new Map();netBucket=0;try{tapeMin=Math.max(TAPE_INGEST_MIN,+(localStorage.getItem(`leon_tapemin_${sym}`)||TAPE_DISPLAY_DEFAULT))}catch(e){tapeMin=250000}renderTape();loadLevels(sym,token);refreshBook(sym,token);bookTimer=setInterval(()=>refreshBook(sym,token),30000);openExtraTape(sym,token);
   /* The tape is a live socket, but this panel is polled: Binance publishes open
      interest and the long/short split on a 5-minute cadence, so refreshing
      faster returns the same numbers. Without the timer the panel simply froze
@@ -1480,11 +1611,17 @@ document.querySelector(".side-tabs").addEventListener("click",e=>{const b=e.targ
 /* The floor here must match the input's own min, and both must sit at or above
    the ingest floor in the socket handlers -- otherwise lowering the threshold
    reveals nothing, because trades below the ingest floor were never kept. */
-el.sideTape.addEventListener("change",e=>{if(e.target.id!=="tape-min")return;tapeMin=Math.max(50000,+e.target.value||250000);try{localStorage.setItem(`leon_tapemin_${symbol}`,String(tapeMin))}catch(err){}renderTape()});
+el.sideTape.addEventListener("change",e=>{if(e.target.id!=="tape-min")return;tapeMin=Math.max(TAPE_INGEST_MIN,+e.target.value||TAPE_DISPLAY_DEFAULT);try{localStorage.setItem(`leon_tapemin_${symbol}`,String(tapeMin))}catch(err){}renderTape()});
 el.sideTape.addEventListener("click",e=>{
+  const mode=e.target.closest("[data-tape-mode]");
+  if(mode){ tapeMode=mode.dataset.tapeMode; renderTape(); return; }
   if(e.target.id!=="tape-clear")return;
   tapeEvents=[];
+  // The coverage record describes the events; clearing one without the other
+  // would leave the panel claiming hours of observation it can no longer show.
+  covWindows=[]; covTouched=0;
   try{localStorage.removeItem(tapeKey(symbol))}catch(err){}
+  try{localStorage.removeItem(covKey(symbol))}catch(err){}
   renderTape();
 });
 try{setSide(params.get("side")||localStorage.getItem("leon_chart_side_tab")||"watch")}catch(e){setSide("watch")}
