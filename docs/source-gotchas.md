@@ -225,6 +225,14 @@ apparent cuts on the local warehouse were this. Any price-change measure must
 drop listings whose area moved (`SIZE_DRIFT_TOLERANCE`), and must not leave them
 in the denominator either.
 
+**A poster can move a live ad to a different district.** One listing sat in
+Quận 10 on two crawls and in Quận 8 on the third, same `list_id`, same price and
+area — the address was edited, not the property. So a per-`list_id` aggregate
+cannot use `any_value()` for region/district/category: the cell it lands in is
+then chosen arbitrarily and two builds over an unchanged warehouse disagree.
+`arg_max(..., fetched_at)` — the newest observation — is the answer, and it is
+what makes the panel build reproducible.
+
 **Days-on-market from our own panel is left-truncated, badly, while young.**
 A listing first seen on day one of the warehouse may have been live for a year.
 On the five-day local warehouse the median cell has **`dmc` = 100%** — every

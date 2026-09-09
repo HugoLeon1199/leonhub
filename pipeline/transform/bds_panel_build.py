@@ -89,9 +89,14 @@ WITH obs AS (
 panel AS (
     SELECT
         list_id,
-        any_value(region)                     AS region,
-        any_value(district)                   AS district,
-        any_value(category)                   AS category,
+        -- Not any_value(): a poster can edit the address of a live ad, and one
+        -- listing really did move from Quận 10 to Quận 8 between crawls. With
+        -- any_value() the cell it lands in is chosen arbitrarily and the build
+        -- stops being reproducible -- two runs over an unchanged warehouse
+        -- disagreed on two districts. The newest observation is the answer.
+        arg_max(region, fetched_at)           AS region,
+        arg_max(district, fetched_at)         AS district,
+        arg_max(category, fetched_at)         AS category,
         min(fetched_at)                       AS first_seen,
         max(fetched_at)                       AS last_seen,
         count(DISTINCT fetched_at::DATE)      AS days_seen,
@@ -140,8 +145,9 @@ WITH obs AS (
 ),
 panel AS (
     SELECT list_id,
-           any_value(region) AS region, any_value(district) AS district,
-           any_value(category) AS category,
+           arg_max(region, fetched_at) AS region,
+           arg_max(district, fetched_at) AS district,
+           arg_max(category, fetched_at) AS category,
            min(fetched_at) AS first_seen, max(fetched_at) AS last_seen,
            arg_max(price, fetched_at) AS price_last,
            arg_max(size_m2, fetched_at) AS size_last
@@ -257,7 +263,12 @@ def build(dry_run: bool = False) -> dict[str, Any]:
     if not dry_run:
         from pipeline.publish.emit import write_json
         stats["path"] = str(write_json("bds_panel.json", {
-            "cells": list(out.values()),
+            # Sorted by key, not left in dict order: the SQL returns rows in
+            # whatever order it likes, so an unsorted list makes two builds over
+            # an unchanged warehouse differ only by ordering -- which defeats
+            # emit.py's unchanged-file check and rewrites the file nightly for
+            # nothing.
+            "cells": sorted(out.values(), key=lambda c: c["k"]),
             # Counters are named apart from `cells` so neither shadows the
             # other: the page reads `cells` as the data and these as provenance.
             "cell_count": stats["cells"],
