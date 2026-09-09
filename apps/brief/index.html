@@ -277,7 +277,9 @@ async function cryptoTiles(){
     el("tape").appendChild(tile(
       c.name,
       num(c.price, c.price < 10 ? 3 : 0),
-      signed(c.change) + ' <span class="dim">24h</span>',
+      // `signed` is shared with the billion-VND flow columns, so it cannot
+      // carry a unit itself; a bare "-0.26 24h" read as an absolute move.
+      signed(c.change) + '<span class="dim">% · 24h</span>',
       `${c.sym}/USDT trên Binance`,
       hubHref("chart", {sym:c.sym})
     ));
@@ -345,7 +347,12 @@ async function equities(){
      Restricted to liquid names so the list is not a parade of illiquid shells
      whose every trade is a multi-sigma move. */
   const unusual = rows
-    .filter(r => r.z != null && Math.abs(r.z) >= 2 && (r.mc || 0) >= 1000)
+    // `pd` marks a row whose last match is from an earlier session, and `ch`
+    // is null when the ticker did not trade. Both were passing the filter, so
+    // the section headed "hôm nay" was listing moves from weeks ago — TBD at
+    // -4.2σ last traded 2026-07-28. A stale bar cannot be today's outlier.
+    .filter(r => r.z != null && Math.abs(r.z) >= 2 && (r.mc || 0) >= 1000
+                 && r.ch != null && !r.pd && !r.pr)
     .sort((a, b) => Math.abs(b.z) - Math.abs(a.z))
     .slice(0, 8);
 
@@ -435,10 +442,15 @@ async function etfFlows(){
   Object.entries({btc:"Bitcoin ETF", eth:"Ethereum ETF"}).forEach(([key, label]) => {
     const s = data.stats[key];
     if(!s || s.sum_20d == null) return;
-    const b = s.sum_20d / 1000;
+    // Millions, not billions rounded to two places. BTC's 3,444M and ETH's
+    // 3,441M both rendered "+3.44B" and sat side by side looking like a bug.
+    // Same reasoning as `money()` in the flows tab; the two must agree.
+    const m = s.sum_20d;
     el("tape").appendChild(tile(
       label,
-      `${b >= 0 ? "+" : "−"}${Math.abs(b).toFixed(2)}B`,
+      Math.abs(m) >= 10000
+        ? `${m >= 0 ? "+" : "−"}${(Math.abs(m) / 1000).toFixed(2)}B`
+        : `${m >= 0 ? "+" : "−"}${num(Math.abs(m), 0)}M`,
       `<span class="dim">20 phiên, USD</span>`,
       "Tiền ròng vào các quỹ ETF giao ngay tại Mỹ trong 20 phiên gần nhất",
       hubHref("flows")
