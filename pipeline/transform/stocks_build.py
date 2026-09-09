@@ -157,6 +157,19 @@ FROM eq_listing
 ORDER BY symbol, fetched_at DESC
 """
 
+# The level-1 sector, for cohort comparisons. `industry` is level 2: 86 buckets
+# with a long tail down to one member and sixteen nulls, which is too sparse to
+# compute a median against. Sector has nineteen buckets and covers everything.
+#
+# Joined on symbol alone, deliberately: eq_listing says HSX where the published
+# board says HOSE, so keying on exchange as well would drop every HOSE row.
+SECTOR_SQL = """
+SELECT DISTINCT ON (symbol) symbol, sector
+FROM eq_company
+WHERE sector IS NOT NULL
+ORDER BY symbol, fetched_at DESC
+"""
+
 # Share count changes only on a corporate action, so unlike price it is safe --
 # and necessary -- to carry forward from whichever day last reported it. The SSI
 # board does not carry it at all.
@@ -369,6 +382,12 @@ def build(dry_run: bool = False) -> dict[str, Any]:
     try:
         quotes = {r["symbol"]: r for r in _rows(con, LATEST_QUOTE_SQL)}
         listings = {r["symbol"]: r for r in _rows(con, LATEST_LISTING_SQL)}
+        # A warehouse built before the company collector ran has no eq_company;
+        # the sector column is an enrichment, so its absence must not fail here.
+        try:
+            sectors = {r["symbol"]: r["sector"] for r in _rows(con, SECTOR_SQL)}
+        except Exception:
+            sectors = {}
         flows = {r["symbol"]: r for r in _rows(con, FOREIGN_FLOW_SQL)}
         rooms = {r["symbol"]: r["value"] for r in _rows(con, FOREIGN_ROOM_SQL)}
         depth: dict[str, dict[str, float]] = {}
@@ -432,6 +451,8 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             "e": canon_exchange(quote.get("exchange") or listing.get("exchange")),
             "i": listing.get("industry"),
         }
+        if sectors.get(symbol):
+            row["sec"] = sectors[symbol]
         if price:
             row["p"] = round(price, 1)
             if ref:

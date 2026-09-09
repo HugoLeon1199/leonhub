@@ -53,6 +53,20 @@ CORE_STATEMENT_FIELDS = {
     "bsb103", "bsb113", "cfa18", "cfa26", "cfa34", "cfa35", "cfa38",
 }
 
+# Inputs the competitive-advantage panel reads. Published annual-only: a moat is
+# a property of a business cycle rather than a quarter, and the annual-only
+# shape costs about 250 bytes per field per ticker against roughly 1,050 for
+# quarterly and annual together -- 0.4 MiB versus 1.7 MiB across the published
+# set. CORE_STATEMENT_FIELDS deliberately stays small, so this tier exists to
+# keep a moat input from silently doubling the market-wide build.
+MOAT_STATEMENT_FIELDS = {
+    "isa9",    # selling expense -- advertising and distribution intensity
+    "isa10",   # general and administrative expense
+    "cfa19",   # purchases of fixed assets -- capital intensity
+    "bsa36",   # net intangible assets -- brand and IP carried on the books
+    "bsa9",    # trade receivables -- who sets the payment terms
+}
+
 HISTORY_SQL = """
 WITH observed AS (
     SELECT DISTINCT ON (symbol, period, metric)
@@ -77,7 +91,8 @@ ORDER BY symbol, fetched_at DESC
 COMPANY_SQL = """
 SELECT DISTINCT ON (symbol)
     symbol, short_name, profile, sector, company_type, listing_date,
-    state_percent, foreign_percent, rating, target_price, rating_as_of, source
+    state_percent, foreign_percent, rating, target_price, rating_as_of, source,
+    meta
 FROM eq_company
 ORDER BY symbol, fetched_at DESC
 """
@@ -96,6 +111,8 @@ FROM eq_relationship
 ORDER BY symbol, related_name, relation_type, fetched_at DESC
 """
 
+EVENT_LIMIT = 120
+
 EVENT_SQL = """
 SELECT DISTINCT ON (symbol, event_id)
     symbol, event_code, title, public_date, record_date, exright_date
@@ -110,6 +127,46 @@ FROM eq_statement
 WHERE field IN (SELECT * FROM unnest(?))
 ORDER BY symbol, period, statement, field, fetched_at DESC
 """
+
+
+def _company_meta(raw: Any) -> dict[str, Any]:
+    """Pull the few decision-useful fields out of eq_company.meta.
+
+    The column is populated for every symbol and was read by no pipeline. Free
+    float is a real quality signal that neither published artifact carried, and
+    ``fmax`` is what finally makes the existing foreign-room column readable:
+    "room 0.3%" means nothing until you know whether the ceiling is 49% or 30%.
+    ``liq`` is a one-month average and so far steadier than the single-day
+    volume the screener publishes.
+
+    Returns {} on anything malformed rather than raising -- one bad blob must
+    not fail a 1,700-file build.
+    """
+    if not raw:
+        return {}
+    try:
+        meta = raw if isinstance(raw, dict) else json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(meta, dict):
+        return {}
+
+    out: dict[str, Any] = {}
+    free_float = meta.get("freeFloatPercentage")
+    if isinstance(free_float, (int, float)) and 0 <= free_float <= 1:
+        out["ff"] = round(float(free_float), 4)
+    cap = meta.get("maximumForeignPercentage")
+    if isinstance(cap, (int, float)) and 0 <= cap <= 1:
+        out["fmax"] = round(float(cap), 4)
+    # Published in dong; the rest of the site talks in billions.
+    liquidity = meta.get("averageMatchValue1Month")
+    if isinstance(liquidity, (int, float)) and liquidity >= 0:
+        out["liq"] = round(float(liquidity) / 1e9, 3)
+    for key, field in (("icb2", "icbCodeLv2"), ("icb4", "icbCodeLv4")):
+        code = meta.get(field)
+        if isinstance(code, str) and code.strip():
+            out[key] = code.strip()
+    return out
 
 
 def _has_table(con: Any, name: str) -> bool:
@@ -159,7 +216,7 @@ def build(dry_run: bool = False, symbols: set[str] | None = None) -> dict[str, A
         relationships = con.execute(RELATIONSHIP_SQL).fetchall() if _has_table(con, "eq_relationship") else []
         events = con.execute(EVENT_SQL).fetchall() if _has_table(con, "eq_event") else []
         statements = con.execute(
-            STATEMENT_SQL, [list(CORE_STATEMENT_FIELDS)]
+            STATEMENT_SQL, [list(CORE_STATEMENT_FIELDS | MOAT_STATEMENT_FIELDS)]
         ).fetchall() if _has_table(con, "eq_statement") else []
     finally:
         con.close()
@@ -188,6 +245,7 @@ def build(dry_run: bool = False, symbols: set[str] | None = None) -> dict[str, A
             "listed": _iso(row[5]), "state": row[6], "foreign": row[7],
             "rating": row[8], "target": row[9], "rating_as_of": _iso(row[10]),
             "source": row[11],
+            **_company_meta(row[12]),
         }
         for row in companies if (not symbols or row[0] in symbols)
     }
@@ -237,6 +295,9 @@ def build(dry_run: bool = False, symbols: set[str] | None = None) -> dict[str, A
             "label": label, "section": statement, "q": [], "y": [],
         })
         bucket = "y" if period_type == "year" else "q"
+        # Moat inputs are annual-only by design; see MOAT_STATEMENT_FIELDS.
+        if bucket == "q" and field in MOAT_STATEMENT_FIELDS:
+            continue
         item[bucket].append([str(period), round(value, 3)])
         if public_date:
             item["published"] = _iso(public_date)
@@ -286,7 +347,12 @@ def build(dry_run: bool = False, symbols: set[str] | None = None) -> dict[str, A
             payload["rel"] = relationship_map[symbol][:80]
             payload["rel_count"] = len(relationship_map[symbol])
         if symbol in event_map:
-            payload["events"] = event_map[symbol][:30]
+            # 120 publishes every event the warehouse holds -- the deepest
+            # symbol has 200 rows but only ~124 distinct events, and the median
+            # is far lower -- for about +3.4 MiB across the published set. The
+            # old cap of 30 threw away roughly a decade of dividend, issuance
+            # and insider history that had already been collected.
+            payload["events"] = event_map[symbol][:EVENT_LIMIT]
         if symbol in statement_map:
             payload["st"] = statement_map[symbol]
         payloads[symbol] = payload
