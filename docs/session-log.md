@@ -2,6 +2,51 @@
 
 **Keep this file under 100 lines.** Newest entry at the top; git log is history.
 
+## 2026-09-09 — navigation, chart axes, valuation disclosure, moat, news
+
+**State.** Every destination is now openable in a new tab: hub tabs, the home
+button, GEX chips and the chart's search results became anchors; rows that
+cannot be anchors carry `data-href` and reproduce the browser's behaviour. The
+shared block is inlined per app and guarded by `check_linkable` -- a shared
+`<script src>` would fall outside `check_apps`, which skips scripts with a src.
+
+Ticker mini-charts gained real axes, units and 45-degree period labels; bars are
+anchored at zero and negative years drawn in the down colour. The valuation
+panel now discloses its own method, parameters and limits. The moat panel gained
+the five qualitative dimensions, each printing its rule and inputs, refusing
+where nothing measures the dimension. Corporate events publish ~a decade behind
+a collapsed year view. Big Tape opens at $500k with a 30-day window and states
+what it actually observed.
+
+**Data.** `data/ticker` 51 -> 56 MiB: five annual-only moat statement fields
+(isa9, isa10, cfa19, bsa36, bsa9) and the event cap 30 -> 120, which publishes
+every event held. `eq_company.meta` was populated for every symbol and read by
+no pipeline -- free float, foreign cap, one-month liquidity and ICB codes now
+reach the browser. `sec` (level-1 sector) added to stocks.json for cohorts.
+New `vn_news` collector: CafeF + VnEconomy RSS through news_link's matcher took
+ticker news from 6 symbols/11 links to 33/64.
+
+**Fixed.** RIM terminal capitalised a non-growing residual as a growing
+perpetuity (~1.5-2% overstatement on financials). Flat 25% payout replaced by
+one derived from published dividends where computable; the market median is
+~42%. `discountRate` keyed off `co.type` -- sixteen null-industry tickers were
+silently taking the 12% default. `news_build` took only the newest `fetched_at`
+batch, so a second collector displaced the first's stories entirely. Ticker
+watchlist/jump navigated the iframe only, desyncing the hub URL. Wiki links
+lacked `target=_top`. News nav used absolute paths broken on this deployment.
+
+**Verified.** check_apps, check_linkable, validate (1,719 dossiers / 1,697
+statements) all pass. Chrome checked hub tabs plain/ctrl/middle-click, the us,
+crypto, bds and chart routes, ticker charts for VNM/A32 including negative-bar
+zero baselines, valuation disclosure for VCB/VNM/VIC, moat for VNM/VCB/BVH/FPT,
+and the tape's quota-halving path (4,000 events halve twice, 1,000 survive).
+All 22 first-run news matches hand-reviewed: no false positives.
+
+**Next.** Tape rollup is client-only and cannot backfill -- a collector would
+need to run locally, since Binance geo-blocks CI. Moat cohort medians compare
+within sector but peer dossiers are not loaded, so cross-company ratio medians
+are still unavailable. NAV/SOTP for property/holding remains absent.
+
 ## 2026-09-04 — chart workspace + full ticker dossiers
 
 **State.** Completed G4/H2/H3/H4 and B2 data/UI above `ba0c436`: continuous
@@ -22,14 +67,3 @@ VIC/VCB/AAA. Repeated ticker build leaves an unchanged symbol byte-identical.
 **Next.** Read `HANDOFF.md`. Remaining: guarded numeric valuation engine,
 fact-cited macro/narrative, multi-chart/layout/chart types/arbitrary intervals,
 and persisted CVD/footprint/liquidation microstructure. Server PID 3312:8811.
-
-## 2026-09-03 — rounds 1–3 baseline
-
-**State.** Seven hub tabs plus hidden ticker route; warehouse fundamentals,
-prices, real estate, news, flows and GEX established. Chart reached 62 indicators
-and 34 drawing tools over Lightweight Charts 5.2.0.
-
-**Verified.** Artifact validators, JSON/YAML/compile/diff gates and CDP drawing/
-indicator interactions passed. News matching was tightened to headlines only.
-
-**Next.** This entry is superseded by the 2026-09-04 handoff above.
