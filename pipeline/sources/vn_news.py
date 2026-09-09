@@ -40,13 +40,34 @@ from pipeline.sources.news_link import link_articles
 
 log = logging.getLogger(__name__)
 
-# Public RSS, no key and no scraping. Vietstock and TinnhanhChungKhoan were
-# checked and both 404 their advertised feed paths, so they are left out rather
-# than retried on every run.
+# Public RSS, no key and no scraping. Each of these was measured for how many
+# distinct tickers it actually yields, because a feed that fetches cleanly and
+# names no listed company costs a request and returns nothing:
+#
+#   cafef tai-chinh-ngan-hang  18 links / 6 symbols  -- the large banks
+#   cafef thi-truong-chung-khoan 16 / 13
+#   cafef doanh-nghiep          7 / 7
+#   markettimes chung-khoan     6 / 5
+#   vnexpress kinh-doanh        5 / 4
+#   tinnhanhchungkhoan home     4 / 4
+#   cafef bat-dong-san          4 / 3
+#
+# vneconomy.vn/chung-khoan.rss fetches fine and yielded zero tickers over 50
+# headlines -- it writes about the index rather than about companies -- so it is
+# dropped rather than polled forever for nothing.
+#
+# tinnhanhchungkhoan serves the feed gzipped, which is why an earlier raw-socket
+# probe read it as binary and it was wrongly recorded as dead; requests handles
+# the encoding. Its per-section paths really are 404, only /rss/home.rss works.
+# Vietstock returns HTML from every advertised RSS path and stays out.
 FEEDS: tuple[tuple[str, str], ...] = (
     ("cafef_vn", "https://cafef.vn/thi-truong-chung-khoan.rss"),
     ("cafef_vn", "https://cafef.vn/doanh-nghiep.rss"),
-    ("vneconomy_vn", "https://vneconomy.vn/chung-khoan.rss"),
+    ("cafef_vn", "https://cafef.vn/tai-chinh-ngan-hang.rss"),
+    ("cafef_vn", "https://cafef.vn/bat-dong-san.rss"),
+    ("tinnhanhchungkhoan_vn", "https://www.tinnhanhchungkhoan.vn/rss/home.rss"),
+    ("markettimes_vn", "https://markettimes.vn/rss/chung-khoan.rss"),
+    ("vnexpress_net", "https://vnexpress.net/rss/kinh-doanh.rss"),
 )
 
 # Feeds lead with a channel-level <title>; only <item> children are articles.
@@ -123,6 +144,38 @@ def fetch_articles(client: HttpClient) -> list[dict[str, Any]]:
     return list(unique.values())
 
 
+# A headline naming this many listed companies is a list, not a story about any
+# one of them.
+MAX_SYMBOLS_PER_ARTICLE = 2
+
+
+def drop_roundups(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Discard articles whose headline names several companies at once.
+
+    The banking feed publishes a daily deposit-rate table titled "Lãi suất ngân
+    hàng 5/9 tại MB, Sacombank, HDBank, Agribank, Vietcombank, BIDV,
+    VietinBank...". Every bank in it matches, correctly, on the headline -- so
+    the headline-only rule that stops ordinary false positives cannot stop this
+    one. Left alone it was 23% of all links, and it would have put the same rate
+    table on five different companies' pages every single day, pushing out the
+    real news about them.
+
+    The test is the count, not a keyword: any headline listing three or more
+    tickers is answering "what do banks pay" rather than reporting on a company.
+    """
+    by_url: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_url.setdefault(row["url"], []).append(row)
+    kept: list[dict[str, Any]] = []
+    dropped = 0
+    for grouped in by_url.values():
+        if len(grouped) > MAX_SYMBOLS_PER_ARTICLE:
+            dropped += len(grouped)
+            continue
+        kept.extend(grouped)
+    return kept, dropped
+
+
 def collect(dry_run: bool = False, qa_sample: int = 20) -> dict[str, Any]:
     started = wh.utcnow()
     client = HttpClient(delay=0.5)
@@ -136,6 +189,7 @@ def collect(dry_run: bool = False, qa_sample: int = 20) -> dict[str, Any]:
         ).fetchall()
         rows = link_articles(articles, listings, started)
         rows = list({(r["symbol"], r["url"]): r for r in rows}.values())
+        rows, roundups = drop_roundups(rows)
 
         if not articles:
             raise RuntimeError("RSS feeds returned no articles")
@@ -147,6 +201,7 @@ def collect(dry_run: bool = False, qa_sample: int = 20) -> dict[str, Any]:
             "feeds": len(FEEDS),
             "listings": len(listings),
             "links": len(rows),
+            "roundup_links_dropped": roundups,
             "symbols": len({r["symbol"] for r in rows}),
             "by_method": {
                 m: sum(r["matched_by"] == m for r in rows)
