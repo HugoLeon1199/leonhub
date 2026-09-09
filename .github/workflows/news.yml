@@ -45,6 +45,14 @@ jobs:
       - name: Link public news to listed companies
         run: python -m pipeline.sources.news_link --qa-sample 20
 
+      # The VN financial wires, which is where stories about listed companies
+      # actually appear. Not geo-blocked, so it runs here for free. Allowed to
+      # fail without failing the job: a publisher changing an RSS path should
+      # cost that source's stories, not the whole news refresh.
+      - name: Collect VN financial newswires
+        continue-on-error: true
+        run: python -m pipeline.sources.vn_news --qa-sample 20
+
       - name: Build and validate ticker news
         run: |
           python -m pipeline.transform.news_build

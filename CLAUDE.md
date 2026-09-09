@@ -47,6 +47,7 @@ python -m pipeline.sources.vci_direct --skip-existing     # resume
 python -m pipeline.sources.vci_company --delay 0.2        # slow monthly dossier/BCTC snapshot
 python -m pipeline.sources.vci_company --scope profile,statements --skip-existing
 python -m pipeline.sources.news_link --qa-sample 20       # deterministic, no AI
+python -m pipeline.sources.vn_news --qa-sample 20         # CafeF/VnEconomy RSS, same matcher
 
 # Crypto
 python -m pipeline.sources.crypto_board                   # local only: Binance geo-blocks CI

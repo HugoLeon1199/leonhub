@@ -12,10 +12,19 @@ from pipeline.publish.emit import write_json
 
 MAX_PER_SYMBOL = 10
 
+# Days of published history to keep. Two collectors now write news_link --
+# news_link itself from the sister repo's digest, vn_news from the VN financial
+# wires -- and they run on different schedules. The original query took only the
+# single newest fetched_at batch, which was right when one collector owned the
+# table and silently discards the other one's stories now that two do. Window on
+# how recent the STORY is instead of which run last touched the table.
+NEWS_WINDOW_DAYS = 30
+
 NEWS_SQL = """
 WITH current_snapshot AS (
     SELECT * FROM news_link
-    WHERE fetched_at = (SELECT max(fetched_at) FROM news_link)
+    WHERE published_at IS NULL
+       OR published_at >= now() - INTERVAL (?) DAY
 ), latest AS (
     SELECT DISTINCT ON (symbol, url)
         symbol, url, title, source, published_at, matched_by, fetched_at
@@ -37,7 +46,7 @@ ORDER BY symbol, rank
 def build(dry_run: bool = False) -> dict[str, Any]:
     con = wh.connect_reader()
     try:
-        rows = con.execute(NEWS_SQL, [MAX_PER_SYMBOL]).fetchall()
+        rows = con.execute(NEWS_SQL, [NEWS_WINDOW_DAYS, MAX_PER_SYMBOL]).fetchall()
     finally:
         con.close()
 
