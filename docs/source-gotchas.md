@@ -180,6 +180,66 @@ are brokerage postings against 11/20 for nhà ở, so any cross-source or
 cross-category median mixes two different seller populations. Publish the split
 before merging anything.
 
+**The whole VN market on Chotot is ~70,800 live ads** (measured 2026-09-09,
+51 provinces x 4 categories x both lanes). HCMC alone is 42,428 of them — 60% —
+followed by Đà Nẵng 6,426, Hà Nội 6,241 and Bình Dương 5,823. **34 of the 51
+provinces hold under 200 ads in total**: Thanh Hóa returns 10 nhà ở, Nghệ An 3,
+Quảng Ninh 7. Thin provincial coverage is the source, not the crawler, and no
+collector change fixes it. The practical consequences: a national pass is only
+~1,400 content pages (~12 min at `--delay 0.5`), so the request budget is not a
+constraint; and any national ranking is really a ranking of five cities.
+
+**Chotot's `MAX_OFFSET` is never actually reached.** The largest district lane
+in the country holds 1,777 ads, so district-level paging always terminates on a
+short page first. Ward-level querying is therefore not needed to route around
+the offset ceiling — its only value is splitting a sample that is already thin.
+
+**An unknown `ward` is rejected, unlike an unknown `region_v2`.** Probing
+`ward=999999` returns HTTP 200 with `{"ads":[]}` and **no `total` key** at all,
+where a bogus `region_v2` is silently ignored and answers with the default
+region. So ward codes can be probed safely. `ward` does filter for real:
+district 13096 reports 224 sale ads and ward 9217 within it reports 44.
+
+**Chotot's district discovery is self-limiting if it reads one page.** Sampling
+only the first 50 ads per lane found 23 of Hà Nội's districts against 29 when
+paged deeper, and 11 of Long An's against 14 — a 21% miss that raises no error,
+because a district that never surfaces is simply never crawled. Discovery pages
+to `DISCOVERY_MAX_PAGES` and unions the result with every `area_v2` the
+warehouse has ever stored, and the crawl reconciles its district sweep against
+the province total so a remaining gap is logged rather than silent.
+
+**A listing leaving the feed is invisible unless you age listings out.**
+Chotot never reports a `sold` or `expired` status — locally, `status` is only
+ever `active` or NULL — so a sold ad just stops appearing. Taking the latest
+observation per `list_id` with no recency bound therefore lets withdrawn
+listings price the market forever: measured on a five-day warehouse, **27% of
+the rows feeding the medians were already stale**, and the share grows without
+bound. Both publishers now drop listings unseen for `STALE_AFTER_DAYS` relative
+to **their own cell's last crawl** — a calendar cutoff would blank the map on
+any night the crawl failed.
+
+**Sellers edit a live ad instead of reposting it, which fakes a price cut.**
+One observed listing went 6,500 → 650 million VND as its area went 144 → 44 m²:
+a different property under the same `list_id`, not a 90% discount. Nine of 93
+apparent cuts on the local warehouse were this. Any price-change measure must
+drop listings whose area moved (`SIZE_DRIFT_TOLERANCE`), and must not leave them
+in the denominator either.
+
+**Days-on-market from our own panel is left-truncated, badly, while young.**
+A listing first seen on day one of the warehouse may have been live for a year.
+On the five-day local warehouse the median cell has **`dmc` = 100%** — every
+listing truncated — so the figure is published as a lower bound ("≥ N ngày")
+with the truncated share beside it, and converges on the real number as the
+warehouse ages without any code change.
+
+**Neither permitted legal-text source is machine-readable.** `vbpl.vn` is a
+React SPA whose only data path is the robots-`Disallow`ed `/api/`; server HTML
+carries zero search results. `congbao.chinhphu.vn` returns a byte-identical
+201,126-character shell for a search URL and its home page, and is the *central*
+gazette, which does not carry provincial Bảng giá đất at all — those live on 34
+separate provincial portals in PDF/DOC attachments. Do not build a legal-document
+crawler; download the documents once and parse them offline.
+
 **Chotot and Nhà Tốt are the same source.** `nhatot.com` is Chợ Tốt's property
 brand and serves from the same `gateway.chotot.com` endpoint with the same
 schema. Adding it as a second source would double-count the same listings.

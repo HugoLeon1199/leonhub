@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -162,6 +163,37 @@ def validate_bds(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | No
     missing_meta = sum(1 for r in rows if not r.get("u") or not r.get("n"))
     if missing_meta:
         rep.error(f"{missing_meta} rows lack `n` or `updated_at` provenance")
+
+    # Panel metrics, when present. Each is a percentage or a day count, and a
+    # value outside its range means the panel SQL changed shape rather than
+    # that the market did something surprising.
+    for key, lo, hi in (
+        ("pc", 0, 100), ("gr", 0, 100), ("grx", 0, 100), ("dmc", 0, 100),
+        ("pcm", -100, 0),
+    ):
+        bad = [
+            r for r in rows
+            if isinstance(r.get(key), (int, float)) and not lo <= r[key] <= hi
+        ]
+        if bad:
+            rep.error(
+                f"{len(bad)} rows have `{key}` outside {lo}–{hi} "
+                f"(e.g. {bad[0][key]} in {bad[0].get('r')}/{bad[0].get('d')})"
+            )
+    negative_dm = [
+        r for r in rows if isinstance(r.get("dm"), (int, float)) and r["dm"] < 0
+    ]
+    if negative_dm:
+        rep.error(f"{len(negative_dm)} rows report a negative time on market")
+
+    # A published cut rate needs its own denominator beside it, or the reader
+    # cannot tell 1-in-2 from 50-in-100.
+    orphan_pc = [r for r in rows if r.get("pc") is not None and not r.get("pcn")]
+    if orphan_pc:
+        rep.error(f"{len(orphan_pc)} rows publish `pc` without the `pcn` sample")
+
+    rep.stats["with_price_cut"] = sum(1 for r in rows if r.get("pc") is not None)
+    rep.stats["with_gone_rate"] = sum(1 for r in rows if r.get("gr") is not None)
 
     if previous:
         drop = 1 - len(rows) / len(previous)
@@ -785,12 +817,112 @@ def validate_crypto_context(payload: dict[str, Any], previous: dict[str, Any] | 
     return rep
 
 
+# Decision numbers as the Vietnamese gazette writes them. Planning decisions are
+# Prime-Ministerial (`1569/QĐ-TTg`). A land-price table is usually a provincial
+# People's Committee decision (`79/2024/QĐ-UBND`) but some provinces issue it as
+# a People's Council resolution instead -- Bình Dương's is 20/2024/NQ-HĐND -- so
+# both forms are legitimate and the check accepts either rather than forcing a
+# citation into the shape we expected.
+_PLANNING_DECISION = re.compile(r"^\d{1,4}/QĐ-TTg$")
+_LAND_PRICE_DECISION = re.compile(r"^\d{1,4}/\d{4}/(QĐ-UBND|NQ-HĐND)$")
+
+
+def validate_province_profiles(
+    payload: dict[str, Any], previous: dict[str, Any] | None
+) -> Report:
+    """Check the hand-maintained province write-ups.
+
+    This file is edited by a person, not produced by a pipeline, which is
+    exactly why it needs a validator: a mistyped decision number or a date that
+    does not exist would be published as a citation and read as fact. The page
+    already refuses to print a citation it does not have; this refuses to print
+    one that is malformed.
+    """
+    rep = Report()
+    provinces = payload.get("provinces") if isinstance(payload, dict) else None
+    if not isinstance(provinces, dict) or not provinces:
+        rep.error("province_profiles.json has no `provinces` object")
+        return rep
+
+    rep.stats["provinces"] = len(provinces)
+    if len(provinces) != 34:
+        rep.error(
+            f"{len(provinces)} provinces described, expected the 34 of the "
+            "post-2025 structure"
+        )
+
+    today = date.today()
+    cited = 0
+    land_cited = 0
+    for name, profile in provinces.items():
+        if not isinstance(profile, dict):
+            rep.error(f"{name}: profile is not an object")
+            continue
+
+        planning = profile.get("planning")
+        if planning is not None:
+            if not isinstance(planning, dict):
+                rep.error(f"{name}: `planning` is not an object")
+            else:
+                cited += 1
+                decision = planning.get("decision")
+                if not isinstance(decision, str) or not _PLANNING_DECISION.match(decision):
+                    rep.error(f"{name}: planning decision {decision!r} is not a `N/QĐ-TTg` number")
+                _check_citation_date(rep, name, "planning", planning.get("date"), today)
+                if not planning.get("title"):
+                    rep.error(f"{name}: planning citation has no title")
+                if not planning.get("source"):
+                    rep.error(f"{name}: planning citation names no source")
+
+        land = profile.get("land_price_table")
+        if land is not None:
+            if not isinstance(land, dict):
+                rep.error(f"{name}: `land_price_table` is not an object")
+            else:
+                land_cited += 1
+                decision = land.get("decision")
+                if not isinstance(decision, str) or not _LAND_PRICE_DECISION.match(decision):
+                    rep.error(
+                        f"{name}: land-price decision {decision!r} is not a "
+                        "`N/YYYY/QĐ-UBND` number"
+                    )
+                _check_citation_date(rep, name, "land_price_table", land.get("date"), today)
+                if not land.get("issuer"):
+                    rep.error(f"{name}: land-price citation names no issuing committee")
+                start, end = land.get("effective_from"), land.get("effective_to")
+                if start and end and str(start) > str(end):
+                    rep.error(f"{name}: land-price effective_from {start} is after {end}")
+
+    rep.stats["with_planning"] = cited
+    rep.stats["with_land_price"] = land_cited
+    if not cited:
+        rep.error("no province cites a planning decision at all")
+    return rep
+
+
+def _check_citation_date(
+    rep: Report, name: str, field: str, value: Any, today: date
+) -> None:
+    """A citation date must be a real ISO date, and cannot be in the future."""
+    if not value:
+        rep.error(f"{name}: {field} citation has no date")
+        return
+    try:
+        parsed = date.fromisoformat(str(value))
+    except ValueError:
+        rep.error(f"{name}: {field} date {value!r} is not an ISO date")
+        return
+    if parsed > today:
+        rep.error(f"{name}: {field} is dated {value}, which is in the future")
+
+
 VALIDATORS = {
     "stocks.json": validate_stocks,
     "crypto/index.json": validate_crypto_profiles,
     "crypto/context.json": validate_crypto_context,
     "bds.json": validate_bds,
     "bds/listings/index.json": validate_bds_listings,
+    "province_profiles.json": validate_province_profiles,
     "us.json": validate_us,
     "fx.json": validate_fx,
     "crypto.json": validate_crypto,
@@ -810,6 +942,7 @@ _TAKES_PAYLOAD = {
     "flows.json", "signals.json", "news_ticker.json", "gex_btc.json",
     "gex_eth.json", "ticker/manifest.json", "breadth.json",
     "bds/listings/index.json",
+    "province_profiles.json",
     "crypto/index.json",
     "crypto/context.json",
 }

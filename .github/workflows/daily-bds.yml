@@ -67,11 +67,23 @@ jobs:
             ${{ inputs.max_pages && format('--max-pages {0}', inputs.max_pages) || '' }} \
             --delay 0.5
 
+      # Panel first: the aggregate merges its output onto the district rows, so
+      # running it afterwards would publish a bds.json one day behind the panel.
+      - name: Measure listing behaviour
+        run: python -m pipeline.transform.bds_panel_build
+
       - name: Aggregate into bds.json
         run: python -m pipeline.transform.bds_aggregate
 
+      # Sequential, not parallel: DuckDB allows one reader-writer at a time and
+      # each of these opens the warehouse.
+      - name: Build the listing shards
+        run: python -m pipeline.transform.bds_listings_build
+
       - name: Validate before publishing
-        run: python -m pipeline.core.validate bds.json
+        run: |
+          python -m pipeline.core.validate \
+            bds.json bds/listings/index.json province_profiles.json
 
       - name: Save warehouse
         uses: actions/cache/save@v4

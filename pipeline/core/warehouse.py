@@ -93,6 +93,10 @@ CREATE TABLE IF NOT EXISTS re_listing (
     -- re-queried from the warehouse without rediscovering its code.
     area_v2        INTEGER,
     region_v2      INTEGER,
+    -- The ward code the gateway accepts as `ward`. ward_v3 above is the name;
+    -- this is the only form that filters, and it is what makes a sub-district
+    -- aggregate possible without re-discovering codes from ads every run.
+    ward_v2        INTEGER,
     PRIMARY KEY (list_id, fetched_at)
 );
 
@@ -330,6 +334,10 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("re_listing", "price_string", "VARCHAR"),
     ("re_listing", "area_v2", "INTEGER"),
     ("re_listing", "region_v2", "INTEGER"),
+    # The queryable ward code. `ward_v3` holds the ward *name*; only this int is
+    # accepted by the gateway's `ward` parameter, and it narrows a district query
+    # for real (district 13096 returns 224 ads, ward 9217 within it returns 44).
+    ("re_listing", "ward_v2", "INTEGER"),
 )
 
 

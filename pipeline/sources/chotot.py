@@ -35,8 +35,19 @@ log = logging.getLogger(__name__)
 
 API = "https://gateway.chotot.com/v1/public/ad-listing"
 PAGE_SIZE = 50
-# Offsets beyond this return HTTP 400 (verified by probe).
+# Offsets beyond this return HTTP 400 (verified by probe). In practice it is
+# never reached: measured 2026-09-09, the largest district lane in the country
+# holds 1,777 ads, so district-level paging always terminates first.
 MAX_OFFSET = 19_000
+
+# Pages to read per lane when learning district codes. One page missed 21% of
+# Ha Noi's districts; the whole national market is only ~1,400 pages, so paging
+# discovery deeper costs little against a crawl budget that is not binding.
+DISCOVERY_MAX_PAGES = 20
+
+# Province-level `total` saturates here and becomes a placeholder rather than a
+# count, so it cannot be compared against a district sweep.
+PROVINCE_TOTAL_CAP = 10_000
 
 # Property categories, verified against live responses.
 CATEGORIES = {
@@ -200,6 +211,11 @@ def to_row(ad: dict[str, Any], listing_type: str, fetched_at: datetime) -> dict[
         "price_string": ad.get("price_string"),
         "area_v2": _to_int(ad.get("area_v2")),
         "region_v2": _to_int(ad.get("region_v2")),
+        # `ward` is the code; `ward_name`/`ward_name_v3` above are labels. Only
+        # this int filters -- and unlike region_v2, an unknown ward is rejected
+        # (an empty result with no `total` key) rather than silently ignored,
+        # so it can be probed safely.
+        "ward_v2": _to_int(ad.get("ward")),
     }
 
 
@@ -282,17 +298,88 @@ def discover_districts(client: HttpClient, region: int) -> list[int]:
     Ads carry two district codes: a short `area` (113) and the full `area_v2`
     (13113). Only the latter is accepted by the `area_v2` query parameter --
     passing the short form returns an empty result set rather than an error.
+
+    Sampling only the first page missed real districts: measured 2026-09-09,
+    one page found 23 of Ha Noi's districts against 29 when paged deeper, and
+    11 of Long An's against 14. A district that never surfaces is never
+    crawled, and the gap is invisible because the crawl reports success -- so
+    discovery pages until the province is exhausted or DISCOVERY_MAX_PAGES,
+    and unions the result with every code the warehouse has ever seen.
     """
     seen: dict[int, str] = {}
     for category in CATEGORIES:
         for listing_type in (SALE, RENT):
-            ads, _ = fetch_page(client, region, None, category, listing_type, 0, limit=50)
-            for ad in ads:
-                code = ad.get("area_v2")
-                if isinstance(code, int):
-                    seen.setdefault(code, ad.get("area_name") or "")
-    log.info("region %s: discovered %d districts", region, len(seen))
+            offset = 0
+            for _ in range(DISCOVERY_MAX_PAGES):
+                ads, _total = fetch_page(
+                    client, region, None, category, listing_type, offset
+                )
+                if not ads:
+                    break
+                for ad in ads:
+                    code = ad.get("area_v2")
+                    if isinstance(code, int):
+                        seen.setdefault(code, ad.get("area_name") or "")
+                offset += len(ads)
+                if len(ads) < PAGE_SIZE:
+                    break
+
+    # Same floor-not-snapshot rule the province cache applies. The codes are
+    # already stored on every row we have collected, so the warehouse is the
+    # cache -- no extra committed file, and it cannot drift from what we hold.
+    crawled = set(seen)
+    remembered = _remembered_districts(region)
+    for code in remembered:
+        seen.setdefault(code, "")
+    log.info(
+        "region %s: %d districts (%d from this crawl, %d only remembered)",
+        region, len(seen), len(crawled), len(remembered - crawled),
+    )
     return sorted(seen)
+
+
+def _remembered_districts(region: int) -> set[int]:
+    """District codes this province has ever shown us, read from the warehouse.
+
+    Returns an empty set when the warehouse is unavailable -- a collector must
+    still run against a fresh database, and on a first run there is nothing to
+    remember anyway.
+    """
+    try:
+        con = wh.connect_reader()
+    except (FileNotFoundError, RuntimeError) as exc:
+        log.debug("no remembered districts for %s: %s", region, exc)
+        return set()
+    try:
+        rows = con.execute(
+            "SELECT DISTINCT area_v2 FROM re_listing "
+            "WHERE region_v2 = ? AND area_v2 IS NOT NULL",
+            [region],
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 -- a missing column must not stop a crawl
+        log.debug("could not read remembered districts: %s", exc)
+        return set()
+    finally:
+        con.close()
+    return {int(r[0]) for r in rows if r[0] is not None}
+
+
+def province_total(client: HttpClient, region: int) -> int:
+    """Total live ads a province reports across every category and both lanes.
+
+    Used only to check the district sweep against, so a discovery gap shows up
+    as a number rather than as silence. Province-level `total` is a rounded
+    placeholder once it reaches PROVINCE_TOTAL_CAP, which is why the caller
+    skips the comparison at that point.
+    """
+    total = 0
+    for category in CATEGORIES:
+        for listing_type in (SALE, RENT):
+            _ads, reported = fetch_page(
+                client, region, None, category, listing_type, 0, limit=1
+            )
+            total += reported
+    return total
 
 
 def collect(
@@ -305,9 +392,13 @@ def collect(
     run_id = uuid.uuid4().hex[:12]
     started = wh.utcnow()
     fetched_at = started
-    stats: dict[str, Any] = {"regions": {}, "sale": 0, "rent": 0}
+    stats: dict[str, Any] = {"regions": {}, "sale": 0, "rent": 0, "shortfall": {}}
 
     def crawl_region(region: int) -> tuple[list[dict[str, Any]], dict[str, int]]:
+        # Ask the province what it holds before crawling its districts, so the
+        # sweep can be checked against it afterwards. Skipped when max_pages
+        # caps the crawl, because then a shortfall is expected, not a defect.
+        expected = province_total(client, region) if max_pages is None else 0
         districts = discover_districts(client, region) or [None]
         out: list[dict[str, Any]] = []
         counts = {"sale": 0, "rent": 0}
@@ -319,6 +410,20 @@ def collect(
                     ):
                         out.append(to_row(ad, listing_type, fetched_at))
                         counts["sale" if listing_type == SALE else "rent"] += 1
+
+        # Reconcile the district sweep against what the province claims. A
+        # district we never learned about contributes nothing and raises no
+        # error, so without this the crawl reports success while quietly
+        # missing part of a province. Only meaningful below the cap, where the
+        # province total is a real count rather than a placeholder.
+        got = counts["sale"] + counts["rent"]
+        if 0 < expected < PROVINCE_TOTAL_CAP and got < expected * 0.9:
+            stats["shortfall"][str(region)] = {"expected": expected, "got": got}
+            log.warning(
+                "region %s: districts yielded %d of the %d ads the province "
+                "reports -- district discovery is probably incomplete",
+                region, got, expected,
+            )
         return out, counts
 
     def add_counts(counts: dict[str, int]) -> None:

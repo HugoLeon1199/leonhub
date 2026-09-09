@@ -2,6 +2,54 @@
 
 **Keep this file under 100 lines.** Newest entry at the top; git log is history.
 
+## 2026-09-09 (2) — real estate: honest medians, and the panel layer
+
+**Why the map looked empty.** Measured the whole source: **70,798 live ads
+nationally**, HCMC 42,428 of them (60%), and **34 of 51 provinces under 200 ads
+in total**. Thin provincial coverage is Chotot, not the crawler — no collector
+change fixes it, and `MIN_SAMPLES=20` stays. One real bug did exist: district
+discovery read only the first 50 ads per lane and so missed 21% of Hà Nội's
+districts (23 of 29). It now pages deeper, unions with every `area_v2` the
+warehouse holds, and reconciles its sweep against the province total.
+
+**The medians were wrong.** Nothing aged listings out, and Chotot never reports
+a sold status — a withdrawn ad priced the market forever. 27% of the rows behind
+the medians were already stale on a five-day warehouse. Both publishers now drop
+listings unseen for 3 days *relative to their own cell's last crawl*, so a failed
+night degrades instead of blanking the map; the page prints the size of the
+correction. `dom` was renamed `age`: it measured ad age at observation, never
+days-on-market. The rent leg now gets the same repost-collapse and p5–p95 clip as
+the sale leg (median yield moved 2.3%, worst cell 18.8%).
+
+**The moat, finally built.** `bds_panel_build` reads the observation history the
+`(list_id, fetched_at)` key was for: price cuts, time on market, disappearance
+rate — no new requests. Sellers edit a live ad rather than repost, so a listing
+that went 6,500 → 650 million as its area went 144 → 44 m² is a different
+property, not a discount; area drift is excluded from both numerator and
+denominator. DOM is left-truncated (median cell `dmc` = 100% today) so it
+publishes as "≥ N ngày" with the truncated share beside it and converges as the
+warehouse ages. Disappearance is conditioned on the cell's own crawl history,
+labelled "tin biến mất", never "đã bán", and published with reposts subtracted.
+
+**Quy hoạch.** `province_profiles.json` gained a validator (it is hand-edited,
+so a malformed citation would publish as fact) and a `land_price_table` block:
+HCMC 79/2024/QĐ-UBND, Hà Nội 71/2024/QĐ-UBND, Đà Nẵng 59/2024/QĐ-UBND, each
+checked against its gazette. Citation only — never a copy of the table.
+`vbpl.vn` and `congbao.chinhphu.vn` are both SPAs whose data paths are
+robots-disallowed or client-rendered, so no legal-document crawler exists.
+
+**Verified.** validate (incl. new panel bounds and profile checks), check_apps,
+check_linkable, compileall all pass. Chrome checked 14/14 column alignment, the
+drawer panel block, the no-shard message, and the land-price paragraph for cited
+and uncited provinces. Shards fell 7.3 → 5.5 MB (`MAX_PER_DISTRICT` 400 → 200)
+and `bds_listings_build` finally runs in CI, where it had never been wired.
+
+**Next.** Ward-level aggregation (`ward_v2` is now collected; the queryable code
+was previously discarded) is worth ~5-15 cells nationally — small. A flag table
+for "where to invest" needs `pc` to age first. Parsing an actual Bảng giá đất PDF
+is the open question: do HCMC first, publish the street-match rate, and stop if
+it lands under 30%.
+
 ## 2026-09-09 — navigation, chart axes, valuation disclosure, moat, news
 
 **State.** Every destination is now openable in a new tab: hub tabs, the home
@@ -46,24 +94,3 @@ All 22 first-run news matches hand-reviewed: no false positives.
 need to run locally, since Binance geo-blocks CI. Moat cohort medians compare
 within sector but peer dossiers are not loaded, so cross-company ratio medians
 are still unavailable. NAV/SOTP for property/holding remains absent.
-
-## 2026-09-04 — chart workspace + full ticker dossiers
-
-**State.** Completed G4/H2/H3/H4 and B2 data/UI above `ba0c436`: continuous
-drawing with clean exits, price-scale repaint fix, 14 intervals, named
-watchlists/CSV, live order book, Big Tape and evidence-based Level Behavior.
-Ticker route now has VPS five-year price, ratio/peer panels, profile, governance,
-events, statement charts and industry valuation refusal rules.
-
-**Data.** Direct Vietcap full crawl hit 1,751 targets with zero failures and
-added 10,068,118 statement rows plus company/owner/relationship/event snapshots.
-Published 1,719 ticker dossiers, 1,697 with statement series, 1,044,029 ratio
-points, 46.39 MiB. Fixed browser-invalid NaN, bank CIR sign and all-zero cadences.
-
-**Verified.** All 9 artifacts, Python compile, strict parse of 1,727 JSON files,
-workflow YAML and diff-check pass. Chrome reviewed book/tape/levels, 2h/1M and
-VIC/VCB/AAA. Repeated ticker build leaves an unchanged symbol byte-identical.
-
-**Next.** Read `HANDOFF.md`. Remaining: guarded numeric valuation engine,
-fact-cited macro/narrative, multi-chart/layout/chart types/arbitrary intervals,
-and persisted CVD/footprint/liquidation microstructure. Server PID 3312:8811.

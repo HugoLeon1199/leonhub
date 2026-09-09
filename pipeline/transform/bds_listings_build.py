@@ -34,6 +34,7 @@ from pipeline.transform.bds_aggregate import (
     CATEGORY_SLUGS,
     PRICE_MAX,
     PRICE_MIN,
+    STALE_AFTER_DAYS,
     current_province,
     slugify,
 )
@@ -43,14 +44,24 @@ log = logging.getLogger(__name__)
 # Per district. A hot district in HCM has thousands of live ads; publishing all
 # of them would push a single shard past what a browser should download to show
 # a first page. Newest first, because listing age is itself information.
-MAX_PER_DISTRICT = 400
+#
+# Halved from 400 when this build joined the nightly workflow. Ageing out stale
+# listings means most shards now change every night instead of rarely, so the
+# unchanged-file check in emit.py no longer absorbs the churn -- and the repo
+# has a ~1GB soft cap. The browse view renders at most 120 cards anyway.
+MAX_PER_DISTRICT = 200
 
 # Districts below this are still published -- that is the point of this file --
 # but the UI is told how thin the sample is so it can say so.
 THIN_SAMPLE = 20
 
 LISTING_SQL = f"""
-WITH latest AS (
+WITH crawl AS (
+    -- When we last looked at this cell at all.
+    SELECT region, category, max(fetched_at) AS cell_crawled_at
+    FROM re_listing GROUP BY 1, 2
+),
+observed AS (
     -- One row per listing: its most recent observation. Append-only storage
     -- means a listing seen on ten days has ten rows; the newest is the one
     -- whose price and status are current.
@@ -65,6 +76,15 @@ WITH latest AS (
       AND size_m2 > 0
       AND price > 0
     ORDER BY list_id, fetched_at DESC
+),
+latest AS (
+    -- Drop listings we have stopped seeing. This page browses *inventory*, so
+    -- an ad that left the feed weeks ago is not merely stale, it is wrong: the
+    -- reader would click through to a dead listing. Measured relative to this
+    -- cell's own last crawl, so a failed run degrades rather than empties.
+    SELECT o.*
+    FROM observed o JOIN crawl c USING (region, category)
+    WHERE date_diff('day', o.fetched_at, c.cell_crawled_at) <= {STALE_AFTER_DAYS}
 )
 SELECT *
 FROM latest
