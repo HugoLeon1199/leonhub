@@ -100,6 +100,31 @@ CREATE TABLE IF NOT EXISTS re_listing (
     PRIMARY KEY (list_id, fetched_at)
 );
 
+-- State land-price table, one row per street segment per fetch.
+--
+-- The only officially published price in VN real estate; everything else this
+-- repo holds is an asking price. `source_doc` is the decision number the source
+-- page declares for these figures, stored verbatim rather than replaced with
+-- whatever we believe the current table to be -- the mirror lags the gazette,
+-- and that gap has to stay visible.
+CREATE TABLE IF NOT EXISTS re_land_price (
+    province          VARCHAR     NOT NULL,
+    street_key        VARCHAR     NOT NULL,   -- diacritic-free join key
+    segment           VARCHAR     NOT NULL,   -- "TRỌN ĐƯỜNG" or a from-to span
+    fetched_at        TIMESTAMPTZ NOT NULL,
+    district          VARCHAR,
+    street            VARCHAR,                -- as published, diacritics intact
+    price_residential DOUBLE,                 -- VND per m2
+    price_commercial  DOUBLE,
+    source_doc        VARCHAR,                -- e.g. 87/2025/NQ-HĐND
+    source_url        VARCHAR,
+    page              INTEGER,
+    -- A blank segment cell means the price covers the whole street; the
+    -- collector writes "TRỌN ĐƯỜNG" rather than NULL, because a key column
+    -- cannot be null and the two mean the same thing.
+    PRIMARY KEY (province, street_key, segment, fetched_at)
+);
+
 -- Daily equity quote + foreign flow, one row per ticker per fetch.
 CREATE TABLE IF NOT EXISTS eq_quote (
     symbol             VARCHAR     NOT NULL,

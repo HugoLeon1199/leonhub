@@ -3,7 +3,7 @@
  "_sources": {
   "nq202": "Nghị quyết 202/2025/QH15 về sắp xếp đơn vị hành chính cấp tỉnh, Quốc hội khóa XV, thông qua 12/6/2025 — nguồn cho danh sách 34 tỉnh và các tỉnh thành phần trước sáp nhập",
   "planning": "Quyết định phê duyệt Quy hoạch tỉnh/thành phố thời kỳ 2021-2030, tầm nhìn đến năm 2050, do Thủ tướng Chính phủ ban hành. Số hiệu và ngày ban hành được ghi kèm từng tỉnh; toàn văn tra cứu tại Công báo Chính phủ. Chỉ ghi những tỉnh xác định được chắc chắn số hiệu — tỉnh chưa ghi là chưa dẫn được nguồn, không phải chưa có quy hoạch.",
-  "land_price_table": "Bảng giá đất do UBND (hoặc HĐND) cấp tỉnh ban hành theo Luật Đất đai 2024, áp dụng đến hết 31/12/2025 theo khoản 1 Điều 257. Số hiệu, ngày ban hành và thời hạn hiệu lực được ghi kèm từng tỉnh và đã đối chiếu với công báo hoặc cơ sở dữ liệu pháp luật. Tỉnh chưa ghi là chưa dẫn được nguồn chắc chắn, không phải chưa có bảng giá đất. LEON chỉ dẫn trích dẫn — không sao chép nội dung bảng giá."
+  "land_price_table": "Bảng giá đất do HĐND cấp tỉnh ban hành theo Luật Đất đai 2024 (trước đây là Quyết định của UBND). Bảng áp dụng từ 01/01/2026 là bảng đầu tiên theo thẩm quyền mới, và có tỉnh đã điều chỉnh giữa năm. Trường `verified` ghi mức đối chiếu: \"gazette\" là đã đọc trang công báo của chính cơ quan ban hành; \"secondary\" là mới chỉ có số hiệu từ cơ sở dữ liệu pháp luật, chưa đối chiếu công báo — trang nói rõ điều này thay vì trình bày hai mức như nhau. LEON chỉ dẫn trích dẫn, không sao chép nội dung bảng giá."
  },
  "_disclaimer": "Chưa công bố dân số và diện tích từng tỉnh: các con số sau sáp nhập cần lấy từ nguồn thống kê chính thức ở dạng máy đọc được, chưa dẫn được nên để trống thay vì đăng số có thể sai. Mọi nhận định trong mục 'view' là quan điểm phân tích, không phải khuyến nghị đầu tư.",
  "provinces": {
@@ -25,14 +25,15 @@
     "source": "congbao.chinhphu.vn"
    },
    "land_price_table": {
-    "decision": "71/2024/QĐ-UBND",
-    "date": "2024-12-20",
-    "issuer": "UBND Thành phố Hà Nội",
-    "effective_from": "2024-12-20",
-    "effective_to": "2025-12-31",
-    "note": "Thay toàn bộ bảng giá đất của Quyết định 30/2019/QĐ-UBND bằng 32 phụ lục mới. Giá đất ở cao nhất trên 695,3 triệu đồng/m² (Bà Triệu, Hai Bà Trưng — Hoàn Kiếm).",
-    "source": "Cơ sở dữ liệu quốc gia về văn bản pháp luật",
-    "url": "https://luatvietnam.vn/dat-dai/quyet-dinh-71-2024-qd-ubnd-ha-noi-sua-doi-quyet-dinh-30-2019-qd-ubnd-quy-dinh-va-bang-gia-cac-loai-dat-381004-d2.html"
+    "decision": "52/2025/NQ-HĐND",
+    "date": "2025-12-31",
+    "issuer": "HĐND Thành phố Hà Nội",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "note": "Bảng giá đất áp dụng từ 01/01/2026, thay bảng giá đất theo Quyết định 71/2024/QĐ-UBND.",
+    "source": "Cơ sở dữ liệu văn bản pháp luật",
+    "url": "",
+    "verified": "secondary"
    }
   },
   "ho-chi-minh": {
@@ -54,14 +55,15 @@
     "source": "congbao.chinhphu.vn"
    },
    "land_price_table": {
-    "decision": "79/2024/QĐ-UBND",
-    "date": "2024-10-21",
-    "issuer": "UBND Thành phố Hồ Chí Minh",
-    "effective_from": "2024-10-31",
-    "effective_to": "2025-12-31",
-    "note": "Sửa đổi, bổ sung Quyết định 02/2020/QĐ-UBND. Giá đất ở cao nhất 687,2 triệu đồng/m² (Nguyễn Huệ, Lê Lợi, Đồng Khởi — Quận 1).",
+    "decision": "87/2025/NQ-HĐND",
+    "date": "2025-12-26",
+    "issuer": "HĐND Thành phố Hồ Chí Minh",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "note": "Bảng giá đất lần đầu áp dụng từ 01/01/2026, thay bảng giá đất cũ ban hành theo Quyết định 79/2024/QĐ-UBND.",
     "source": "Công báo Thành phố Hồ Chí Minh",
-    "url": "https://congbao.hochiminhcity.gov.vn/cong-bao/van-ban/quyet-dinh/so/79-2024-qd-ubnd/ngay/21-10-2024/47004"
+    "url": "https://congbao.hochiminhcity.gov.vn/cong-bao/van-ban/nghi-quyet/so/87-2025-nq-hdnd/ngay/26-12-2025/48983?cbid=49002",
+    "verified": "gazette"
    }
   },
   "hai-phong": {
@@ -98,14 +100,15 @@
     "source": "congbao.chinhphu.vn"
    },
    "land_price_table": {
-    "decision": "59/2024/QĐ-UBND",
-    "date": "2024-12-31",
-    "issuer": "UBND Thành phố Đà Nẵng",
-    "effective_from": "2025-01-01",
-    "effective_to": "2025-12-31",
-    "note": "Điều chỉnh, bổ sung bảng giá đất giai đoạn 2020-2024. Giá đất ở cao nhất 286,5 triệu đồng/m² (Bạch Đằng, đoạn Lê Duẩn – Nguyễn Văn Linh).",
-    "source": "Thư viện pháp luật",
-    "url": "https://thuvienphapluat.vn/banan/tin-tuc/bang-gia-dat-o-da-nang-ap-dung-tu-01012025-theo-quyet-dinh-592024qdubnd-13345"
+    "decision": "28/2026/NQ-HĐND",
+    "date": "2026-05-29",
+    "issuer": "HĐND Thành phố Đà Nẵng",
+    "effective_from": "2026-06-10",
+    "effective_to": "2026-12-31",
+    "note": "Điều chỉnh giữa năm, thay bảng giá đất áp dụng từ đầu năm 2026.",
+    "source": "Cơ sở dữ liệu văn bản pháp luật",
+    "url": "",
+    "verified": "secondary"
    }
   },
   "can-tho": {
