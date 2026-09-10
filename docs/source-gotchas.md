@@ -250,6 +250,36 @@ listing truncated — so the figure is published as a lower bound ("≥ N ngày"
 with the truncated share beside it, and converges on the real number as the
 warehouse ages without any code change.
 
+**The national planning portal does not resolve.** `quyhoach.gov.vn`,
+`quyhoachquocgia.mpi.gov.vn`, `quyhoach.mpi.gov.vn` and `quyhoach.mof.gov.vn`
+all fail DNS from here (2026-09-10), and `mpi.gov.vn` itself times out — the
+2025 ministry merger moved things and the public planning database is not
+reachable at any obvious address. `vanban.chinhphu.vn` answers 200 but its
+document pages do not resolve by `docid`. So the province-level gazette is the
+only route to a planning decision's full text, and it is one portal per province.
+
+**Provincial gazettes ARE automatable, unlike the central one** (measured
+2026-09-10). `congbao.hochiminhcity.gov.vn` serves document lists and metadata
+server-side, its URLs are predictable
+(`/cong-bao/van-ban/quyet-dinh/so/{so}-{nam}-qd-ubnd/ngay/{dd-mm-yyyy}/{id}`),
+and `/tai-ve/{id}?cbid=` returns the full PDF with `Content-Type:
+application/pdf` — the Bảng giá đất decision 79/2024/QĐ-UBND came back as an
+11 MB, 78-page file. A `Referer` header is enough; no session, no JS. Note the
+sibling portals are not uniform: `congbao.hanoi.gov.vn` and
+`congbao.danang.gov.vn` both time out from here, so each province needs its own
+reachability check before it is added.
+
+**Those gazette PDFs are scans with a bold-by-overprint text layer.** Every
+bold glyph is emitted twice at the same coordinates, so `extract_text()` returns
+`NNGGUUYYỄỄNN` and `find_tables()` returns nothing. Deduplicating characters by
+`(text, x0//2, top//2)` and rebuilding lines by `top//3` recovers readable rows,
+and the price column survives intact (`204.900`, `409.900`). What does not
+survive is Vietnamese diacritics: the OCR yields `CAO BẢ QUÁT` for `CAO BÁ
+QUÁT`, `NGUYỀN` for `NGUYỄN`, `CHU MẠN1Ỉ TRINH` for `CHU MẠNH TRINH`. Matching
+those names against the warehouse's own `street_name` values, diacritics
+stripped and substrings allowed, lands at **53% (194 of 366 rows)** — the
+remainder is almost entirely OCR damage to names, not missing data.
+
 **Neither permitted legal-text source is machine-readable.** `vbpl.vn` is a
 React SPA whose only data path is the robots-`Disallow`ed `/api/`; server HTML
 carries zero search results. `congbao.chinhphu.vn` returns a byte-identical
