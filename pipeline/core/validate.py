@@ -169,7 +169,7 @@ def validate_bds(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | No
     # that the market did something surprising.
     for key, lo, hi in (
         ("pc", 0, 100), ("gr", 0, 100), ("grx", 0, 100), ("dmc", 0, 100),
-        ("pcm", -100, 0),
+        ("ag", 0, 100), ("pcm", -100, 0),
     ):
         bad = [
             r for r in rows
@@ -194,6 +194,7 @@ def validate_bds(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | No
 
     rep.stats["with_price_cut"] = sum(1 for r in rows if r.get("pc") is not None)
     rep.stats["with_gone_rate"] = sum(1 for r in rows if r.get("gr") is not None)
+    rep.stats["with_agent_split"] = sum(1 for r in rows if r.get("ag") is not None)
 
     if previous:
         drop = 1 - len(rows) / len(previous)

@@ -225,6 +225,16 @@ apparent cuts on the local warehouse were this. Any price-change measure must
 drop listings whose area moved (`SIZE_DRIFT_TOLERANCE`), and must not leave them
 in the denominator either.
 
+**`company_ad` is present-or-absent, never false.** Probing 30 live HCMC ads:
+26 carry `company_ad: true` and 4 omit the key entirely — no ad returns `false`.
+So `is_agent IS NULL` means *private seller*, not *unknown*, and treating NULL
+as missing throws away the owner/broker split on every ad that has one. This
+matters because the two populations price differently (`source-gotchas` already
+notes 17/20 đất listings are brokerage): a district whose asking prices are 90%
+broker-posted is not comparable to one that is half owners. Rows collected
+before 2026-09-07 predate the column and are genuinely unknown, so the split is
+only measurable from that crawl forward.
+
 **A poster can move a live ad to a different district.** One listing sat in
 Quận 10 on two crawls and in Quận 8 on the third, same `list_id`, same price and
 area — the address was edited, not the property. So a per-`list_id` aggregate

@@ -165,6 +165,35 @@ FROM panel a JOIN panel b
 """
 
 
+# Who is doing the asking. `company_ad` arrives as `true` or is absent entirely
+# -- it is never `false` -- so a NULL `is_agent` is a private seller, not an
+# unknown one. The exception is rows collected before the column existed, which
+# are genuinely unknown; restricting to crawls at or after AGENT_KNOWN_FROM
+# keeps those out instead of silently counting them as owners.
+#
+# This matters because the two populations price differently: a district whose
+# listings are 96% brokerage is not comparable to one that is a third owners,
+# and the median asking price means something different in each.
+AGENT_KNOWN_FROM = "2026-09-07"
+
+AGENT_SQL = f"""
+WITH latest AS (
+    SELECT DISTINCT ON (list_id)
+        list_id, region, district, category, is_agent
+    FROM re_listing
+    WHERE source = 'chotot:s'
+      AND fetched_at >= TIMESTAMP '{AGENT_KNOWN_FROM}'
+    ORDER BY list_id, fetched_at DESC
+)
+SELECT region, district, category,
+       count(*)                              AS agent_n,
+       count(*) FILTER (WHERE is_agent)      AS broker_n
+FROM latest
+GROUP BY 1, 2, 3
+HAVING count(*) >= {MIN_SAMPLES}
+"""
+
+
 def _pct(part: int, whole: int) -> float | None:
     return round(100 * part / whole, 1) if whole else None
 
@@ -176,6 +205,10 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         rows = con.execute(PANEL_SQL).fetchall()
         cols = [d[0] for d in con.description]
         reposted = {r[0] for r in con.execute(REPOST_SQL).fetchall()}
+        agents = {
+            (r[0], r[1], r[2]): (r[3], r[4])
+            for r in con.execute(AGENT_SQL).fetchall()
+        }
     finally:
         con.close()
 
@@ -247,6 +280,14 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             item["grn"] = len(members)
             still_gone = [m for m in gone if m["list_id"] not in reposted]
             item["grx"] = _pct(len(still_gone), len(members))
+
+        # --- Broker share. Its own sample, because it is only measurable on
+        # crawls new enough to carry the column.
+        agent = agents.get((region, district, category))
+        if agent:
+            agent_n, broker_n = agent
+            item["ag"] = _pct(broker_n, agent_n)
+            item["agn"] = agent_n
         out[key] = item
 
     stats = {
@@ -255,6 +296,7 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         "repeat_observed": sum(i.get("pcn", 0) for i in out.values()),
         "reposts_detected": len(reposted),
         "cells_with_gone_rate": sum(1 for i in out.values() if i.get("gr") is not None),
+        "cells_with_agent_split": sum(1 for i in out.values() if i.get("ag") is not None),
         "cut_threshold": CUT_THRESHOLD,
         "gone_after_crawls": GONE_AFTER_CRAWLS,
         "repost_window_days": REPOST_WINDOW_DAYS,
@@ -276,6 +318,8 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             "repeat_observed": stats["repeat_observed"],
             "reposts_detected": stats["reposts_detected"],
             "cells_with_gone_rate": stats["cells_with_gone_rate"],
+            "cells_with_agent_split": stats["cells_with_agent_split"],
+            "agent_known_from": AGENT_KNOWN_FROM,
             "cut_threshold": CUT_THRESHOLD,
             "size_drift_tolerance": SIZE_DRIFT_TOLERANCE,
             "gone_after_crawls": GONE_AFTER_CRAWLS,

@@ -459,7 +459,8 @@ def build(dry_run: bool = False) -> dict[str, Any]:
     for item in out:
         panel = panel_cells.get(f'{item["slug"]}__{item["cs"]}')
         if panel:
-            for field in ("pc", "pcm", "pcn", "dm", "dmc", "gr", "grn", "grx"):
+            for field in ("pc", "pcm", "pcn", "dm", "dmc", "gr", "grn", "grx",
+                          "ag", "agn"):
                 if field in panel:
                     item[field] = panel[field]
 

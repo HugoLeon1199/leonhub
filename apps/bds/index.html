@@ -153,7 +153,7 @@ let PROFILES={}, PROFILE_META={};
 const COLS=[
   ["d","Quận / Huyện","text"],["rs","Tỉnh mới","text"],["r","Tỉnh nguồn","text"],["i","Loại","text"],
   ["p","Giá tr/m²","num"],["g","CAGR %/năm","num"],["y","Lợi suất %","num"],["v","Định giá tương đối","text"],
-  ["_spread","P25–P75","num"],["tp","Giá tin trung vị (tỷ)","num"],["age","Tuổi tin trung vị","num"],["pc","Tin giảm giá %","num"],["gr","Tin biến mất %","num"],["n","Mẫu bán","num"]
+  ["_spread","P25–P75","num"],["tp","Giá tin trung vị (tỷ)","num"],["age","Tuổi tin trung vị","num"],["pc","Tin giảm giá %","num"],["gr","Tin biến mất %","num"],["ag","Tin môi giới %","num"],["n","Mẫu bán","num"]
 ];
 
 const LISTING_CACHE={};
@@ -183,7 +183,7 @@ Promise.all([
   fetch("../../data/bds.json",{cache:"no-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}),
   fetch("../../data/vn-map.json",{cache:"force-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()})
 ]).then(([data,map])=>{DATA=Array.isArray(data)?{rows:data,provinces:[],history:[]}:data;MAP=map;init()}).catch(err=>{
-  $("updated").textContent="Không tải được dữ liệu";$("tbody").innerHTML=`<tr><td colspan="14">Chạy pipeline BĐS rồi mở bằng HTTP server (${String(err)})</td></tr>`;
+  $("updated").textContent="Không tải được dữ liệu";$("tbody").innerHTML=`<tr><td colspan="15">Chạy pipeline BĐS rồi mở bằng HTTP server (${String(err)})</td></tr>`;
 });
 
 function init(){
@@ -245,7 +245,7 @@ function renderTable(){
     <td class="district">${esc(r.d)}</td><td>${esc(r.rs)}</td><td class="dim">${esc(r.r)}</td><td>${esc(r.i)}</td>
     <td>${fmt(r.p)}</td><td>${r.g==null?'<span class="dim">chờ dữ liệu</span>':signed(r.g)+'%'}</td><td>${fmt(r.y,2)}</td><td>${verdict(r.v)}</td>
     <td><span class="spread"><span>${fmt(r.p25)}–${fmt(r.p75)}</span><span class="spread-bar"><i style="width:${Math.min(100,Math.max(5,(r.p75-r.p25)/Math.max(r.p,1)*70))}%"></i></span></span></td>
-    <td>${fmt(r.tp,2)}</td><td>${fmt(r.age,0)}</td><td>${r.pc==null?'<i class="dim">—</i>':fmt(r.pc,1)}</td><td>${r.gr==null?'<i class="dim">—</i>':fmt(r.gr,1)}</td><td>${r.n.toLocaleString("vi-VN")}</td></tr>`).join(""):'<tr><td colspan="14" class="nodata">Không có ô nào khớp bộ lọc</td></tr>';
+    <td>${fmt(r.tp,2)}</td><td>${fmt(r.age,0)}</td><td>${r.pc==null?'<i class="dim">—</i>':fmt(r.pc,1)}</td><td>${r.gr==null?'<i class="dim">—</i>':fmt(r.gr,1)}</td><td>${r.ag==null?'<i class="dim">—</i>':fmt(r.ag,0)}</td><td>${r.n.toLocaleString("vi-VN")}</td></tr>`).join(""):'<tr><td colspan="15" class="nodata">Không có ô nào khớp bộ lọc</td></tr>';
   $("tbody").querySelectorAll("tr[data-slug]").forEach(tr=>tr.onclick=()=>openDistrict(tr.dataset.slug,tr.dataset.cat));
 }
 /* The app already reads province/cat from the query string, so a deep link
@@ -462,6 +462,8 @@ function panelBlock(r){
   }
   if(r.gr!=null)
     parts.push(`<div class="metric"><span>Tin biến mất <i class="dim">vắng mặt ở 2 lần thu gần nhất của khu vực${r.grx!=null&&r.grx!==r.gr?`; còn ${fmt(r.grx,1)}% sau khi trừ tin đăng lại`:""}</i></span><b>${fmt(r.gr,1)}%</b></div>`);
+  if(r.ag!=null&&r.agn)
+    parts.push(`<div class="metric"><span>Người đăng <i class="dim">${fmt(r.ag,0)}% tin do môi giới đăng, trên ${r.agn} tin — giá rao của môi giới và của chính chủ là hai quần thể khác nhau</i></span><b>${fmt(100-r.ag,0)}% chính chủ</b></div>`);
   if(!parts.length)return "";
   return `<div class="explain" style="border-left-color:var(--accent2)"><b>Hành vi tin rao</b>${parts.join("")}<div class="sub" style="margin-top:8px">Tin biến mất <b>không</b> đồng nghĩa đã bán: tin có thể hết hạn, bị gỡ, hoặc xóa rồi đăng lại dưới mã khác — Chợ Tốt không báo trạng thái đã bán.</div></div>`;
 }
