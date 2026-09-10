@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -162,6 +163,38 @@ def validate_bds(rows: list[dict[str, Any]], previous: list[dict[str, Any]] | No
     missing_meta = sum(1 for r in rows if not r.get("u") or not r.get("n"))
     if missing_meta:
         rep.error(f"{missing_meta} rows lack `n` or `updated_at` provenance")
+
+    # Panel metrics, when present. Each is a percentage or a day count, and a
+    # value outside its range means the panel SQL changed shape rather than
+    # that the market did something surprising.
+    for key, lo, hi in (
+        ("pc", 0, 100), ("gr", 0, 100), ("grx", 0, 100), ("dmc", 0, 100),
+        ("ag", 0, 100), ("pcm", -100, 0),
+    ):
+        bad = [
+            r for r in rows
+            if isinstance(r.get(key), (int, float)) and not lo <= r[key] <= hi
+        ]
+        if bad:
+            rep.error(
+                f"{len(bad)} rows have `{key}` outside {lo}–{hi} "
+                f"(e.g. {bad[0][key]} in {bad[0].get('r')}/{bad[0].get('d')})"
+            )
+    negative_dm = [
+        r for r in rows if isinstance(r.get("dm"), (int, float)) and r["dm"] < 0
+    ]
+    if negative_dm:
+        rep.error(f"{len(negative_dm)} rows report a negative time on market")
+
+    # A published cut rate needs its own denominator beside it, or the reader
+    # cannot tell 1-in-2 from 50-in-100.
+    orphan_pc = [r for r in rows if r.get("pc") is not None and not r.get("pcn")]
+    if orphan_pc:
+        rep.error(f"{len(orphan_pc)} rows publish `pc` without the `pcn` sample")
+
+    rep.stats["with_price_cut"] = sum(1 for r in rows if r.get("pc") is not None)
+    rep.stats["with_gone_rate"] = sum(1 for r in rows if r.get("gr") is not None)
+    rep.stats["with_agent_split"] = sum(1 for r in rows if r.get("ag") is not None)
 
     if previous:
         drop = 1 - len(rows) / len(previous)
@@ -785,12 +818,234 @@ def validate_crypto_context(payload: dict[str, Any], previous: dict[str, Any] | 
     return rep
 
 
+# Decision numbers as the Vietnamese gazette writes them. Planning decisions are
+# Prime-Ministerial (`1569/QĐ-TTg`). A land-price table is usually a provincial
+# People's Committee decision (`79/2024/QĐ-UBND`) but some provinces issue it as
+# a People's Council resolution instead -- Bình Dương's is 20/2024/NQ-HĐND -- so
+# both forms are legitimate and the check accepts either rather than forcing a
+# citation into the shape we expected.
+_PLANNING_DECISION = re.compile(r"^\d{1,4}/QĐ-TTg$")
+_LAND_PRICE_DECISION = re.compile(r"^\d{1,4}/\d{4}/(QĐ-UBND|NQ-HĐND)$")
+
+
+def validate_province_profiles(
+    payload: dict[str, Any], previous: dict[str, Any] | None
+) -> Report:
+    """Check the hand-maintained province write-ups.
+
+    This file is edited by a person, not produced by a pipeline, which is
+    exactly why it needs a validator: a mistyped decision number or a date that
+    does not exist would be published as a citation and read as fact. The page
+    already refuses to print a citation it does not have; this refuses to print
+    one that is malformed.
+    """
+    rep = Report()
+    provinces = payload.get("provinces") if isinstance(payload, dict) else None
+    if not isinstance(provinces, dict) or not provinces:
+        rep.error("province_profiles.json has no `provinces` object")
+        return rep
+
+    rep.stats["provinces"] = len(provinces)
+    if len(provinces) != 34:
+        rep.error(
+            f"{len(provinces)} provinces described, expected the 34 of the "
+            "post-2025 structure"
+        )
+
+    today = date.today()
+    cited = 0
+    land_cited = 0
+    for name, profile in provinces.items():
+        if not isinstance(profile, dict):
+            rep.error(f"{name}: profile is not an object")
+            continue
+
+        planning = profile.get("planning")
+        if planning is not None:
+            if not isinstance(planning, dict):
+                rep.error(f"{name}: `planning` is not an object")
+            else:
+                cited += 1
+                decision = planning.get("decision")
+                if not isinstance(decision, str) or not _PLANNING_DECISION.match(decision):
+                    rep.error(f"{name}: planning decision {decision!r} is not a `N/QĐ-TTg` number")
+                _check_citation_date(rep, name, "planning", planning.get("date"), today)
+                if not planning.get("title"):
+                    rep.error(f"{name}: planning citation has no title")
+                if not planning.get("source"):
+                    rep.error(f"{name}: planning citation names no source")
+
+        land = profile.get("land_price_table")
+        if land is not None:
+            if not isinstance(land, dict):
+                rep.error(f"{name}: `land_price_table` is not an object")
+            else:
+                land_cited += 1
+                decision = land.get("decision")
+                if not isinstance(decision, str) or not _LAND_PRICE_DECISION.match(decision):
+                    rep.error(
+                        f"{name}: land-price decision {decision!r} is not a "
+                        "`N/YYYY/QĐ-UBND` or `N/YYYY/NQ-HĐND` number"
+                    )
+                _check_citation_date(rep, name, "land_price_table", land.get("date"), today)
+                if not land.get("issuer"):
+                    rep.error(f"{name}: land-price citation names no issuing committee")
+                start, end = land.get("effective_from"), land.get("effective_to")
+                if start and end and str(start) > str(end):
+                    rep.error(f"{name}: land-price effective_from {start} is after {end}")
+
+                # The check that would have caught the real failure: three
+                # citations sat on the page nine months after they expired,
+                # because nothing compared their end date to the calendar. A
+                # land-price table is superseded annually, and now sometimes
+                # mid-year, so an expired one is not merely stale -- it states
+                # the wrong prices are in force.
+                if end and str(end) < today.isoformat():
+                    rep.error(
+                        f"{name}: land-price citation {decision} expired on {end}; "
+                        "a superseding document exists and must be cited instead"
+                    )
+
+                # How far the citation was actually checked. Publishing a
+                # gazette-verified number and a legal-database number in the
+                # same shape claims more confidence than we have for one of them.
+                verified = land.get("verified")
+                if verified not in {"gazette", "secondary"}:
+                    rep.error(
+                        f"{name}: land-price `verified` is {verified!r}, expected "
+                        "\"gazette\" (primary source read) or \"secondary\""
+                    )
+                elif verified == "gazette" and not land.get("url"):
+                    rep.error(
+                        f"{name}: claims gazette verification but cites no URL"
+                    )
+
+    rep.stats["with_planning"] = cited
+    rep.stats["with_land_price"] = land_cited
+    if not cited:
+        rep.error("no province cites a planning decision at all")
+    return rep
+
+
+def _check_citation_date(
+    rep: Report, name: str, field: str, value: Any, today: date
+) -> None:
+    """A citation date must be a real ISO date, and cannot be in the future."""
+    if not value:
+        rep.error(f"{name}: {field} citation has no date")
+        return
+    try:
+        parsed = date.fromisoformat(str(value))
+    except ValueError:
+        rep.error(f"{name}: {field} date {value!r} is not an ISO date")
+        return
+    if parsed > today:
+        rep.error(f"{name}: {field} is dated {value}, which is in the future")
+
+
+# A state-price ratio needs at least this many matched streets behind it.
+LAND_PRICE_MIN_STREETS = 8
+# State prices are a fee base and sit below market, but not arbitrarily so.
+# Outside this band a street was mis-joined or a unit moved.
+LAND_PRICE_RATIO_RANGE = (0.5, 100.0)
+
+
+def validate_land_price(
+    payload: dict[str, Any], previous: dict[str, Any] | None
+) -> Report:
+    """Check the asking-vs-state comparison.
+
+    The failure this guards against is a mis-joined street. Vietnamese street
+    names repeat across districts -- 202 of HCMC's 3,098 do -- so pairing "Lê
+    Lợi" in Gò Vấp with "Lê Lợi" in District 1 produces a 400x ratio that reads
+    as a spectacular market signal rather than as the bug it is.
+    """
+    rep = Report()
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        rep.error("land_price.json has no rows")
+        return rep
+
+    rep.stats["districts"] = len(rows)
+    rep.stats["matched_streets"] = sum(r.get("n") or 0 for r in rows)
+    rep.stats["provinces"] = len({r.get("rs") for r in rows})
+
+    thin = [r for r in rows if (r.get("n") or 0) < LAND_PRICE_MIN_STREETS]
+    if thin:
+        rep.error(
+            f"{len(thin)} districts rest on fewer than {LAND_PRICE_MIN_STREETS} "
+            f"matched streets (first: {thin[0].get('d')})"
+        )
+
+    lo, hi = LAND_PRICE_RATIO_RANGE
+    outside = [r for r in rows if not lo <= (r.get("rr") or 0) <= hi]
+    if outside:
+        rep.error(
+            f"{len(outside)} ratios fall outside {lo}-{hi}x "
+            f"(e.g. {outside[0].get('rr')} in {outside[0].get('d')}) — "
+            "a street was probably matched across districts"
+        )
+
+    undocumented = [r for r in rows if not r.get("doc")]
+    if undocumented:
+        rep.error(
+            f"{len(undocumented)} districts publish a ratio without naming the "
+            "land-price decision it rests on"
+        )
+
+    # The mirror lags the gazette. That is tolerable, but it has to be visible:
+    # a ratio computed against a superseded table is answering last year's
+    # question, and the page can only say so if this check surfaces the gap.
+    profiles = read_json("province_profiles.json")
+    if isinstance(profiles, dict):
+        current = {
+            name: (prof.get("land_price_table") or {}).get("decision")
+            for name, prof in (profiles.get("provinces") or {}).items()
+            if isinstance(prof, dict)
+        }
+        stale: list[str] = []
+        for row in rows:
+            slug = _province_slug(row.get("rs"), profiles)
+            expected = current.get(slug) if slug else None
+            if expected and row.get("doc") and row["doc"] != expected:
+                stale.append(f"{row.get('d')}: {row['doc']} vs {expected}")
+        if stale:
+            rep.warn(
+                f"{len(stale)} districts price against a document that is not the "
+                f"one cited for their province (e.g. {stale[0]}) — the mirror is "
+                "behind the gazette"
+            )
+            rep.stats["stale_doc_districts"] = len(stale)
+
+    return rep
+
+
+def _province_slug(name: str | None, profiles: dict[str, Any]) -> str | None:
+    """Map a published province name back to its profile slug."""
+    if not name:
+        return None
+    for slug, prof in (profiles.get("provinces") or {}).items():
+        if not isinstance(prof, dict):
+            continue
+        if slug == name or prof.get("name") == name:
+            return slug
+    # Profiles are keyed by slug and the published `rs` is a display name, so
+    # fold it the same way the publisher does -- a naive space-to-dash misses
+    # every province with a diacritic, which is nearly all of them.
+    from pipeline.transform.bds_aggregate import slugify
+
+    folded = slugify(name)
+    return folded if folded in (profiles.get("provinces") or {}) else None
+
+
 VALIDATORS = {
     "stocks.json": validate_stocks,
     "crypto/index.json": validate_crypto_profiles,
     "crypto/context.json": validate_crypto_context,
     "bds.json": validate_bds,
     "bds/listings/index.json": validate_bds_listings,
+    "province_profiles.json": validate_province_profiles,
+    "land_price.json": validate_land_price,
     "us.json": validate_us,
     "fx.json": validate_fx,
     "crypto.json": validate_crypto,
@@ -810,6 +1065,8 @@ _TAKES_PAYLOAD = {
     "flows.json", "signals.json", "news_ticker.json", "gex_btc.json",
     "gex_eth.json", "ticker/manifest.json", "breadth.json",
     "bds/listings/index.json",
+    "province_profiles.json",
+    "land_price.json",
     "crypto/index.json",
     "crypto/context.json",
 }

@@ -180,6 +180,153 @@ are brokerage postings against 11/20 for nhà ở, so any cross-source or
 cross-category median mixes two different seller populations. Publish the split
 before merging anything.
 
+**The whole VN market on Chotot is ~70,800 live ads** (measured 2026-09-09,
+51 provinces x 4 categories x both lanes). HCMC alone is 42,428 of them — 60% —
+followed by Đà Nẵng 6,426, Hà Nội 6,241 and Bình Dương 5,823. **34 of the 51
+provinces hold under 200 ads in total**: Thanh Hóa returns 10 nhà ở, Nghệ An 3,
+Quảng Ninh 7. Thin provincial coverage is the source, not the crawler, and no
+collector change fixes it. The practical consequences: a national pass is only
+~1,400 content pages (~12 min at `--delay 0.5`), so the request budget is not a
+constraint; and any national ranking is really a ranking of five cities.
+
+**Chotot's `MAX_OFFSET` is never actually reached.** The largest district lane
+in the country holds 1,777 ads, so district-level paging always terminates on a
+short page first. Ward-level querying is therefore not needed to route around
+the offset ceiling — its only value is splitting a sample that is already thin.
+
+**An unknown `ward` is rejected, unlike an unknown `region_v2`.** Probing
+`ward=999999` returns HTTP 200 with `{"ads":[]}` and **no `total` key** at all,
+where a bogus `region_v2` is silently ignored and answers with the default
+region. So ward codes can be probed safely. `ward` does filter for real:
+district 13096 reports 224 sale ads and ward 9217 within it reports 44.
+
+**Chotot's district discovery is self-limiting if it reads one page.** Sampling
+only the first 50 ads per lane found 23 of Hà Nội's districts against 29 when
+paged deeper, and 11 of Long An's against 14 — a 21% miss that raises no error,
+because a district that never surfaces is simply never crawled. Discovery pages
+to `DISCOVERY_MAX_PAGES` and unions the result with every `area_v2` the
+warehouse has ever stored, and the crawl reconciles its district sweep against
+the province total so a remaining gap is logged rather than silent.
+
+**A listing leaving the feed is invisible unless you age listings out.**
+Chotot never reports a `sold` or `expired` status — locally, `status` is only
+ever `active` or NULL — so a sold ad just stops appearing. Taking the latest
+observation per `list_id` with no recency bound therefore lets withdrawn
+listings price the market forever: measured on a five-day warehouse, **27% of
+the rows feeding the medians were already stale**, and the share grows without
+bound. Both publishers now drop listings unseen for `STALE_AFTER_DAYS` relative
+to **their own cell's last crawl** — a calendar cutoff would blank the map on
+any night the crawl failed.
+
+**Sellers edit a live ad instead of reposting it, which fakes a price cut.**
+One observed listing went 6,500 → 650 million VND as its area went 144 → 44 m²:
+a different property under the same `list_id`, not a 90% discount. Nine of 93
+apparent cuts on the local warehouse were this. Any price-change measure must
+drop listings whose area moved (`SIZE_DRIFT_TOLERANCE`), and must not leave them
+in the denominator either.
+
+**`company_ad` is present-or-absent, never false.** Probing 30 live HCMC ads:
+26 carry `company_ad: true` and 4 omit the key entirely — no ad returns `false`.
+So `is_agent IS NULL` means *private seller*, not *unknown*, and treating NULL
+as missing throws away the owner/broker split on every ad that has one. This
+matters because the two populations price differently (`source-gotchas` already
+notes 17/20 đất listings are brokerage): a district whose asking prices are 90%
+broker-posted is not comparable to one that is half owners. Rows collected
+before 2026-09-07 predate the column and are genuinely unknown, so the split is
+only measurable from that crawl forward.
+
+**A poster can move a live ad to a different district.** One listing sat in
+Quận 10 on two crawls and in Quận 8 on the third, same `list_id`, same price and
+area — the address was edited, not the property. So a per-`list_id` aggregate
+cannot use `any_value()` for region/district/category: the cell it lands in is
+then chosen arbitrarily and two builds over an unchanged warehouse disagree.
+`arg_max(..., fetched_at)` — the newest observation — is the answer, and it is
+what makes the panel build reproducible.
+
+**Days-on-market from our own panel is left-truncated, badly, while young.**
+A listing first seen on day one of the warehouse may have been live for a year.
+On the five-day local warehouse the median cell has **`dmc` = 100%** — every
+listing truncated — so the figure is published as a lower bound ("≥ N ngày")
+with the truncated share beside it, and converges on the real number as the
+warehouse ages without any code change.
+
+**State land-price tables are readable as HTML, and that beats the gazette
+PDFs.** `thuviennhadat.vn/bang-gia-dat/{slug}` serves the tables as ordinary
+`<tr>` rows with Vietnamese diacritics intact, covers 33 of 34 provinces (only
+`hue` returns an empty table), and `robots.txt` is `Allow: /`. Matching its
+street names against this warehouse's own `street_name` values reaches **59%
+(3,920 HCMC streets)**, against 53% for the 2025 gazette PDF and 19% for the
+2026 one. No OCR, no overprint de-duplication, no LLM name repair. Measured
+2026-09-10.
+
+**That mirror lags the gazette, by different amounts per province.** Its HCMC
+page still cites `79/2024/QĐ-UBND` (the 2025 table) while `87/2025/NQ-HĐND` has
+been in force since January; Đà Nẵng's is `07/2021/QĐ-UBND` and Hải Phòng's
+`54/2019/QĐ-UBND`. So the document number is stored verbatim per row and
+`validate_land_price` warns when it disagrees with the primary citation in
+`province_profiles.json` — currently every district. A ratio computed against a
+superseded table answers last year's question, and the reader has to be able to
+see that.
+
+**Its pagination is not monotonic.** Each page renders the table twice, so half
+of every page is a self-duplicate; HCMC then repeats page 2 across pages 3-5,
+resumes real rows on page 6, repeats again on 12-16, and still yields new
+streets at pages 40 and 100 before running out around 140. Stopping at the first
+barren page collected 165 of ~3,900 streets and stopping after five collected
+698. The only safe terminator is a page with no parseable rows at all.
+
+**Vietnamese street names repeat across districts, and joining on the name alone
+is catastrophic.** 202 of HCMC's 3,098 state-priced streets exist in more than
+one district. Joining asking prices to state prices by name matched the Gò Vấp
+"Lê Lợi" (asking 1.6 million/m²) to the District 1 one (687 million/m²) — a 400x
+error that reads as a market signal. The join must require district equality,
+which cost 41 → 31 districts and 1,205 → 622 matched streets, and is worth it.
+
+**State prices are a fee base, not a valuation, and the level carries no
+signal.** Measured medians: HCMC asks 1.43x its state table, Hà Nội 1.81x, and
+central districts sit *below* 1.0 (Quận 1 at 0.79x) because their state prices
+were raised close to market, while peri-urban districts run far above (Quận Bình
+Tân 16x, Huyện Bình Chánh 7.8x). Publishing the ratio as an "overvalued" verdict
+would be backwards; only the dispersion within one province is readable.
+
+**The national planning portal does not resolve.** `quyhoach.gov.vn`,
+`quyhoachquocgia.mpi.gov.vn`, `quyhoach.mpi.gov.vn` and `quyhoach.mof.gov.vn`
+all fail DNS from here (2026-09-10), and `mpi.gov.vn` itself times out — the
+2025 ministry merger moved things and the public planning database is not
+reachable at any obvious address. `vanban.chinhphu.vn` answers 200 but its
+document pages do not resolve by `docid`. So the province-level gazette is the
+only route to a planning decision's full text, and it is one portal per province.
+
+**Provincial gazettes ARE automatable, unlike the central one** (measured
+2026-09-10). `congbao.hochiminhcity.gov.vn` serves document lists and metadata
+server-side, its URLs are predictable
+(`/cong-bao/van-ban/quyet-dinh/so/{so}-{nam}-qd-ubnd/ngay/{dd-mm-yyyy}/{id}`),
+and `/tai-ve/{id}?cbid=` returns the full PDF with `Content-Type:
+application/pdf` — the Bảng giá đất decision 79/2024/QĐ-UBND came back as an
+11 MB, 78-page file. A `Referer` header is enough; no session, no JS. Note the
+sibling portals are not uniform: `congbao.hanoi.gov.vn` and
+`congbao.danang.gov.vn` both time out from here, so each province needs its own
+reachability check before it is added.
+
+**Those gazette PDFs are scans with a bold-by-overprint text layer.** Every
+bold glyph is emitted twice at the same coordinates, so `extract_text()` returns
+`NNGGUUYYỄỄNN` and `find_tables()` returns nothing. Deduplicating characters by
+`(text, x0//2, top//2)` and rebuilding lines by `top//3` recovers readable rows,
+and the price column survives intact (`204.900`, `409.900`). What does not
+survive is Vietnamese diacritics: the OCR yields `CAO BẢ QUÁT` for `CAO BÁ
+QUÁT`, `NGUYỀN` for `NGUYỄN`, `CHU MẠN1Ỉ TRINH` for `CHU MẠNH TRINH`. Matching
+those names against the warehouse's own `street_name` values, diacritics
+stripped and substrings allowed, lands at **53% (194 of 366 rows)** — the
+remainder is almost entirely OCR damage to names, not missing data.
+
+**Neither permitted legal-text source is machine-readable.** `vbpl.vn` is a
+React SPA whose only data path is the robots-`Disallow`ed `/api/`; server HTML
+carries zero search results. `congbao.chinhphu.vn` returns a byte-identical
+201,126-character shell for a search URL and its home page, and is the *central*
+gazette, which does not carry provincial Bảng giá đất at all — those live on 34
+separate provincial portals in PDF/DOC attachments. Do not build a legal-document
+crawler; download the documents once and parse them offline.
+
 **Chotot and Nhà Tốt are the same source.** `nhatot.com` is Chợ Tốt's property
 brand and serves from the same `gateway.chotot.com` endpoint with the same
 schema. Adding it as a second source would double-count the same listings.

@@ -2,7 +2,8 @@
  "_about": "Hồ sơ 34 tỉnh/thành sau sáp nhập 2025. Phần cơ cấu hành chính lấy từ Nghị quyết 202/2025/QH15. Phần nhận định thị trường được đánh dấu riêng là quan điểm, không phải số liệu đo được. Số liệu giá lấy từ bảng bất động sản của chính LEON.",
  "_sources": {
   "nq202": "Nghị quyết 202/2025/QH15 về sắp xếp đơn vị hành chính cấp tỉnh, Quốc hội khóa XV, thông qua 12/6/2025 — nguồn cho danh sách 34 tỉnh và các tỉnh thành phần trước sáp nhập",
-  "planning": "Quyết định phê duyệt Quy hoạch tỉnh/thành phố thời kỳ 2021-2030, tầm nhìn đến năm 2050, do Thủ tướng Chính phủ ban hành. Số hiệu và ngày ban hành được ghi kèm từng tỉnh; toàn văn tra cứu tại Công báo Chính phủ. Chỉ ghi những tỉnh xác định được chắc chắn số hiệu — tỉnh chưa ghi là chưa dẫn được nguồn, không phải chưa có quy hoạch."
+  "planning": "Quyết định phê duyệt Quy hoạch tỉnh/thành phố thời kỳ 2021-2030, tầm nhìn đến năm 2050, do Thủ tướng Chính phủ ban hành. Số hiệu và ngày ban hành được ghi kèm từng tỉnh; toàn văn tra cứu tại Công báo Chính phủ. Chỉ ghi những tỉnh xác định được chắc chắn số hiệu — tỉnh chưa ghi là chưa dẫn được nguồn, không phải chưa có quy hoạch.",
+  "land_price_table": "Bảng giá đất do HĐND cấp tỉnh ban hành theo Luật Đất đai 2024 (trước đây là Quyết định của UBND). Bảng áp dụng từ 01/01/2026 là bảng đầu tiên theo thẩm quyền mới, và có tỉnh đã điều chỉnh giữa năm. Trường `verified` ghi mức đối chiếu: \"gazette\" là đã đọc trang công báo của chính cơ quan ban hành; \"secondary\" là mới chỉ có số hiệu từ cơ sở dữ liệu pháp luật, chưa đối chiếu công báo — trang nói rõ điều này thay vì trình bày hai mức như nhau. LEON chỉ dẫn trích dẫn, không sao chép nội dung bảng giá."
  },
  "_disclaimer": "Chưa công bố dân số và diện tích từng tỉnh: các con số sau sáp nhập cần lấy từ nguồn thống kê chính thức ở dạng máy đọc được, chưa dẫn được nên để trống thay vì đăng số có thể sai. Mọi nhận định trong mục 'view' là quan điểm phân tích, không phải khuyến nghị đầu tư.",
  "provinces": {
@@ -22,6 +23,17 @@
     "date": "2024-12-12",
     "title": "Quy hoạch Thủ đô Hà Nội thời kỳ 2021-2030, tầm nhìn đến năm 2050. Định hướng phát triển theo mô hình chùm đô thị, đa cực, gắn với các vành đai và trục hướng tâm; hình thành thành phố phía Bắc và phía Tây trực thuộc Thủ đô.",
     "source": "congbao.chinhphu.vn"
+   },
+   "land_price_table": {
+    "decision": "52/2025/NQ-HĐND",
+    "date": "2025-12-31",
+    "issuer": "HĐND Thành phố Hà Nội",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "note": "Bảng giá đất áp dụng từ 01/01/2026, thay bảng giá đất theo Quyết định 71/2024/QĐ-UBND.",
+    "source": "Cơ sở dữ liệu văn bản pháp luật",
+    "url": "",
+    "verified": "secondary"
    }
   },
   "ho-chi-minh": {
@@ -41,6 +53,17 @@
     "date": "2024-12-31",
     "title": "Quy hoạch TP.HCM thời kỳ 2021-2030, tầm nhìn đến năm 2050. Định hướng đô thị đa trung tâm, phát triển theo định hướng giao thông công cộng (TOD), mở rộng không gian về phía Đông và các hướng kết nối vùng.",
     "source": "congbao.chinhphu.vn"
+   },
+   "land_price_table": {
+    "decision": "87/2025/NQ-HĐND",
+    "date": "2025-12-26",
+    "issuer": "HĐND Thành phố Hồ Chí Minh",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "note": "Bảng giá đất lần đầu áp dụng từ 01/01/2026, thay bảng giá đất cũ ban hành theo Quyết định 79/2024/QĐ-UBND.",
+    "source": "Công báo Thành phố Hồ Chí Minh",
+    "url": "https://congbao.hochiminhcity.gov.vn/cong-bao/van-ban/nghi-quyet/so/87-2025-nq-hdnd/ngay/26-12-2025/48983?cbid=49002",
+    "verified": "gazette"
    }
   },
   "hai-phong": {
@@ -75,6 +98,17 @@
     "date": "2023-11-02",
     "title": "Quy hoạch thành phố Đà Nẵng thời kỳ 2021-2030, tầm nhìn đến năm 2050. Định hướng trung tâm du lịch, dịch vụ chất lượng cao, cảng biển và trung tâm tài chính khu vực.",
     "source": "congbao.chinhphu.vn"
+   },
+   "land_price_table": {
+    "decision": "28/2026/NQ-HĐND",
+    "date": "2026-05-29",
+    "issuer": "HĐND Thành phố Đà Nẵng",
+    "effective_from": "2026-06-10",
+    "effective_to": "2026-12-31",
+    "note": "Điều chỉnh giữa năm, thay bảng giá đất áp dụng từ đầu năm 2026.",
+    "source": "Cơ sở dữ liệu văn bản pháp luật",
+    "url": "",
+    "verified": "secondary"
    }
   },
   "can-tho": {

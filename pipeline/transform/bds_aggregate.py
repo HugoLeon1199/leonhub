@@ -17,6 +17,10 @@ exists because the raw numbers lie without it:
 - **Hide thin cells.** Below `MIN_SAMPLES` the median is not a statistic, it is
   an anecdote. Turtle uses the same threshold; we publish `n` so the reader can
   judge, and withhold the cell entirely when it is too thin.
+- **Age out listings we have stopped seeing.** A sold or withdrawn ad leaves the
+  feed silently -- Chotot never reports a `sold` status -- so without a cutoff
+  its last price sets the median forever. Measured on a five-day warehouse, 27%
+  of the rows behind the medians were already stale.
 """
 
 from __future__ import annotations
@@ -35,6 +39,10 @@ from pipeline.core import warehouse as wh
 log = logging.getLogger(__name__)
 
 MIN_SAMPLES = 20          # below this a district/type cell is not published
+# How far behind its cell's own last crawl a listing may be and still count.
+# Three days tolerates two consecutive failed nightly runs; beyond that the
+# listing is assumed gone from the feed rather than merely unobserved.
+STALE_AFTER_DAYS = 3
 CLIP_LOW, CLIP_HIGH = 0.05, 0.95
 # Sanity bounds for VN asking prices, million VND per m2.
 PRICE_MIN, PRICE_MAX = 1.0, 3000.0
@@ -96,9 +104,24 @@ CATEGORY_SLUGS = {
     "Văn phòng, Mặt bằng kinh doanh": "van-phong",
 }
 
-AGGREGATE_SQL = f"""
-WITH latest AS (
-    -- One row per listing: its most recent observation.
+# Every listing's newest observation, dropping the ones we have stopped seeing.
+#
+# A listing that has left the feed -- sold, expired, withdrawn -- keeps its last
+# observed price forever unless it is aged out, so without this the median is
+# increasingly set by properties that are no longer for sale. Measured on a
+# five-day warehouse: 27% of the rows feeding the medians were last seen on an
+# earlier day, and that share only grows.
+#
+# The cutoff is relative to the last time we crawled THAT CELL, never to today.
+# A national pass spans hours and a failed run would otherwise age out a whole
+# province at once -- blanking the map is a worse failure than staleness.
+FRESH_CTE = f"""
+crawl AS (
+    -- When we last looked at this cell at all.
+    SELECT region, category, max(fetched_at) AS cell_crawled_at
+    FROM re_listing GROUP BY 1, 2
+),
+observed AS (
     SELECT DISTINCT ON (list_id)
         list_id, source, region, district, ward, category,
         price, size_m2, price_per_m2, latitude, longitude, as_of, fetched_at
@@ -107,6 +130,14 @@ WITH latest AS (
       AND size_m2 > 0
     ORDER BY list_id, fetched_at DESC
 ),
+latest AS (
+    SELECT o.*
+    FROM observed o JOIN crawl c USING (region, category)
+    WHERE date_diff('day', o.fetched_at, c.cell_crawled_at) <= {STALE_AFTER_DAYS}
+)"""
+
+AGGREGATE_SQL = f"""
+WITH {FRESH_CTE},
 deduped AS (
     -- Collapse reposts: same district, category, rounded size and price is
     -- almost certainly the same property listed again.
@@ -143,7 +174,10 @@ SELECT
     quantile_cont(price_per_m2, 0.75)               AS p75_ppm2,
     median(size_m2)                                 AS median_size,
     median(price)                                   AS median_price,
-    median(greatest(0, date_diff('day', as_of, fetched_at))) AS median_dom,
+    -- Age of the ad when we observed it, NOT days-on-market: it is bounded
+    -- below by our own start date and reset by every repost. The panel build
+    -- computes the real first-seen-to-last-seen figure.
+    median(greatest(0, date_diff('day', as_of, fetched_at))) AS median_age,
     avg(latitude)                                   AS lat,
     avg(longitude)                                  AS lon,
     max(fetched_at)                                 AS updated_at
@@ -154,25 +188,43 @@ ORDER BY region, district, category
 """
 
 # Rental yield: median monthly rent per m2 x 12 / median sale price per m2.
+#
+# The rent leg applies the same three guards as the sale leg -- freshness,
+# repost collapse, and p5-p95 clipping. It previously applied only the first,
+# which made the yield a ratio of two differently-cleaned numbers: measured, the
+# median yield moved 2.3% and the worst cell 18.8%. Two legs, one rule.
 YIELD_SQL = f"""
-WITH latest AS (
-    SELECT DISTINCT ON (list_id)
-        list_id, source, region, district, category, price, size_m2, price_per_m2, fetched_at
-    FROM re_listing
-    WHERE price_per_m2 IS NOT NULL AND size_m2 > 0
-    ORDER BY list_id, fetched_at DESC
-),
-rent AS (
-    SELECT region, district, category,
-           median(price_per_m2) AS rent_ppm2,
-           count(*) AS rent_n
+WITH {FRESH_CTE},
+deduped AS (
+    SELECT DISTINCT ON (region, district, category, source,
+                        round(size_m2), round(price / 1e6))
+        *
     FROM latest
+    ORDER BY region, district, category, source,
+             round(size_m2), round(price / 1e6), fetched_at DESC
+),
+rent_raw AS (
+    SELECT * FROM deduped
     WHERE source = 'chotot:u'
       AND price_per_m2 BETWEEN {RENT_MIN} AND {RENT_MAX}
-    GROUP BY 1, 2, 3
-    HAVING count(*) >= {MIN_SAMPLES}
+),
+rent_bounds AS (
+    SELECT region, district, category,
+           quantile_cont(price_per_m2, {CLIP_LOW})  AS lo,
+           quantile_cont(price_per_m2, {CLIP_HIGH}) AS hi
+    FROM rent_raw GROUP BY 1, 2, 3
+),
+rent_clipped AS (
+    SELECT r.*
+    FROM rent_raw r JOIN rent_bounds b USING (region, district, category)
+    WHERE r.price_per_m2 BETWEEN b.lo AND b.hi
 )
-SELECT * FROM rent
+SELECT region, district, category,
+       median(price_per_m2) AS rent_ppm2,
+       count(*)             AS rent_n
+FROM rent_clipped
+GROUP BY 1, 2, 3
+HAVING count(*) >= {MIN_SAMPLES}
 """
 
 # Daily district medians form an honest trend history.  Today this contains a
@@ -260,6 +312,23 @@ def _median(values: list[float]) -> float | None:
     return statistics.median(clean) if clean else None
 
 
+def _load_panel() -> dict[str, dict[str, Any]]:
+    """Panel metrics keyed by `slug__category`, or empty if none are published.
+
+    Absent is a real state, not an error: a fresh warehouse has no panel yet,
+    and the page distinguishes "not measured" from a measured zero.
+    """
+    from pipeline.publish.emit import read_json
+
+    payload = read_json("bds_panel.json")
+    if not isinstance(payload, dict):
+        return {}
+    cells = payload.get("cells")
+    if not isinstance(cells, list):
+        return {}
+    return {c["k"]: c for c in cells if isinstance(c, dict) and c.get("k")}
+
+
 def _annualised(points: list[dict[str, Any]]) -> tuple[float | None, int]:
     """CAGR and span.  Null is a first-class result until history is mature."""
     if len(points) < CAGR_MIN_POINTS:
@@ -301,8 +370,33 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             SELECT count(*) FILTER (WHERE legal_doc IS NOT NULL), count(*)
             FROM re_listing WHERE source = 'chotot:s'
         """).fetchone()
+        # How much of the raw pool the freshness rule excludes. Publishing this
+        # is the point: it is the size of the error the medians used to carry,
+        # and it lets a reader see the rule working rather than trust it.
+        stale_stats = con.execute(f"""
+            WITH crawl AS (
+                SELECT region, category, max(fetched_at) AS cell_crawled_at
+                FROM re_listing GROUP BY 1, 2
+            ),
+            observed AS (
+                SELECT DISTINCT ON (list_id) list_id, region, category, fetched_at
+                FROM re_listing ORDER BY list_id, fetched_at DESC
+            )
+            SELECT count(*) FILTER (
+                       WHERE date_diff('day', o.fetched_at, c.cell_crawled_at)
+                             <= {STALE_AFTER_DAYS}),
+                   count(*)
+            FROM observed o JOIN crawl c USING (region, category)
+        """).fetchone()
     finally:
         con.close()
+
+    # Panel metrics come from the file bds_panel_build already published rather
+    # than from a second pass over the warehouse: the workflow runs the panel
+    # first, DuckDB allows one connection at a time, and re-deriving them here
+    # would let the two artifacts disagree. Missing file means the keys are
+    # simply absent from the rows.
+    panel_cells = _load_panel()
 
     out = []
     for row in rows:
@@ -322,7 +416,7 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             "p75": round(rec["p75_ppm2"], 1),
             "sz": round(rec["median_size"], 0),
             "tp": round(rec["median_price"] / 1e9, 2),
-            "dom": round(rec["median_dom"]),
+            "age": round(rec["median_age"]),
             "n": rec["n"],
             "u": rec["updated_at"].isoformat() if rec["updated_at"] else None,
         }
@@ -357,6 +451,18 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         growth, span = growth_by_key.get(key, (None, 0))
         item["g"] = growth
         item["hd"] = span
+
+    # Panel metrics ride along on the same rows rather than in a second file:
+    # the grain is identical, and a separate fetch for the same key would cost
+    # a request to say what these few keys say. Absent when the panel has not
+    # been built, which the page must render as "not measured" rather than zero.
+    for item in out:
+        panel = panel_cells.get(f'{item["slug"]}__{item["cs"]}')
+        if panel:
+            for field in ("pc", "pcm", "pcn", "dm", "dmc", "gr", "grn", "grx",
+                          "ag", "agn"):
+                if field in panel:
+                    item[field] = panel[field]
 
     # Relative valuation from actual rent/sale yield peers, never from an opaque
     # model.  The label is intentionally concise for the screener.
@@ -411,6 +517,12 @@ def build(dry_run: bool = False) -> dict[str, Any]:
         "snapshot_days": int(raw_stats[2] or 0),
         "legal_doc_rows": int(legal_stats[0] or 0),
         "legal_doc_pct": round(100 * (legal_stats[0] or 0) / max(legal_stats[1] or 1, 1), 1),
+        "stale_after": STALE_AFTER_DAYS,
+        "fresh_listings": int(stale_stats[0] or 0),
+        "aged_out": int((stale_stats[1] or 0) - (stale_stats[0] or 0)),
+        "aged_out_pct": round(
+            100 * ((stale_stats[1] or 0) - (stale_stats[0] or 0))
+            / max(stale_stats[1] or 1, 1), 1),
     }
 
     if not dry_run:
@@ -427,6 +539,10 @@ def build(dry_run: bool = False) -> dict[str, Any]:
             "snapshot_days": stats["snapshot_days"],
             "legal_doc_rows": stats["legal_doc_rows"],
             "legal_doc_pct": stats["legal_doc_pct"],
+            "stale_after": stats["stale_after"],
+            "fresh_listings": stats["fresh_listings"],
+            "aged_out": stats["aged_out"],
+            "aged_out_pct": stats["aged_out_pct"],
             "history_from": raw_stats[3].isoformat() if raw_stats[3] else None,
             "history_to": raw_stats[4].isoformat() if raw_stats[4] else None,
             "cagr_min_days": CAGR_MIN_DAYS,

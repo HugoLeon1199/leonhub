@@ -76,6 +76,12 @@
     <p><b>Vì sao nhiều ô trống.</b> Dưới 20 tin thì trung vị không phải thống kê, nó là giai thoại.
     Ô như vậy bị giấu hẳn thay vì hiện kèm cảnh báo — số đã hiện lên màn hình thì người đọc sẽ dùng.
     Mỗi ô đều công bố <code>n</code> để bạn tự đánh giá.</p>
+    <p><b>Tin đã rút khỏi sàn thì không còn tính.</b> Chợ Tốt không bao giờ báo một tin là đã bán —
+    nó chỉ lặng lẽ biến mất khỏi kết quả. Nếu cứ giữ giá lần cuối, một căn bán từ nhiều tuần trước
+    vẫn định giá hôm nay, và sai số đó chỉ lớn dần theo thời gian. Nên tin nào không còn thấy lại
+    sau <span id="staleRule">—</span> lần thu gần nhất <b>của chính khu vực đó</b> sẽ bị loại khỏi
+    trung vị. Mốc tính theo lần thu của khu vực chứ không theo ngày hôm nay: một đêm thu lỗi sẽ làm
+    số cũ đi, chứ không làm trắng cả bản đồ. Lần dựng này loại <span id="staleCov">—</span>.</p>
     <p><b>Cột nào tin được đến đâu.</b> Giá/m² và độ phân tán p25–p75 dựa trên hàng nghìn tin.
     Lợi suất thuê chỉ có khi cùng phân khúc có đủ cả tin bán và tin thuê. Tăng trưởng còn trống
     vì kho mới có ít ngày snapshot — annualise vài quan sát đầu tiên sẽ ra số vô nghĩa.</p>
@@ -85,6 +91,17 @@
     nhưng <b>chưa công bố nhãn</b>: nguồn không kèm bảng giải nghĩa, và đối chiếu mã với nội dung
     tin chỉ ra kết quả gần đúng chứ chưa chắc chắn. Đoán sai nhãn pháp lý còn tệ hơn là không có
     nhãn, nên phần này sẽ chỉ xuất hiện khi mapping được xác nhận.</p>
+    <p><b>Hành vi tin rao — phần này là số LEON tự đo, không có ở nguồn.</b> Mỗi tin được lưu lại
+    theo từng ngày, nên cùng một mã tin quan sát nhiều lần cho biết người bán có giảm giá không,
+    tin nằm bao lâu, và tin có còn trên sàn không. Ba lưu ý để đọc đúng: (1) <b>Tin giảm giá</b> chỉ
+    tính trên số tin thực sự được nhìn thấy từ hai lần trở lên, và bỏ qua tin bị sửa diện tích —
+    đó là tài sản khác, không phải người bán nhượng bộ. (2) <b>Thời gian rao</b> luôn là
+    <b>chặn dưới</b>: tin có mặt ngay ngày đầu LEON thu có thể đã rao từ một năm trước mà không có
+    cách nào biết, nên trang ghi “≥ N ngày” và nói rõ bao nhiêu phần trăm số tin rơi vào trường hợp
+    đó. Khi kho dài thêm, con số này tự tiệm cận giá trị thật. (3) <b>Tin biến mất</b> không phải
+    tỉ lệ đã bán — Chợ Tốt không bao giờ báo một tin là đã bán, và tin có thể hết hạn, bị gỡ, hoặc
+    xóa rồi đăng lại dưới mã khác; trang trừ bớt phần đăng lại nhận ra được và chỉ công bố chỉ số
+    này ở khu vực đã thu đủ nhiều lần.</p>
     <p><b>Không dùng để làm gì.</b> Đây không phải định giá tài sản cụ thể, không phải giá giao dịch,
     và không phải khuyến nghị mua bán.</p>
   </div>
@@ -136,8 +153,17 @@ let PROFILES={}, PROFILE_META={};
 const COLS=[
   ["d","Quận / Huyện","text"],["rs","Tỉnh mới","text"],["r","Tỉnh nguồn","text"],["i","Loại","text"],
   ["p","Giá tr/m²","num"],["g","CAGR %/năm","num"],["y","Lợi suất %","num"],["v","Định giá tương đối","text"],
-  ["_spread","P25–P75","num"],["tp","Giá tin trung vị (tỷ)","num"],["dom","Ngày rao trung vị","num"],["n","Mẫu bán","num"]
+  ["_spread","P25–P75","num"],["tp","Giá tin trung vị (tỷ)","num"],["age","Tuổi tin trung vị","num"],["pc","Tin giảm giá %","num"],["gr","Tin biến mất %","num"],["ag","Tin môi giới %","num"],["n","Mẫu bán","num"]
 ];
+
+/* Keyed by the same district slug bds.json uses, so the drawer can look up a
+   state-price comparison without a second request per district. */
+const LAND_PRICE={};
+let LAND_META=null;
+const LISTING_CACHE={};
+/* Keyed by shard slug -> {n, thin, d, r, rs}. Empty until the index loads, and
+   an empty index must not be read as "no district has listings". */
+const LISTING_INDEX={};
 
 /* Province write-ups load on their own rather than inside the Promise.all
    below: they are commentary, and a page that renders no prices because a
@@ -148,15 +174,32 @@ fetch("../../data/province_profiles.json",{cache:"no-cache"})
   .then(d=>{PROFILES=d?.provinces||{};PROFILE_META=d||{};if(DATA.provinces.length)renderProfile()})
   .catch(()=>{});
 
+/* The listing index, loaded the same non-blocking way. It says which districts
+   have a shard and how many ads each holds, so the drawer can state that a
+   district has no listings instead of discovering it by 404-ing a guessed path.
+   Absent index => fall back to trying the fetch, which is the old behaviour. */
+/* State land prices, loaded the same non-blocking way. The ratio is a
+   secondary panel: a page that showed no asking prices because a comparison
+   file 404'd would be a worse failure than one without the comparison. */
+fetch("../../data/land_price.json",{cache:"no-cache"})
+  .then(r=>r.ok?r.json():null)
+  .then(d=>{if(d&&Array.isArray(d.rows)){for(const row of d.rows)LAND_PRICE[row.slug]=row;LAND_META=d}})
+  .catch(()=>{});
+
+fetch("../../data/bds/listings/index.json",{cache:"no-cache"})
+  .then(r=>r.ok?r.json():null)
+  .then(d=>{if(d&&Array.isArray(d.rows))for(const row of d.rows)LISTING_INDEX[row.k]=row})
+  .catch(()=>{});
+
 Promise.all([
   fetch("../../data/bds.json",{cache:"no-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()}),
   fetch("../../data/vn-map.json",{cache:"force-cache"}).then(r=>{if(!r.ok)throw Error(r.status);return r.json()})
 ]).then(([data,map])=>{DATA=Array.isArray(data)?{rows:data,provinces:[],history:[]}:data;MAP=map;init()}).catch(err=>{
-  $("updated").textContent="Không tải được dữ liệu";$("tbody").innerHTML=`<tr><td colspan="12">Chạy pipeline BĐS rồi mở bằng HTTP server (${String(err)})</td></tr>`;
+  $("updated").textContent="Không tải được dữ liệu";$("tbody").innerHTML=`<tr><td colspan="15">Chạy pipeline BĐS rồi mở bằng HTTP server (${String(err)})</td></tr>`;
 });
 
 function init(){
-  fillLegalCoverage();buildKpis();buildFacets();
+  fillLegalCoverage();fillStaleCoverage();buildKpis();buildFacets();
   const hasDeepLink=applyUrlFilters();
   buildHead();buildMap();
   if(hasDeepLink)renderProfile();else setDefaultProvince();
@@ -181,13 +224,19 @@ function applyUrlFilters(){
   return Boolean(selectedProvince);
 }
 function dateText(v){return v?new Date(v).toLocaleDateString("vi-VN"):"—"}
+function fillStaleCoverage(){const r=$("staleRule");if(r)r.textContent=`${DATA.stale_after??3} ngày`;
+  const el=$("staleCov");if(!el)return;
+  // Publish the size of the correction, not just the fact of it: this number is
+  // how wrong the medians were before the rule existed.
+  if(DATA.aged_out==null){el.textContent="chưa đo được";return}
+  el.textContent=`${DATA.aged_out.toLocaleString("vi-VN")} tin (${fmt(DATA.aged_out_pct,1)}% số tin đã thu)`}
 function fillLegalCoverage(){const el=$("legalCov");if(!el)return;
   const n=DATA.legal_doc_rows,p=DATA.legal_doc_pct;
   el.textContent=n?`${n.toLocaleString("vi-VN")} tin — ${p}%`:"chưa có";}
 function buildKpis(){
   const rows=DATA.rows, districts=new Set(rows.map(r=>r.r+"/"+r.d)).size, prov=DATA.provinces.filter(p=>p.rows).length;
-  const dom=median(rows.map(r=>r.dom)), yieldRows=rows.filter(r=>isFinite(r.y));
-  const cards=[["Quận/huyện đủ mẫu",districts,`ngưỡng ≥${DATA.min_samples||20} tin`],["Tỉnh mới có dữ liệu",`${prov}/34`,"xám = chưa đủ mẫu"],["Quan sát thô",(DATA.raw_observations||0).toLocaleString("vi-VN"),`${(DATA.unique_listings||0).toLocaleString("vi-VN")} tin duy nhất`],["Ngày rao trung vị",fmt(dom,0),"từ ngày đăng đến snapshot"],["Ô có lợi suất",`${yieldRows.length}/${rows.length}`,"bán và thuê cùng phân khúc"]];
+  const adAge=median(rows.map(r=>r.age)), yieldRows=rows.filter(r=>isFinite(r.y));
+  const cards=[["Quận/huyện đủ mẫu",districts,`ngưỡng ≥${DATA.min_samples||20} tin`],["Tỉnh mới có dữ liệu",`${prov}/34`,"xám = chưa đủ mẫu"],["Quan sát thô",(DATA.raw_observations||0).toLocaleString("vi-VN"),`${(DATA.unique_listings||0).toLocaleString("vi-VN")} tin duy nhất`],["Tuổi tin trung vị",fmt(adAge,0),"từ ngày đăng đến lần quan sát"],["Ô có lợi suất",`${yieldRows.length}/${rows.length}`,"bán và thuê cùng phân khúc"]];
   $("kpis").innerHTML=cards.map(c=>`<div class="card kpi"><small>${c[0]}</small><strong>${c[1]}</strong><span>${c[2]}</span></div>`).join("");
 }
 function median(a){a=a.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null}
@@ -208,7 +257,7 @@ function renderTable(){
     <td class="district">${esc(r.d)}</td><td>${esc(r.rs)}</td><td class="dim">${esc(r.r)}</td><td>${esc(r.i)}</td>
     <td>${fmt(r.p)}</td><td>${r.g==null?'<span class="dim">chờ dữ liệu</span>':signed(r.g)+'%'}</td><td>${fmt(r.y,2)}</td><td>${verdict(r.v)}</td>
     <td><span class="spread"><span>${fmt(r.p25)}–${fmt(r.p75)}</span><span class="spread-bar"><i style="width:${Math.min(100,Math.max(5,(r.p75-r.p25)/Math.max(r.p,1)*70))}%"></i></span></span></td>
-    <td>${fmt(r.tp,2)}</td><td>${fmt(r.dom,0)}</td><td>${r.n.toLocaleString("vi-VN")}</td></tr>`).join(""):'<tr><td colspan="12" class="nodata">Không có ô nào khớp bộ lọc</td></tr>';
+    <td>${fmt(r.tp,2)}</td><td>${fmt(r.age,0)}</td><td>${r.pc==null?'<i class="dim">—</i>':fmt(r.pc,1)}</td><td>${r.gr==null?'<i class="dim">—</i>':fmt(r.gr,1)}</td><td>${r.ag==null?'<i class="dim">—</i>':fmt(r.ag,0)}</td><td>${r.n.toLocaleString("vi-VN")}</td></tr>`).join(""):'<tr><td colspan="15" class="nodata">Không có ô nào khớp bộ lọc</td></tr>';
   $("tbody").querySelectorAll("tr[data-slug]").forEach(tr=>tr.onclick=()=>openDistrict(tr.dataset.slug,tr.dataset.cat));
 }
 /* The app already reads province/cat from the query string, so a deep link
@@ -379,6 +428,24 @@ function profileNarrative(p){
       `<span class="psrc">Nguồn: Quyết định ${esc(pr.planning.decision)} ngày `+
       `${esc(fmtDate(pr.planning.date))} · tra cứu toàn văn tại ${esc(pr.planning.source)}</span></p>`:
      `<p class="pplan dim"><b>Quy hoạch &amp; tầm nhìn</b> Chưa dẫn được số hiệu quyết định cho tỉnh này — để trống thay vì ghi số có thể sai.</p>`)+
+    /* The state land-price table: a citation, never a copy of its contents.
+       Knowing which decision governs land pricing where you are buying, and
+       until when it holds, is information a listings site does not give -- and
+       it is the anchor any asking-versus-official comparison would rest on.
+       Same refusal rule as the planning block above. */
+    (pr.land_price_table?`<p class="pplan"><b>Bảng giá đất nhà nước</b> `+
+      `Quyết định ${esc(pr.land_price_table.decision)} ngày ${esc(fmtDate(pr.land_price_table.date))}, `+
+      `${esc(pr.land_price_table.issuer)}${pr.land_price_table.effective_from?`, hiệu lực ${esc(fmtDate(pr.land_price_table.effective_from))}`:""}`+
+      `${pr.land_price_table.effective_to?` đến ${esc(fmtDate(pr.land_price_table.effective_to))}`:""}. `+
+      `${pr.land_price_table.note?esc(pr.land_price_table.note)+" ":""}`+
+      `<span class="psrc">Nguồn: ${esc(pr.land_price_table.source)}`+
+      /* A citation checked against the issuing gazette and one taken from a
+         legal-database mirror are not the same claim. Saying so is cheaper
+         than being quietly wrong about which decision is in force. */
+      `${pr.land_price_table.verified==="secondary"?" · <b>số hiệu theo nguồn thứ cấp, chưa đối chiếu công báo</b>":pr.land_price_table.verified==="gazette"?" · đã đối chiếu công báo":""}`+
+      `${pr.land_price_table.url?` · <a href="${esc(pr.land_price_table.url)}" target="_blank" rel="noopener">toàn văn</a>`:""}`+
+      ` · LEON chỉ dẫn trích dẫn, không sao chép nội dung bảng giá.</span></p>`:
+     `<p class="pplan dim"><b>Bảng giá đất nhà nước</b> Chưa dẫn được số hiệu quyết định cho tỉnh này — để trống thay vì ghi số có thể sai.</p>`)+
     (pr.view?`<p class="pview"><b>Nhận định</b> ${esc(pr.view)}</p>`:"")+
     `</div>`;
 }
@@ -396,7 +463,46 @@ function renderTrend(){
   series.forEach((s,si)=>{const by=Object.fromEntries(s.points.map(p=>[p.d,p])),pts=dates.map((d,i)=>by[d]?[x(i),y(by[d].p)]:null).filter(Boolean);if(!pts.length)return;const path=document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttribute("d",pts.map((p,i)=>(i?"L":"M")+p.join(",")).join(" "));path.setAttribute("fill","none");path.setAttribute("stroke",COLORS[si]);path.setAttribute("stroke-width","2.5");path.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(path);pts.forEach(p=>circle(p[0],p[1],COLORS[si]))});
   function line(x1,y1,x2,y2,c){const e=document.createElementNS("http://www.w3.org/2000/svg","line");Object.entries({x1,y1,x2,y2,stroke:c}).forEach(([k,v])=>e.setAttribute(k,v));e.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(e)}function text(x,y,s,c){const e=document.createElementNS("http://www.w3.org/2000/svg","text");e.setAttribute("x",x);e.setAttribute("y",y);e.setAttribute("fill",c);e.setAttribute("font-size","10");e.textContent=s;svg.appendChild(e)}function circle(cx,cy,c){const e=document.createElementNS("http://www.w3.org/2000/svg","circle");Object.entries({cx,cy,r:3,fill:c}).forEach(([k,v])=>e.setAttribute(k,v));svg.appendChild(e)}
 }
-function openDistrict(slug,cat){const r=DATA.rows.find(x=>x.slug===slug&&x.cs===cat);if(!r)return;$("drawerTitle").textContent=`${r.d} · ${r.i}`;const history=DATA.history.filter(p=>p.k===`${r.slug}__${r.cs}`).sort((a,b)=>a.d.localeCompare(b.d));$("drawerBody").innerHTML=`<div class="sub">${esc(r.r)} → tỉnh mới ${esc(r.rs)} · cập nhật ${dateText(r.u)}</div><div class="detail-grid" style="margin-top:12px"><div class="detail"><small>Giá/m² trung vị</small><b>${fmt(r.p)} triệu</b></div><div class="detail"><small>Nửa số tin</small><b>${fmt(r.p25)}–${fmt(r.p75)}</b></div><div class="detail"><small>Giá tin trung vị</small><b>${fmt(r.tp,2)} tỷ</b></div><div class="detail"><small>Diện tích trung vị</small><b>${fmt(r.sz,0)} m²</b></div><div class="detail"><small>Lợi suất gộp</small><b>${fmt(r.y,2)}%</b></div><div class="detail"><small>Ngày rao trung vị</small><b>${fmt(r.dom,0)} ngày</b></div><div class="detail"><small>Mẫu bán</small><b>${r.n}</b></div><div class="detail"><small>Mẫu thuê</small><b>${r.yn??"—"}</b></div></div><div class="explain"><b>${r.v==="cheap"?"Dòng tiền thuê đang đỡ giá":r.v==="rich"?"Giá phản ánh kỳ vọng tăng giá":r.v==="fair"?"Tương đối cân bằng với cùng phân khúc":"Chưa đủ cặp bán–thuê để định vị"}</b><br>Định vị này chỉ so lợi suất của khu vực với trung vị cùng loại hình; không phải định giá căn nhà cụ thể.</div><div class="source">Lịch sử: ${history.length} snapshot · CAGR: ${r.g==null?`chưa đủ ${DATA.cagr_min_days||180} ngày`:signed(r.g)+"%/năm"}.<br>Nguồn là tin rao công khai; chưa trừ thuế, phí, thời gian trống và thương lượng.</div><div id="listingBox"></div>`;$("drawer").classList.add("open");loadListings(r.slug,r.cs)}
+/* The panel block states each rule and its inputs rather than a bare number.
+   `dm` is deliberately printed as a lower bound: on a young warehouse a listing
+   first seen on day one may have been live for a year, so the honest reading is
+   "at least this long". `dmc` says how much of the cell is truncated that way,
+   and when it is high the figure carries a refusal instead of a claim. */
+/* Asking price against the state land-price table.
+
+   The level is not the signal and saying so is the whole point: VN state prices
+   are a fee base set below market, so a district asking several times its state
+   price is ordinary. What can be read is the spread within a province -- which
+   districts sit far from their own province's typical ratio. The block prints
+   the inputs, the province median, and which decision the state figure came
+   from, because that document is often a year or more behind. */
+function landPriceBlock(r){
+  const lp=LAND_PRICE[r.slug];
+  if(!lp)return "";
+  const pos=lp.rp==null?null:lp.rp>=1.5?"cao hơn hẳn":lp.rp>=1.15?"cao hơn":lp.rp<=0.67?"thấp hơn hẳn":lp.rp<=0.85?"thấp hơn":"ngang";
+  return `<div class="explain" style="border-left-color:var(--warn)"><b>So với bảng giá đất nhà nước</b>`+
+    `<div class="metric"><span>Giá rao / giá nhà nước <i class="dim">trung vị trên ${lp.n} tuyến phố khớp được tên và quận</i></span><b>${fmt(lp.rr,2)}×</b></div>`+
+    `<div class="metric"><span>Mức điển hình của ${esc(lp.rs)}</span><b>${fmt(lp.rm,2)}×</b></div>`+
+    (pos?`<div class="metric"><span>Vị trí so với tỉnh <i class="dim">tỉ lệ của khu vực chia cho trung vị tỉnh</i></span><b>${pos} (${fmt(lp.rp,2)}×)</b></div>`:"")+
+    `<div class="metric"><span>Giá rao / giá nhà nước, trung vị</span><b>${fmt(lp.ask,1)} / ${fmt(lp.st,1)} tr/m²</b></div>`+
+    `<div class="sub" style="margin-top:8px">Bảng giá đất nhà nước là <b>căn cứ tính phí, không phải định giá thị trường</b>, nên tỉ lệ lớn hơn 1 là bình thường và <b>không</b> có nghĩa là đắt. Chỉ nên đọc theo chiều so sánh giữa các khu vực trong cùng một tỉnh.<br>Nguồn giá nhà nước: ${esc(lp.doc||"chưa rõ số hiệu")}${LAND_META&&LAND_META.source?` · ${esc(LAND_META.source.via)}`:""} — nguồn thứ cấp, có thể chậm hơn văn bản hiện hành.</div></div>`;
+}
+function panelBlock(r){
+  const parts=[];
+  if(r.pc!=null&&r.pcn)
+    parts.push(`<div class="metric"><span>Tin giảm giá <i class="dim">giá lần cuối thấp hơn lần đầu &gt;2%, trên ${r.pcn} tin quan sát nhiều lần</i></span><b>${fmt(r.pc,1)}%${r.pcm!=null?` · trung vị ${fmt(r.pcm,1)}%`:""}</b></div>`);
+  if(r.dm!=null){
+    const trunc=r.dmc!=null&&r.dmc>=50;
+    parts.push(`<div class="metric"><span>Thời gian rao <i class="dim">${trunc?`${fmt(r.dmc,0)}% số tin đã rao từ trước khi LEON bắt đầu thu — đây là chặn dưới, không phải giá trị thật`:"từ lần đầu đến lần cuối LEON nhìn thấy tin"}</i></span><b>≥ ${fmt(r.dm,0)} ngày</b></div>`);
+  }
+  if(r.gr!=null)
+    parts.push(`<div class="metric"><span>Tin biến mất <i class="dim">vắng mặt ở 2 lần thu gần nhất của khu vực${r.grx!=null&&r.grx!==r.gr?`; còn ${fmt(r.grx,1)}% sau khi trừ tin đăng lại`:""}</i></span><b>${fmt(r.gr,1)}%</b></div>`);
+  if(r.ag!=null&&r.agn)
+    parts.push(`<div class="metric"><span>Người đăng <i class="dim">${fmt(r.ag,0)}% tin do môi giới đăng, trên ${r.agn} tin — giá rao của môi giới và của chính chủ là hai quần thể khác nhau</i></span><b>${fmt(100-r.ag,0)}% chính chủ</b></div>`);
+  if(!parts.length)return "";
+  return `<div class="explain" style="border-left-color:var(--accent2)"><b>Hành vi tin rao</b>${parts.join("")}<div class="sub" style="margin-top:8px">Tin biến mất <b>không</b> đồng nghĩa đã bán: tin có thể hết hạn, bị gỡ, hoặc xóa rồi đăng lại dưới mã khác — Chợ Tốt không báo trạng thái đã bán.</div></div>`;
+}
+function openDistrict(slug,cat){const r=DATA.rows.find(x=>x.slug===slug&&x.cs===cat);if(!r)return;$("drawerTitle").textContent=`${r.d} · ${r.i}`;const history=DATA.history.filter(p=>p.k===`${r.slug}__${r.cs}`).sort((a,b)=>a.d.localeCompare(b.d));$("drawerBody").innerHTML=`<div class="sub">${esc(r.r)} → tỉnh mới ${esc(r.rs)} · cập nhật ${dateText(r.u)}</div><div class="detail-grid" style="margin-top:12px"><div class="detail"><small>Giá/m² trung vị</small><b>${fmt(r.p)} triệu</b></div><div class="detail"><small>Nửa số tin</small><b>${fmt(r.p25)}–${fmt(r.p75)}</b></div><div class="detail"><small>Giá tin trung vị</small><b>${fmt(r.tp,2)} tỷ</b></div><div class="detail"><small>Diện tích trung vị</small><b>${fmt(r.sz,0)} m²</b></div><div class="detail"><small>Lợi suất gộp</small><b>${fmt(r.y,2)}%</b></div><div class="detail"><small>Tuổi tin trung vị</small><b>${fmt(r.age,0)} ngày</b></div><div class="detail"><small>Mẫu bán</small><b>${r.n}</b></div><div class="detail"><small>Mẫu thuê</small><b>${r.yn??"—"}</b></div></div>${panelBlock(r)}${landPriceBlock(r)}<div class="explain"><b>${r.v==="cheap"?"Dòng tiền thuê đang đỡ giá":r.v==="rich"?"Giá phản ánh kỳ vọng tăng giá":r.v==="fair"?"Tương đối cân bằng với cùng phân khúc":"Chưa đủ cặp bán–thuê để định vị"}</b><br>Định vị này chỉ so lợi suất của khu vực với trung vị cùng loại hình; không phải định giá căn nhà cụ thể.</div><div class="source">Lịch sử: ${history.length} snapshot${r.hd?` trải ${r.hd} ngày`:""} · CAGR: ${r.g==null?`chưa đủ ${DATA.cagr_min_days||180} ngày`:signed(r.g)+"%/năm"}.<br>Nguồn là tin rao công khai; chưa trừ thuế, phí, thời gian trống và thương lượng.</div><div id="listingBox"></div>`;$("drawer").classList.add("open");loadListings(r.slug,r.cs)}
 
 /* ---------- individual listings ----------
    The aggregate above withholds any district with fewer than 20 observations,
@@ -404,13 +510,21 @@ function openDistrict(slug,cat){const r=DATA.rows.find(x=>x.slug===slug&&x.cs===
    plots is exactly where a buyer looks. These shards carry every active
    listing, so the sample guard does not apply -- the count is shown instead,
    and thin districts say so. */
-const LISTING_CACHE={};
 const LEGAL_HINT="Mã pháp lý do nguồn tự đánh số và không công bố từ điển; hiển thị nguyên trạng, không dịch.";
 let listingFilter={ag:"",wc:"",tpMax:null,szMin:null};
 
 async function loadListings(slug,cat){
   const box=$("listingBox");
   if(!box)return;
+  /* Ask the index first. A district the index does not list has no shard, so
+     fetching it would only produce a 404 that reads to the user as a failure
+     rather than as an honest "nothing here". */
+  const known=LISTING_INDEX[slug];
+  const indexLoaded=Object.keys(LISTING_INDEX).length>0;
+  if(indexLoaded&&!known){
+    box.innerHTML='<div class="source">Khu vực này chưa có tin rao nào được thu.</div>';
+    return;
+  }
   box.innerHTML='<div class="source">Đang tải tin rao…</div>';
   let shard=LISTING_CACHE[slug];
   if(shard===undefined){

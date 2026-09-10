@@ -93,7 +93,36 @@ CREATE TABLE IF NOT EXISTS re_listing (
     -- re-queried from the warehouse without rediscovering its code.
     area_v2        INTEGER,
     region_v2      INTEGER,
+    -- The ward code the gateway accepts as `ward`. ward_v3 above is the name;
+    -- this is the only form that filters, and it is what makes a sub-district
+    -- aggregate possible without re-discovering codes from ads every run.
+    ward_v2        INTEGER,
     PRIMARY KEY (list_id, fetched_at)
+);
+
+-- State land-price table, one row per street segment per fetch.
+--
+-- The only officially published price in VN real estate; everything else this
+-- repo holds is an asking price. `source_doc` is the decision number the source
+-- page declares for these figures, stored verbatim rather than replaced with
+-- whatever we believe the current table to be -- the mirror lags the gazette,
+-- and that gap has to stay visible.
+CREATE TABLE IF NOT EXISTS re_land_price (
+    province          VARCHAR     NOT NULL,
+    street_key        VARCHAR     NOT NULL,   -- diacritic-free join key
+    segment           VARCHAR     NOT NULL,   -- "TRỌN ĐƯỜNG" or a from-to span
+    fetched_at        TIMESTAMPTZ NOT NULL,
+    district          VARCHAR,
+    street            VARCHAR,                -- as published, diacritics intact
+    price_residential DOUBLE,                 -- VND per m2
+    price_commercial  DOUBLE,
+    source_doc        VARCHAR,                -- e.g. 87/2025/NQ-HĐND
+    source_url        VARCHAR,
+    page              INTEGER,
+    -- A blank segment cell means the price covers the whole street; the
+    -- collector writes "TRỌN ĐƯỜNG" rather than NULL, because a key column
+    -- cannot be null and the two mean the same thing.
+    PRIMARY KEY (province, street_key, segment, fetched_at)
 );
 
 -- Daily equity quote + foreign flow, one row per ticker per fetch.
@@ -330,6 +359,10 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("re_listing", "price_string", "VARCHAR"),
     ("re_listing", "area_v2", "INTEGER"),
     ("re_listing", "region_v2", "INTEGER"),
+    # The queryable ward code. `ward_v3` holds the ward *name*; only this int is
+    # accepted by the gateway's `ward` parameter, and it narrows a district query
+    # for real (district 13096 returns 224 ads, ward 9217 within it returns 44).
+    ("re_listing", "ward_v2", "INTEGER"),
 )
 
 
