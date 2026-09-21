@@ -14,12 +14,14 @@ on:
   push:
     paths:
       - "apps/**/*.html"
+      - "apps/chart/*.js"
       - "hub/**/*.html"
       - "pipeline/core/check_apps.py"
       - ".github/workflows/check-apps.yml"
   pull_request:
     paths:
       - "apps/**/*.html"
+      - "apps/chart/*.js"
       - "hub/**/*.html"
   workflow_dispatch:
 
@@ -45,3 +47,8 @@ jobs:
 
       - name: Parse every inline script
         run: python -m pipeline.core.check_apps --verbose
+
+      - name: Check Chart decision modules and rule invariants
+        run: |
+          deno check apps/chart/decision-engine.js apps/chart/decision-panel.js
+          deno test apps/chart/decision-engine.test.js

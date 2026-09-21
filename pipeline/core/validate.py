@@ -1038,7 +1038,47 @@ def _province_slug(name: str | None, profiles: dict[str, Any]) -> str | None:
     return folded if folded in (profiles.get("provinces") or {}) else None
 
 
+def validate_chart_xau(payload: dict, previous=None) -> Report:
+    """A compact broker snapshot or explicit no-data; never substitute gold."""
+    from math import isfinite
+
+    rep = Report()
+    if not isinstance(payload, dict):
+        rep.error('expected XAU snapshot object')
+        return rep
+    allowed = {'version', 'asset', 'status', 'source', 'quote', 'h1', 'h4', 'updated_at'}
+    if set(payload) - allowed:
+        rep.error('unexpected snapshot fields; publish features only, no account metadata')
+    if payload.get('asset') != 'XAU' or payload.get('version') != 'trend-gate-1.0.0':
+        rep.error('unexpected asset or rule version')
+    source = payload.get('source') or {}
+    if source.get('kind') != 'broker-xauusd' or set(source) - {'kind', 'name'}:
+        rep.error('require explicitly identified broker XAUUSD')
+    status = payload.get('status')
+    rep.stats['status'] = status
+    if status == 'not_connected':
+        if any(payload.get(k) is not None for k in ('quote', 'h1', 'h4')):
+            rep.error('no-data status must not contain prices/features')
+        return rep
+    if status != 'snapshot':
+        rep.error('unknown snapshot status')
+        return rep
+    numeric = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool) and isfinite(x)
+    quote = payload.get('quote') or {}
+    if set(quote) - {'price', 'ask', 'at'} or not all(numeric(quote.get(k)) for k in ('price', 'at')):
+        rep.error('invalid quote')
+    for key, seconds in [('h1', 3600), ('h4', 14400)]:
+        f = payload.get(key) or {}
+        if f.get('seconds') != seconds or f.get('count', 0) < 280:
+            rep.error(f'{key}: wrong timeframe or insufficient closed history')
+        if not all(numeric(f.get(k)) for k in ('closedAt', 'close', 'atr', 'adx', 'er', 'slope', 'ema20', 'ema50', 'upper', 'lower')):
+            rep.error(f'{key}: invalid features')
+    # Freshness is enforced at every browser evaluation, never by publish time.
+    return rep
+
+
 VALIDATORS = {
+    "chart/xau.json": validate_chart_xau,
     "stocks.json": validate_stocks,
     "crypto/index.json": validate_crypto_profiles,
     "crypto/context.json": validate_crypto_context,
@@ -1062,6 +1102,7 @@ VALIDATORS = {
 # `rows` list -- their artifacts have no single dominant array (flows keys by
 # asset, gex is a flat scalar surface, signals mixes rules/stats/trades).
 _TAKES_PAYLOAD = {
+    "chart/xau.json",
     "flows.json", "signals.json", "news_ticker.json", "gex_btc.json",
     "gex_eth.json", "ticker/manifest.json", "breadth.json",
     "bds/listings/index.json",

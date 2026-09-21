@@ -24,12 +24,20 @@ from __future__ import annotations
 import argparse
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from pipeline.core.http import HttpClient
 from pipeline.publish.emit import write_json
 
 log = logging.getLogger(__name__)
+
+
+def _utc_epoch(value) -> str | None:
+    try:
+        return datetime.fromtimestamp(float(value), timezone.utc).isoformat()
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
 
 CHART = "https://api.blockchain.info/charts/{name}"
 MVRV_URL = "https://bitcoin-data.com/v1/mvrv/last"
@@ -139,6 +147,7 @@ def collect(dry_run: bool = False, delay: float = 1.5) -> dict[str, Any]:
             values = [int(r["value"]) for r in rows if str(r.get("value", "")).isdigit()]
             out["fng"] = {
                 "value": values[0],
+                "as_of": _utc_epoch(rows[0].get("timestamp")),
                 "label": rows[0].get("value_classification"),
                 # The seven-day average separates a spike from a standing mood.
                 "avg_7d": round(sum(values[:7]) / len(values[:7])) if values else None,

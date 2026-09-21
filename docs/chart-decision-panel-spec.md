@@ -1,7 +1,20 @@
 # Chart decision panel: BTC / ETH / XAU
 
-User requirement recorded 2026-09-21. This is the current product target for the
-next implementation session. Read `CLAUDE.md` and `HANDOFF.md` first.
+User requirement recorded 2026-09-21. Read `CLAUDE.md` and `HANDOFF.md` first.
+
+## First implementation, 2026-09-21
+
+The Chart now implements three action cards, evidence dialogs, a pure versioned
+H1/H4 evaluator, browser-local replay inputs and export. BTC/ETH use live Binance
+Spot candles/quotes. XAU is explicitly WAIT pending a working broker connection;
+the chart clears the previous instrument rather than substituting COMEX prices.
+This is a research rule, not a validated profitable EA filter. Macro facts are
+dated context and counterevidence, not untested weighted votes.
+
+Exact rules, source TTLs, commands, live probe and outstanding work are in
+[`chart-decision-implementation.md`](chart-decision-implementation.md). The
+remaining target below includes continuous broker XAU delivery, a dated event
+calendar, native PP timeframes and full-EA validation; these are not completed.
 
 ## Requested outcome
 

@@ -342,7 +342,13 @@ own choice rather than a platform behaviour.
 
 **Farside writes negatives in accounting parentheses** — `(95.1)` means -95.1 —
 and the BTC and ETH tables use different header shapes. Reconcile any parser
-change against the source's own Total column; all 650 days currently match.
+change against the source's own Total column. On 2026-09-21 the ETH header
+contained mixed-case `Total`; requiring every header cell to be uppercase
+silently yielded zero rows. Exclude `Total` from the ticker-shape test, prefer
+the publisher's reported total (including a true zero), and reject an empty
+net-flow result. Missing issuers must not produce a partial sum labelled as the
+whole market. Published zero rows may include holidays: rolling 5/20 values
+are source observations, not a guaranteed count of exchange sessions.
 
 **The public NEWS artifact is a presentation document, not a stable flat feed.**
 The current schema keeps 542 canonical links in `allArticles`, while richer

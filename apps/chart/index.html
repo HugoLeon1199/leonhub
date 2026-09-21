@@ -360,6 +360,7 @@ footer{
 footer b{color:var(--text); font-weight:600}
 @media(max-width:820px){.market-side{position:absolute;right:0;top:0;bottom:0;z-index:12;box-shadow:-12px 0 30px #0008;width:min(300px,88vw);flex-basis:min(300px,88vw)}.workspace{position:relative}.side-closed .market-side{display:none}}
 </style>
+<link rel="stylesheet" href="decision.css?v=1">
 </head>
 <body>
 
@@ -406,6 +407,19 @@ footer b{color:var(--text); font-weight:600}
 </div>
 
 <div class="stats" id="stats"></div>
+
+<section class="decision-strip" id="decision-strip" aria-label="Trạng thái BTC ETH XAU">
+  <div class="decision-heading"><strong>Điểm vào theo xu hướng</strong><span class="decision-subtitle">H1 / H4 · quy tắc thử nghiệm · chưa kiểm chứng lợi nhuận</span><button type="button" id="decision-refresh">Cập nhật</button></div>
+  <div class="decision-cards" id="decision-cards">
+    <button type="button" class="decision-card" data-decision="BTC" aria-haspopup="dialog"><span class="decision-card-top"><b>BTC</b><span class="decision-action">CHỜ</span></span><span class="decision-reason">Đang kiểm tra dữ liệu…</span></button>
+    <button type="button" class="decision-card" data-decision="ETH" aria-haspopup="dialog"><span class="decision-card-top"><b>ETH</b><span class="decision-action">CHỜ</span></span><span class="decision-reason">Đang kiểm tra dữ liệu…</span></button>
+    <button type="button" class="decision-card" data-decision="XAU" aria-haspopup="dialog"><span class="decision-card-top"><b>XAU</b><span class="decision-action">CHỜ</span></span><span class="decision-reason">Cần nguồn XAUUSD của broker</span></button>
+  </div>
+</section>
+<dialog class="decision-dialog" id="decision-dialog" aria-labelledby="decision-title">
+  <header><strong id="decision-title">Lý do đánh giá</strong><button type="button" id="decision-close">Đóng</button></header>
+  <div class="decision-body" id="decision-body"></div>
+</dialog>
 
 <div class="workspace">
   <main>
@@ -576,6 +590,7 @@ const US_HINTS = ["SPY","QQQ","DIA","IWM","IVV","VOO","VTI","GLD","SLV","TLT",
   "AMD","IBM","NKE","XOM","JPM","BAC","WMT","PEP","KO","DIS","UNH","CVX","MRK","PFE"];
 
 function symbolKind(sym){
+  if(sym === "XAU" || sym === "XAUUSD") return "metal";
   // Membership decides once the manifests are in hand.
   if(usSymbols && usSymbols.has(sym)) return "us";
   if(vnSymbols && vnSymbols.has(sym)) return "vn";
@@ -3382,6 +3397,16 @@ async function load(){
 
   let bars, source = "Binance";
   const kind = symbolKind(symbol);
+  if(kind === "metal"){
+    // A broker snapshot is not a continuous chart feed. Clear the old symbol
+    // instead of putting a BTC/VPS chart under an XAU title.
+    closeStream();closeMicrostructure();currentBars=[];oldestTime=null;historyExhausted=true;
+    candles.setData([]);volume.setData([]);applyMA([]);scheduleDraw();
+    el.price.textContent="—";el.chg.textContent="";el.stats.innerHTML="";
+    el.src.textContent="XAUUSD · cần nguồn broker";el.upd.textContent="—";
+    el.msg.innerHTML='<strong>XAUUSD · chưa có nguồn nến broker trực tuyến</strong><small>Bấm thẻ XAU để xem trạng thái và bối cảnh vĩ mô.<br>Giá vàng COMEX không thay thế giá XAUUSD.</small>';
+    return;
+  }
   if(kind !== "crypto"){
     // Equities never touch the Binance chain: an unknown pair there costs three
     // failing requests and, in the watchlist's batched call, takes the valid
@@ -4401,13 +4426,14 @@ function scoreBars(bars){
   // ADX scales conviction rather than adding a direction of its own: a strong
   // reading on a flat market is not a signal, it is a stronger flat market.
   const adxVal = dx.at(-1)?.value;
-  const conviction = adxVal == null ? 0.6 : Math.max(0.35, Math.min(1, adxVal / 40));
+  const conviction = adxVal == null || adxVal < 22 ? 0 : Math.min(1, adxVal / 40);
   return {score: direction * conviction, adx: adxVal, votes: votes.length};
 }
 
 async function refreshMtf(){
   const token = ++mtfToken;
   const kind = symbolKind(symbol);
+  if(kind === "metal"){mtfState={loading:false,frames:[],symbol};renderMtf();return;}
   const frames = MTF_FRAMES[kind] || MTF_FRAMES.crypto;
   mtfState = {loading:true, frames:[], symbol};
   renderMtf();
@@ -4422,6 +4448,8 @@ async function refreshMtf(){
       if(kind === "crypto"){ try{ bars = await fromHyperliquid(symbol, tf); }catch(e2){} }
     }
     if(token !== mtfToken) return;
+    // Crypto bars are UTC intervals. Never vote with the forming candle.
+    if(kind === "crypto" && bars) bars=bars.filter(b=>(b.time+INTERVAL_MINUTES[tf]*60)*1000<=Date.now());
     results.push({tf, ...(scoreBars(bars) || {score:null})});
   }
   if(token !== mtfToken) return;
@@ -4497,7 +4525,7 @@ function renderMtf(){
     `</div>` +
     `<div class="side-summary" style="display:block;line-height:1.5">` +
       `Mỗi khung chấm theo ba yếu tố đo được: giá so với SMA50, chiều Supertrend(10,3), ` +
-      `và ADX(14) dùng để nhân độ tin cậy. Không phải khuyến nghị mua bán.</div>`;
+      `ADX(14) dưới 22 hoặc thiếu dữ liệu thì chưa xác nhận xu hướng. Đây là trạng thái, không phải điểm vào hay xác suất thắng.</div>`;
 }
 
 /* The trade list beside the chart. Open positions first -- those are the
@@ -5233,6 +5261,7 @@ el.drawing.addEventListener("pointerup", finishDrag);
 el.drawing.addEventListener("pointercancel", finishDrag);
 
 document.addEventListener("keydown", e => {
+  if(document.getElementById("decision-dialog").open) return;
   const tag = e.target && e.target.tagName;
   const editing = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" ||
     (e.target && e.target.isContentEditable);
@@ -5338,6 +5367,7 @@ if(pricePaneElement) drawResizeObserver.observe(pricePaneElement);
    cannot tell a missing feed from a quiet market. */
 function allowedTimeframes(){
   const kind = symbolKind(symbol);
+  if(kind === "metal") return ["1h","4h"];
   if(kind === "us") return US_TIMEFRAMES;
   if(kind === "vn") return VN_TIMEFRAMES;
   return TIMEFRAMES;
@@ -6139,7 +6169,10 @@ new MutationObserver(() => {
 setInterval(() => {
   const healthy = ws && ws.readyState === WebSocket.OPEN && Date.now() - wsLastMessage < 90000;
   if(!document.hidden && !healthy) load();
+  if(!document.hidden && !document.getElementById("side-mtf").hidden) refreshMtf();
 }, 60000);
+
+window.leonSelectDecisionAsset = asset => selectSymbol(asset);
 
 loadCoinList();
 loadWatchlist();
@@ -6157,5 +6190,6 @@ loadEquityManifests().then(() => {
   else updateTimeframeControls();
 });
 </script>
+<script type="module" src="decision-panel.js?v=1"></script>
 </body>
 </html>

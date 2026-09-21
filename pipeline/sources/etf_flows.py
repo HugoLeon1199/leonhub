@@ -61,7 +61,7 @@ def _to_float(cell: str) -> float | None:
 
 def _looks_like_tickers(cells: list[str]) -> bool:
     """True when a row is the ETF ticker header (ETHA, FETH, ETHW…)."""
-    codes = [c for c in cells if c]
+    codes = [c for c in cells if c and c.lower() != "total"]
     if len(codes) < 3:
         return False
     return all(2 <= len(c) <= 5 and c.isupper() and c.isalpha() for c in codes)
@@ -105,14 +105,18 @@ def parse(html: str, asset: str, fetched_at: datetime) -> list[dict[str, Any]]:
             continue  # any remaining summary or spacer row
 
         total = 0.0
+        published_total = None
+        complete = True
         seen_any = False
         for issuer, cell in zip(issuers, cells[1:]):
             value = _to_float(cell)
+            if issuer.lower() == "total":
+                published_total = value
+                continue
             if value is None:
+                complete = False
                 continue
             seen_any = True
-            if issuer.lower() in {"total"}:
-                continue
             total += value
             rows.append({
                 "series": f"etf.{asset}.flow.{issuer.lower()}",
@@ -123,11 +127,13 @@ def parse(html: str, asset: str, fetched_at: datetime) -> list[dict[str, Any]]:
                 "meta": json.dumps({"unit": "musd", "issuer": issuer}),
             })
 
-        if seen_any:
+        # The publisher's total is authoritative, including a genuine zero.
+        # A partly reported issuer row is not a complete market net flow.
+        if published_total is not None or (seen_any and complete and len(cells[1:]) == len(issuers)):
             rows.append({
                 "series": f"etf.{asset}.net_flow",
                 "as_of": as_of,
-                "value": round(total, 2),
+                "value": published_total if published_total is not None else round(total, 2),
                 "source": "farside",
                 "fetched_at": fetched_at,
                 "meta": json.dumps({"unit": "musd", "issuers": len(issuers)}),
@@ -153,6 +159,8 @@ def collect(assets: list[str] | None = None, dry_run: bool = False) -> dict[str,
         all_rows.extend(rows)
 
         net = [r for r in rows if r["series"].endswith("net_flow")]
+        if not net:
+            raise ValueError(f"{asset}: no usable ETF net-flow rows; keep the previous artifact")
         stats[asset] = {
             "rows": len(rows),
             "days": len(net),

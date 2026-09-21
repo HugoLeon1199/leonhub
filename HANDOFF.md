@@ -1,5 +1,44 @@
 # Handoff
 
+## 2026-09-21 Chart decision panel implementation
+
+- Implemented the first research version of the requested BTC/ETH/XAU action
+  panel. Three MUA/BAN/CHO cards select Chart and open a Vietnamese numerical
+  evidence dialog. BTC/ETH use live Binance Spot USDT; XAU is explicitly WAIT
+  pending broker data and clears the previous chart instead of substituting gold.
+- Pure `trend-gate-1.0.0` evaluator uses closed H1/H4, EMA20/50, Wilder ADX/ATR,
+  ER20, prior-20-bar breakouts, frozen retest levels and no-chase conditions.
+  Weak/missing/stale/incomplete data cannot authorize an entry. Old MTF crypto
+  votes now exclude forming bars, require ADX >=22 and refresh while visible.
+- Source-specific dates/TTLs accompany DXY/COMEX, ETF, GEX, Fear & Greed and MVRV.
+  Optional stale data is displayed but excluded; no made-up win probabilities.
+  Macro is context/counterevidence, not an unvalidated weighted trading signal.
+  Calendar and OI/funding/tape integration are explicitly absent. Local history
+  stores at most 240 evaluator inputs/verdicts and supports JSON replay export.
+- Repaired Farside ETH's mixed-case Total header and net-flow handling; refreshed
+  both ETF assets through Sep 18 and crypto context on Sep 21. FNG=70 dated Sep
+  21; MVRV=1.484 still dated Sep 14 is correctly stale. Added daily context job.
+- Read-only isolated MT5 probes failed three times (IPC -10004 / no terminal
+  info). Stopped only the research runtime afterward. Added a guarded read-only
+  compact snapshot tool reusing the browser formulas, but no successful XAU
+  export or continuous public broker feed exists. No EA/preset/login/order change.
+- Changed files: Chart HTML plus `decision-{engine,panel}.js`, engine tests and
+  CSS; `data/chart/xau.json`, `data/flows.json`, `data/crypto/context.json`;
+  ETF/context collectors and ETF tests; XAU artifact validator; three tools under
+  `pipeline/tools/`; app-check and new crypto-context workflows; source gotchas,
+  specification and new `docs/chart-decision-implementation.md`.
+- Verification: 11 decision-rule tests, 3 ETF tests, 35 inline scripts, module
+  parsing, linkable check and 18 artifact validators passed. Read-only live BTC/
+  ETH probe at 09:14 UTC passed replay: BTC WAIT extended; ETH WAIT no new setup.
+  Local Chart HTTP 200. Browser visual QA unavailable; do not claim it happened.
+- Remaining: restore isolated MT5 IPC and implement continuous XAU HTTPS feed/
+  chart; event calendar; native PP frames; full-EA/out-of-sample and demo
+  validation. This release does not establish profitable EA gating.
+- Publication: authorized by the user's earlier push request; pending this
+  implementation commit's Pages verification. Preserve all unrelated BDS edits.
+  Exact rules, commands, dated probe and continuation notes are in
+  `docs/chart-decision-implementation.md`.
+
 ## 2026-09-21 publication request and validation
 
 - User authorized pushing this session's work to the existing website. Hosting
