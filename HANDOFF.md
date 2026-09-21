@@ -21,7 +21,11 @@
   no dependency installation or environment-policy change.
 - The MUA/BÁN/CHỜ panel is still unimplemented. This publication saves the
   research/specification for continuation; it does not add that UI to Chart.
-- After pushing, verify GitHub Pages deployment and public document delivery.
+- Publication verified: commit `6eab5d092e491a22cb8024980d8a7df50d340ed4`
+  reached origin/master; Pages run `35571418896` completed successfully.
+  `/hub/?tab=chart`, `/docs/chart-decision-panel-spec.md` and
+  `/docs/trend-gate-research-2026-09-21.md` all returned HTTP 200 with content
+  matching local files. This follow-up only records that verification.
   The next implementation task remains `docs/chart-decision-panel-spec.md`.
 
 ## 2026-09-21 user clarification: actionable Chart panel and continuation note
