@@ -1,0 +1,632 @@
+{
+  "checked_at": "2026-09-21T06:44:02.489393+00:00",
+  "scope": "Research audit; no trading decisions or backtest",
+  "root": "D:\\CODE\\WEB\\Chart_web",
+  "production": [
+    {
+      "url": "https://leonquant.com/hub/?tab=chart",
+      "checked_at": "2026-09-21T06:44:02.489393+00:00",
+      "status": 200,
+      "bytes": 16720,
+      "normalized_text_sha256": "cde466fdc8d03eedc182f635eb54f7da45cc04ce48a5ede642d6fe85c6b27327",
+      "title": "LEON Hub — Đầu tư, Trading, Bất động sản",
+      "matches_local_normalized_text": true
+    },
+    {
+      "url": "https://leonquant.com/apps/chart/",
+      "checked_at": "2026-09-21T06:44:02.489393+00:00",
+      "status": 200,
+      "bytes": 288433,
+      "normalized_text_sha256": "4ff8be7847e06e11edbbc49485066ab24b31d90be22acc7490a0c04725bb3f12",
+      "title": "Chart — LEON Hub",
+      "matches_local_normalized_text": true
+    },
+    {
+      "url": "https://leonquant.com/data/gex_btc.json",
+      "checked_at": "2026-09-21T06:44:02.489393+00:00",
+      "status": 200,
+      "bytes": 4907,
+      "normalized_text_sha256": "f7ca2d2e542f967c7fef62e920152c72a87142998269cf560877e361fbbd8b6c",
+      "keys": [
+        "spot",
+        "net_gex",
+        "net_gex_0dte",
+        "call_gex",
+        "put_gex",
+        "pc_ratio",
+        "vanna",
+        "charm",
+        "atm_iv",
+        "regime",
+        "gex_notional",
+        "gamma_flip",
+        "max_pain",
+        "horizon_h",
+        "em1",
+        "em_day",
+        "em2",
+        "em_up1",
+        "em_dn1",
+        "em_up2",
+        "em_dn2",
+        "pin_risk",
+        "gex_sig",
+        "nearest_expiry",
+        "profile",
+        "levels",
+        "sym",
+        "contracts",
+        "updated_at"
+      ],
+      "updated_at": "2026-09-21T04:46:48.883056+00:00",
+      "age_hours_at_check": 1.95,
+      "summary": {
+        "sym": "BTC",
+        "spot": 81405.38,
+        "contracts": 968,
+        "regime": "positive",
+        "nearest_expiry": "2026-09-21"
+      },
+      "local_updated_at": "2026-09-11T04:16:05.282991+00:00"
+    },
+    {
+      "url": "https://leonquant.com/data/gex_eth.json",
+      "checked_at": "2026-09-21T06:44:02.490393+00:00",
+      "status": 200,
+      "bytes": 4538,
+      "normalized_text_sha256": "6bd1b09e08fdfe1052097e1f05c9be2478bfcf9bcc05413242765d3b0f03fa5b",
+      "keys": [
+        "spot",
+        "net_gex",
+        "net_gex_0dte",
+        "call_gex",
+        "put_gex",
+        "pc_ratio",
+        "vanna",
+        "charm",
+        "atm_iv",
+        "regime",
+        "gex_notional",
+        "gamma_flip",
+        "max_pain",
+        "horizon_h",
+        "em1",
+        "em_day",
+        "em2",
+        "em_up1",
+        "em_dn1",
+        "em_up2",
+        "em_dn2",
+        "pin_risk",
+        "gex_sig",
+        "nearest_expiry",
+        "profile",
+        "levels",
+        "sym",
+        "contracts",
+        "updated_at"
+      ],
+      "updated_at": "2026-09-21T04:46:50.379606+00:00",
+      "age_hours_at_check": 1.95,
+      "summary": {
+        "sym": "ETH",
+        "spot": 2666.02,
+        "contracts": 890,
+        "regime": "positive",
+        "nearest_expiry": "2026-09-21"
+      },
+      "local_updated_at": "2026-09-11T04:16:06.956721+00:00"
+    },
+    {
+      "url": "https://leonquant.com/data/flows.json",
+      "checked_at": "2026-09-21T06:44:02.578902+00:00",
+      "status": 200,
+      "bytes": 208407,
+      "normalized_text_sha256": "82c5145e20780a49de9f66abb393374f6c933b363f937d130874bb347acc4759",
+      "keys": [
+        "etf",
+        "stats",
+        "updated_at"
+      ],
+      "updated_at": "2026-09-08T06:44:47.082233+00:00",
+      "age_hours_at_check": 311.99,
+      "series": {
+        "btc": {
+          "observations": 512,
+          "last_observation": "2026-09-04"
+        },
+        "eth": {
+          "observations": 512,
+          "last_observation": "2026-09-04"
+        }
+      },
+      "local_updated_at": "2026-09-08T06:44:47.082233+00:00"
+    },
+    {
+      "url": "https://leonquant.com/data/crypto/context.json",
+      "checked_at": "2026-09-21T06:44:02.580376+00:00",
+      "status": 200,
+      "bytes": 559,
+      "normalized_text_sha256": "37f90a141216d65f20b3d91a891ae921edf3ff55eea90bca61e87ca1bafbb84b",
+      "keys": [
+        "network",
+        "mvrv",
+        "market",
+        "tvl",
+        "fng",
+        "sources",
+        "failed",
+        "updated_at"
+      ],
+      "updated_at": "2026-09-08T06:05:15.485843+00:00",
+      "age_hours_at_check": 312.65,
+      "summary": {
+        "mvrv_as_of": "2026-09-07",
+        "failed": []
+      },
+      "local_updated_at": "2026-09-08T06:05:15.485843+00:00"
+    },
+    {
+      "url": "https://leonquant.com/data/fx.json",
+      "checked_at": "2026-09-21T06:44:02.609521+00:00",
+      "status": 200,
+      "bytes": 46699,
+      "normalized_text_sha256": "e08cd1e7c9a93bf6c99ab4669a738895f161456798cbb3c8ae87f3e6478e5d8b",
+      "keys": [
+        "rows",
+        "universe",
+        "sessions",
+        "source",
+        "updated_at"
+      ],
+      "updated_at": "2026-09-19T01:03:07.711623+00:00",
+      "age_hours_at_check": 53.68,
+      "local_updated_at": "2026-09-11T00:46:22.967335+00:00",
+      "fx_structure": {
+        "rows": "list",
+        "universe": "int",
+        "sessions": "int",
+        "source": "dict",
+        "updated_at": "str"
+      },
+      "fx_rows": [
+        {
+          "s": "usdvnd",
+          "y": "USDVND=X",
+          "n": "USD/VND",
+          "p": 26019.0,
+          "chp": 0.04,
+          "m1": -0.31,
+          "m3": -0.94,
+          "m6": -1.25,
+          "h52": 26425.0,
+          "l52": 25840.0,
+          "asof": "2026-09-18"
+        },
+        {
+          "s": "dxy",
+          "y": "DX-Y.NYB",
+          "n": "Chỉ số Dollar (DXY)",
+          "p": 100.22,
+          "chp": -0.0,
+          "m1": 1.4,
+          "m3": -0.63,
+          "m6": 0.99,
+          "h52": 101.61,
+          "l52": 96.22,
+          "asof": "2026-09-18"
+        },
+        {
+          "s": "eurusd",
+          "y": "EURUSD=X",
+          "n": "EUR/USD",
+          "p": 1.1489,
+          "chp": 0.11,
+          "m1": -1.7,
+          "m3": 0.96,
+          "m6": -0.4,
+          "h52": 1.2018,
+          "l52": 1.1354,
+          "asof": "2026-09-18"
+        },
+        {
+          "s": "gbpusd",
+          "y": "GBPUSD=X",
+          "n": "GBP/USD",
+          "p": 1.3394,
+          "chp": 0.27,
+          "m1": -1.83,
+          "m3": 1.47,
+          "m6": 0.43,
+          "h52": 1.3825,
+          "l52": 1.3022,
+          "asof": "2026-09-18"
+        },
+        {
+          "s": "usdjpy",
+          "y": "USDJPY=X",
+          "n": "USD/JPY",
+          "p": 156.85,
+          "chp": 0.47,
+          "m1": -1.28,
+          "m3": -2.94,
+          "m6": -1.78,
+          "h52": 163.86,
+          "l52": 146.89,
+          "asof": "2026-09-18"
+        },
+        {
+          "s": "usdcny",
+          "y": "USDCNY=X",
+          "n": "USD/CNY",
+          "p": 6.697,
+          "chp": -0.16,
+          "m1": -0.38,
+          "m3": -1.37,
+          "m6": -3.09,
+          "h52": 7.1718,
+          "l52": 6.697,
+          "asof": "2026-09-18"
+        },
+        {
+          "s": "audusd",
+          "y": "AUDUSD=X",
+          "n": "AUD/USD",
+          "p": 0.7121,
+          "chp": 0.08,
+          "m1": 0.03,
+          "m3": 2.98,
+          "m6": 3.4,
+          "h52": 0.7255,
+          "l52": 0.6449,
+          "asof": "2026-09-18"
+        },
+        {
+          "s": "gold",
+          "y": "GC=F",
+          "n": "Vàng (COMEX)",
+          "p": 4415.9,
+          "chp": 0.37,
+          "m1": -2.85,
+          "m3": 4.0,
+          "m6": -4.12,
+          "h52": 5318.4,
+          "l52": 3678.3,
+          "asof": "2026-09-18"
+        }
+      ]
+    },
+    {
+      "url": "https://leonquant.com/data/signals.json",
+      "checked_at": "2026-09-21T06:44:02.644107+00:00",
+      "status": 200,
+      "bytes": 25771,
+      "normalized_text_sha256": "6338f6234cf9ab418501abece4eb4446ab6cc403df3ff9e2dbcdb6d88dbd64db",
+      "keys": [
+        "rules",
+        "caveats",
+        "stats",
+        "benchmark",
+        "regime_compare",
+        "layer_ladder",
+        "layers_required",
+        "universe",
+        "open",
+        "closed",
+        "updated_at"
+      ],
+      "updated_at": "2026-09-09T03:40:28.543060+00:00",
+      "age_hours_at_check": 291.06,
+      "local_updated_at": "2026-09-09T03:40:28.543060+00:00"
+    }
+  ],
+  "ea": [
+    {
+      "symbol": "BTCUSD",
+      "path": "D:\\MT5\\10pair_edit\\Leon_LIVE_BTCUSD_FINAL.mq5",
+      "sha256": "82b9885e3546fc86a2382c35ce9b7dd017359b95d88327987fc4359cea990a56",
+      "active_pp_source_defaults": [
+        3,
+        5,
+        7,
+        9
+      ],
+      "source_defaults_not_verified_live": true,
+      "selected_inputs": [
+        "input bool Use_PP3 = true;",
+        "input bool Use_PP5 = true;",
+        "input bool Use_PP7 = true;",
+        "input bool Use_PP9 = true;",
+        "input double CustomBalance = 50000;",
+        "input ENUM_TIMEFRAMES Khung1_PP3 = PERIOD_H3;",
+        "input double RiskPercent_PP3 = 0.2;",
+        "input ulong magicNumber_PP3 = 37239;",
+        "input string commentTarget_PP3 = \"PP3-BTCUSD-37239\";",
+        "input int shortEMA_PP3 = 8;",
+        "input int Fractal_Period_PP3 = 19;",
+        "input ENUM_TIMEFRAMES Khung1_PP5     = PERIOD_H4;",
+        "input int magicNumber_PP5            = 57239;",
+        "input string commentTarget_PP5       = \"PP5-BTCUSD-57239\";",
+        "input double RiskPercent_PP5         = 0.2;",
+        "input double RR_PP5                  = 1.5;",
+        "input int ExitAfterBars_PP5          = 31;",
+        "input int ATRPeriod_PP5              = 17;",
+        "input ENUM_TIMEFRAMES Khung1_PP7 = PERIOD_H3;",
+        "input double RiskPercent_PP7 = 0.2;",
+        "input double risk_PP7 = 1.5;",
+        "input int atrPeriod_PP7 = 14;",
+        "input int emaPeriod_PP7 = 51;",
+        "input int SB_PP7 = 35, SS_PP7 = 50;",
+        "input int stochK_PP7 = 30;",
+        "input int stochD_PP7 = 4;",
+        "input int slowing_PP7 = 13;",
+        "input ulong magicNumber_PP7 = 77239;",
+        "input string commentTarget_PP7 = \"PP7-BTCUSD-77239\";",
+        "input ENUM_TIMEFRAMES Khung1_PP9 = PERIOD_H6;",
+        "input double RiskPercent_PP9 = 0.2;",
+        "input ulong magicNumber_PP9 = 97239;",
+        "input string commentTarget_PP9 = \"PP9-BTCUSD-97239\";",
+        "input int ExitAfterBars_PP9 = 86;",
+        "input int Fractal_Period_PP9 = 7;",
+        "input int ATRPeriod_PP9 = 15;",
+        "input double ATR_Multiplier_PP9 = 1;"
+      ],
+      "external_regime_identifiers_found": []
+    },
+    {
+      "symbol": "ETHUSD",
+      "path": "D:\\MT5\\10pair_edit\\Leon_EA_LIVE_ETHUSD_FINAL.mq5",
+      "sha256": "ea9f291897bb75487e6cd449632f2cd96260f4055797dbe28672ec5d7686ac24",
+      "active_pp_source_defaults": [
+        7,
+        9,
+        10
+      ],
+      "source_defaults_not_verified_live": true,
+      "selected_inputs": [
+        "input bool Use_PP7 = true;",
+        "input bool Use_PP9 = true;",
+        "input bool Use_PP10 = true;",
+        "input double CustomBalance = 50000;",
+        "input ENUM_TIMEFRAMES Khung1_PP7 = PERIOD_H8;",
+        "input double RiskPercent_PP7 = 0.2;",
+        "input double risk_PP7 = 1;",
+        "input int atrPeriod_PP7 = 14;",
+        "input int emaPeriod_PP7 = 71;",
+        "input int SB_PP7 = 50, SS_PP7 = 65;",
+        "input int stochK_PP7 = 19;",
+        "input int stochD_PP7 = 3;",
+        "input int slowing_PP7 = 3;",
+        "input ulong magicNumber_PP7 = 78239;",
+        "input string commentTarget_PP7 = \"PP7-ETHUSD-78239\";",
+        "input ENUM_TIMEFRAMES Khung1_PP9 = PERIOD_H3;",
+        "input double RiskPercent_PP9 = 0.2;",
+        "input ulong magicNumber_PP9 = 98239;",
+        "input string commentTarget_PP9 = \"PP9-ETHUSD-98239\";",
+        "input int ExitAfterBars_PP9 = 72;",
+        "input int Fractal_Period_PP9 = 17;",
+        "input int ATRPeriod_PP9 = 21;",
+        "input double ATR_Multiplier_PP9 = 1;",
+        "input ENUM_TIMEFRAMES Khung1_PP10 = PERIOD_H2;",
+        "input double RiskPercent_PP10 = 0.2;",
+        "input int donchianLength_PP10 = 17;",
+        "input int minCandles_PP10 = 10;",
+        "input int atrPeriod_PP10 = 14;",
+        "input ulong magicNumber_PP10 = 108239;",
+        "input string commentTarget_PP10 = \"PP10-ETHUSD-108239\";"
+      ],
+      "external_regime_identifiers_found": []
+    },
+    {
+      "symbol": "XAUUSD",
+      "path": "D:\\MT5\\10pair_edit\\Leon_EA_LIVE_XAUUSD_FINAL.mq5",
+      "sha256": "80d0c11f6c19e3032baf1bbde5795626339ba81c631a4720f5ae330d0a17c877",
+      "active_pp_source_defaults": [
+        3,
+        4,
+        6,
+        12
+      ],
+      "source_defaults_not_verified_live": true,
+      "selected_inputs": [
+        "input bool Use_PP3 = true;",
+        "input bool Use_PP4 = true;",
+        "input bool Use_PP6 = true;",
+        "input bool Use_PP12 = true;",
+        "input double CustomBalance = 50000;",
+        "input ENUM_TIMEFRAMES Khung1_PP3 = PERIOD_H3;",
+        "input double RiskPercent_PP3 = 0.2;",
+        "input ulong magicNumber_PP3 = 31239;",
+        "input string commentTarget_PP3 = \"PP3-XAUUSD-31239\";",
+        "input int shortEMA_PP3 = 10;",
+        "input int Fractal_Period_PP3 = 21;",
+        "input ENUM_TIMEFRAMES Khung1_PP4 = PERIOD_H1;",
+        "input double RiskPercent_PP4 = 0.2;",
+        "input ulong magicNumber_PP4 = 41239;",
+        "input string commentTarget_PP4 = \"PP4-XAUUSD-41239\";",
+        "input int NumCandles_PP4 = 13;",
+        "input double BB_PP4 = 14, RR_PP4 =1;",
+        "input double keltnerMultiplier_PP4 = 2;",
+        "input double RiskPercent_PP6 = 0.2;",
+        "input ulong  Magic_PP6 = 61239;",
+        "input string commentTarget_PP6 = \"PP6-XAUUSD-61239\";",
+        "input ENUM_TIMEFRAMES Khung1_PP6 = PERIOD_H1;",
+        "input int AsianSessionEndHour_PP6 = 14;",
+        "input int NumberOfCandlesToScan_PP6 = 2;",
+        "input int SoNenDongLenh_PP6 = 7;",
+        "input double riskPercent_PP12          = 0.2;",
+        "input ulong magic_PP12                 = 121239;",
+        "input string comment_PP12              = \"PP12-XAUUSD-121239\";",
+        "input ENUM_TIMEFRAMES tfBig_PP12       = PERIOD_H12;",
+        "input ENUM_TIMEFRAMES tfSmall_PP12     = PERIOD_H3;",
+        "input int exitAfterBarsBig_PP12        = 100;",
+        "input int fractalPeriodBig_PP12        = 7;",
+        "input int fractalPeriodSmall_PP12      = 5;",
+        "input int atrPeriod_PP12               = 19;",
+        "input double atrMultiplier_PP12        = 1.0;",
+        "input int lookbackBars_PP12            = 20;"
+      ],
+      "external_regime_identifiers_found": []
+    }
+  ],
+  "historical": {
+    "xau_m1_cache": {
+      "path": "D:\\MT5\\research\\gold_5k_20260915\\data",
+      "metadata_rows": 2369156,
+      "first": "2020-01-02 01:00:00+00:00",
+      "last": "2026-09-14 23:59:00+00:00",
+      "verification": "Metadata read and file existence/size checked; candles not reloaded or validated",
+      "files": [
+        {
+          "name": "m1_2020.pkl",
+          "bytes": 21262411
+        },
+        {
+          "name": "m1_2021.pkl",
+          "bytes": 21204331
+        },
+        {
+          "name": "m1_2022.pkl",
+          "bytes": 21207691
+        },
+        {
+          "name": "m1_2023.pkl",
+          "bytes": 21124771
+        },
+        {
+          "name": "m1_2024.pkl",
+          "bytes": 21271471
+        },
+        {
+          "name": "m1_2025.pkl",
+          "bytes": 21189271
+        },
+        {
+          "name": "m1_2026.pkl",
+          "bytes": 16882868
+        }
+      ]
+    },
+    "existing_reports": [
+      {
+        "path": "D:\\MT5\\10pair_edit\\BACKTEST\\CBMOI\\BTCUSD_moi.html",
+        "sha256": "bc3c7fafa94e990c6093e2d62ec611b49372bd22a15faca5b26a89bac2a74cf6",
+        "summary_as_reported": {
+          "Expert:": "P11_BTCUSD",
+          "Symbol:": "BTCUSD",
+          "Period:": "H1 (2020.01.01 - 2026.12.31)",
+          "History Quality:": "100%",
+          "Initial Deposit:": "50 000.00",
+          "Total Net Profit:": "51 517.92",
+          "Profit Factor:": "1.53",
+          "Total Trades:": "1760",
+          "Equity Drawdown Relative:": "6.78% (3 954.78)",
+          "Balance Drawdown Relative:": "4.33% (3 451.49)"
+        },
+        "deal_time_first": "2020.01.01 00:00:00",
+        "deal_time_last": "2026.09.16 11:42:25",
+        "sizing_inputs_as_reported": [
+          "CustomBalance=75000",
+          "RiskPercent_PP1=0.08",
+          "RiskPercent_PP2=0.3",
+          "RiskPercent_PP3=0.2",
+          "RiskPercent_PP4=0.12",
+          "RiskPercent_PP5=0.2",
+          "RiskPercent_PP6=0.4",
+          "RiskPercent_PP7=0.2",
+          "RiskPercent_PP8=0.05",
+          "RiskPercent_PP9=0.2",
+          "RiskPercent_PP10=0.3",
+          "RiskPercent_PP11=0.1",
+          "riskPercent_PP12=0.2"
+        ],
+        "verification": "Header extraction only; no rerun or attribution of report binary to current source"
+      },
+      {
+        "path": "D:\\MT5\\10pair_edit\\BACKTEST\\CBMOI\\ETHUSD_moi.html",
+        "sha256": "59075ac5b8871ef96d63521c34743af7892c835a4496048f6365b33832db617f",
+        "summary_as_reported": {
+          "Expert:": "P11_ETHUSD",
+          "Symbol:": "ETHUSD",
+          "Period:": "H1 (2020.01.01 - 2026.12.31)",
+          "History Quality:": "100%",
+          "Initial Deposit:": "50 000.00",
+          "Total Net Profit:": "58 715.92",
+          "Profit Factor:": "1.59",
+          "Total Trades:": "1587",
+          "Equity Drawdown Relative:": "5.75% (3 167.82)",
+          "Balance Drawdown Relative:": "4.52% (2 464.26)"
+        },
+        "deal_time_first": "2020.01.01 00:00:00",
+        "deal_time_last": "2026.09.16 18:06:41",
+        "sizing_inputs_as_reported": [
+          "CustomBalance=75000",
+          "RiskPercent_PP1=0.12",
+          "RiskPercent_PP2=0.17",
+          "RiskPercent_PP3=0.22",
+          "RiskPercent_PP4=0.37",
+          "RiskPercent_PP5=0.3",
+          "RiskPercent_PP6=0.1",
+          "RiskPercent_PP7=0.2",
+          "RiskPercent_PP8=0.1",
+          "RiskPercent_PP9=0.2",
+          "RiskPercent_PP10=0.2",
+          "RiskPercent_PP11=0.3",
+          "riskPercent_PP12=0.4"
+        ],
+        "verification": "Header extraction only; no rerun or attribution of report binary to current source"
+      },
+      {
+        "path": "D:\\MT5\\10pair_edit\\BACKTEST\\CBMOI\\XAUUSD_moi.html",
+        "sha256": "670da8e7dadd318da316861c549bff8d8ba9001545db4d5373f65039dff1d751",
+        "summary_as_reported": {
+          "Expert:": "P11_XAUUSD",
+          "Symbol:": "XAUUSD",
+          "Period:": "H1 (2020.01.01 - 2026.12.31)",
+          "History Quality:": "98%",
+          "Initial Deposit:": "50 000.00",
+          "Total Net Profit:": "49 275.90",
+          "Profit Factor:": "1.28",
+          "Total Trades:": "2825",
+          "Equity Drawdown Relative:": "7.04% (4 223.78)",
+          "Balance Drawdown Relative:": "5.67% (3 355.75)"
+        },
+        "deal_time_first": "2020.01.01 00:00:00",
+        "deal_time_last": "2026.09.16 23:59:59",
+        "sizing_inputs_as_reported": [
+          "CustomBalance=100000",
+          "RiskPercent_PP1=0.16",
+          "RiskPercent_PP2=0.1",
+          "RiskPercent_PP3=0.2",
+          "RiskPercent_PP4=0.2",
+          "RiskPercent_PP5=0.05",
+          "RiskPercent_PP6=0.2",
+          "RiskPercent_PP7=0.27",
+          "RiskPercent_PP8=0.11",
+          "RiskPercent_PP9=0.27",
+          "RiskPercent_PP10=0.1",
+          "RiskPercent_PP11=0.16",
+          "riskPercent_PP12=0.2"
+        ],
+        "verification": "Header extraction only; no rerun or attribution of report binary to current source"
+      }
+    ]
+  },
+  "mtf_counterexample": {
+    "description": "Algebraic counterexample to using the existing gauge as a trend-strength gate",
+    "direction_votes": [
+      1,
+      1
+    ],
+    "adx": 5,
+    "score": 0.35,
+    "up_label_threshold": 0.15,
+    "result": "up despite ADX=5; this is not a measured market observation"
+  },
+  "limitations": [
+    "No connected browser was available for visual/live-stream QA.",
+    "No MT5 terminal, live preset or account was accessed.",
+    "No gated-EA performance test was run.",
+    "Source hashes identify inspected files, not historical report binaries."
+  ]
+}

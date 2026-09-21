@@ -1,19 +1,127 @@
 # Handoff
 
-Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
+## 2026-09-21 publication request and validation
+
+- User authorized pushing this session's work to the existing website. Hosting
+  was verified through GitHub: `HugoLeon1199/leonhub`, public GitHub Pages,
+  `master` root, custom domain `leonquant.com`. This is not an OpenAI Sites
+  project; keep its existing deployment route.
+- Fast-forwarded from `a67b840` to `c15e09e` (76 upstream data commits) while
+  preserving the worktree. Production/current local data now differ from the
+  dated research snapshot in the expected way; keep that evidence unchanged.
+- Publication scope: this handoff, `docs/chart-decision-panel-spec.md`,
+  `docs/trend-gate-research-2026-09-21.md`, and the research audit/evidence pair.
+  Earlier BDS app/collector/workflow/README/CLAUDE edits remain local and are
+  excluded from this documentation push.
+- Validation passed: 35 inline scripts, shared link blocks, all 17 artifact
+  validators, research Python syntax/strict JSON and whitespace. Existing data
+  warnings remain (fundamental tails, lagging land-price documents, one US
+  quote/close discrepancy). The first full-validator attempt used the MT5 venv
+  without DuckDB; rerunning with the existing repo-capable Python passed, with
+  no dependency installation or environment-policy change.
+- The MUA/BÁN/CHỜ panel is still unimplemented. This publication saves the
+  research/specification for continuation; it does not add that UI to Chart.
+- After pushing, verify GitHub Pages deployment and public document delivery.
+  The next implementation task remains `docs/chart-decision-panel-spec.md`.
+
+## 2026-09-21 user clarification: actionable Chart panel and continuation note
+
+- The user explicitly asked to save progress for continuation and clarified the
+  final product: opening `https://leonquant.com/hub/?tab=chart` should show
+  **BTC / ETH / XAU -> MUA / BAN / CHO**, with technical and macro explanations
+  tightly grounded in the numbers LEON has collected. Vietnamese UI uses
+  **MUA / BÁN / CHỜ**. This is a decision-support display, not an order request.
+- The current implementation brief is `docs/chart-decision-panel-spec.md`.
+  Read it before resuming. It supersedes an observer-only dashboard as the
+  final target; shadow observation is an intermediate validation stage.
+- Completed work remains research, source/production audit, saved evidence and
+  a validation plan, as recorded below. **The requested panel and decision
+  engine are not implemented or deployed.** Do not present the old MTF gauge
+  as fulfilling this requirement.
+- UI target: three visible asset cards with action, setup, horizon, evaluation
+  time, numeric technical reasons, relevant macro/context reasons, opposing
+  evidence, invalidation/next condition and per-source freshness. Clicking a
+  card selects that asset in Chart. An uptrend awaiting a pullback must be able
+  to show CHỜ rather than an unconditional MUA.
+- Reuse actual OHLC/indicators, ETF flows, OI/funding, GEX, observed taker flow,
+  DXY/COMEX and crypto context only where relevant and eligible. Make missing
+  or stale optional inputs explicit; missing mandatory price data yields CHỜ
+  with a data reason. A calendar collector and broker XAU adapter are still
+  needed; do not portray them as completed.
+- Next sequence: refresh source health/provenance -> establish broker XAU and
+  native timeframe/closed-bar handling -> pure versioned decision evaluator ->
+  three-card Chart UI/evidence details -> persisted decision history and full-EA
+  validation -> visual/data QA and explicit deployment status.
+- Changes in this clarification turn: new specification, link from the research
+  report and this handoff. Documentation-only checks; no runtime files, EA,
+  presets, collectors, data refresh or deployment changed. Preserve existing
+  uncommitted BDS work and the earlier research artifacts.
+
+## 2026-09-21 BTC/ETH/XAU EA market-state research
+
+- Completed the user's research request about using the Chart tab to identify
+  when to wait, prepare for a breakout, or follow a trend with the existing EA.
+  Report: `docs/trend-gate-research-2026-09-21.md`. Reproducible read-only audit
+  and evidence: `docs/research/trend-gate-2026-09-21/{audit.py,evidence.json}`.
+- Requested EA path `D:\MT5\10pair\_edit` was absent; inspected
+  `D:\MT5\10pair_edit` instead. Source-default active branches: BTC 3/5/7/9,
+  ETH 7/9/10, XAU 3/4/6/12. PP9 uses opposite-side stops after fractal sweeps;
+  PP12 also has a reversal structure. Do not describe every branch as a
+  trend-continuation entry or apply one directional gate without per-PP tests.
+- The production Hub/chart HTML matches local normalized source. Live JSON
+  probe at 2026-09-21 06:44 UTC: GEX built Sep 21 04:46 UTC; ETF flows still end
+  Sep 4 (built Sep 8); crypto context built Sep 8; daily FX/COMEX gold through
+  Sep 18 (built Sep 19). Local GEX artifacts are older, dated Sep 11.
+- Chart has reusable indicators but not a validated EA gate. Its MTF score
+  clamps ADX conviction to 0.35 while an up label starts at 0.15; two up votes
+  still label ADX=5 as up. MTF uses the last bar without a closed-bar gate and
+  lacks scheduled per-close refresh in inspected call sites. Native H3/H6
+  intervals and a broker XAUUSD adapter are missing. GC=F/PAXG/XAUT are not
+  substitutes for broker XAUUSD execution data.
+- Chart Big Tape has limited localStorage persistence and observation windows;
+  GEX-page CVD remains session-only. Neither is a continuous backtest store.
+  GEX dealer signs are assumptions, so use as optional context, not a proven
+  trend switch. Persist OI before claiming historical OI-change validation.
+- Recommendation: build a three-symbol observer, then compare a continuous EA
+  baseline, simple ADX filter, and family-aware price-state filter, with optional
+  event/execution blocks. All thresholds and the proposed 20% DD / 85% profit
+  screening tradeoff are research seeds, not measured results. Record denied
+  winners and run the whole EA; simply deleting trades is not a valid replay.
+- Entry permission must preserve management. Current Use_PP dispatchers skip
+  entire handlers; existing pending orders require their own cancellation/expiry
+  policy. XAU OnDeinit_PP6 attempts to close/cancel positions/orders, so manual
+  detach/restart is not a neutral pause. Keep future changes in a demo clone.
+- Existing CBMOI report headers were extracted with hashes, not rerun. Their
+  experts are P11_*; report sizing is BTC/ETH CB75k and XAU CB100k, each on a
+  50k initial deposit. They do not establish present-source/live performance.
+  XAU cache metadata reports 2,369,156 M1 bars through Sep 14; files exist but
+  candles were not revalidated. No new gated performance claim was made.
+- Validation: audit completed (8 public URLs HTTP 200), strict evidence JSON
+  and Python syntax checked; documentation paths and whitespace checked.
+  No browser was connected, so no visual/live-stream QA claim. No EA, account,
+  preset, app, collector or workflow was changed; no deployment or trade.
+  PowerShell activation was blocked; the existing venv interpreter was called
+  directly without changing execution policy or installing packages.
+- Remaining work: pin exact EA/EX5/set/data provenance; establish BTC/ETH broker
+  history coverage; implement the observational state log and closed-bar/native
+  timeframe handling; run chronological/full-EA cost-aware comparisons and
+  locked-rule forward demo. Preserve all pre-existing BDS audit changes below.
+
+Updated 2026-09-11 by Codex. Read `CLAUDE.md` and
 `docs/source-gotchas.md` before touching collectors. The Claude plan is:
 
 `C:\Users\LEON_RM\.claude\plans\nh-gi-ho-n-calm-newell.md`
 
 ## Current state
 
-- Branch: `master`; overview changes and the preceding crypto context commit
-  were pushed to the GitHub Pages source branch on 2026-09-08.
+- Branch: `master`; fast-forwarded to `origin/master` at `a67b840` before the
+  2026-09-11 BĐS source audit. The changes described immediately below are
+  local and uncommitted; preserve them.
 - Latest completed feature push before this handoff note is `8821072`: the VN
   valuation scenario engine. GitHub Pages deployment and App syntax both
   completed successfully; production route is
   `https://leonquant.com/hub/?tab=ticker&s=VIC`.
-- Local server: PID 3312, `http://127.0.0.1:8811/hub/`.
+- Local server: PID 16848, `http://127.0.0.1:8811/hub/`.
 - Chart: `http://127.0.0.1:8811/apps/chart/?sym=BTC&tf=30m`.
 - Ticker dossier: `http://127.0.0.1:8811/apps/ticker/?s=VIC`.
 - Do not reset the worktree. Use `git log -1` for the latest local commit; this
@@ -21,9 +129,9 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
 
 ## Next Claude: start here
 
-1. Preserve the worktree. `data/crypto/index.json` and the many untracked
-   `data/crypto/*.json` files belong to a separate concurrent crypto-profile
-   run. Do not stage, delete or rewrite them while continuing VN ticker work.
+1. Preserve the worktree. The uncommitted 2026-09-11 BĐS audit/UI/workflow
+   files are intentional; inspect `git diff` and continue from the source plan
+   below rather than replacing them.
 2. Re-open VIC, FPT and VCB in production before changing valuation. The live
    model is entirely in `apps/ticker/index.html`: `discountRate`,
    `earningsScenario`, `residualIncomeScenario` and `valuationModel`.
@@ -48,6 +156,73 @@ Updated 2026-09-08 by Codex. Read `CLAUDE.md` and
 
    The full validator currently fails only on the unrelated generated GAL
    crypto profile/price identity mismatch; do not “fix” it as part of VN scope.
+
+## 2026-09-11 BĐS source sufficiency, thin-market access and refresh safety
+
+- Source decision: the current input is useful but **not sufficient for a
+  national asking-price index**. Chợ Tốt and Nhà Tốt are the same gateway, so
+  LEON has one asking-listing ecosystem, not two independent sources. The full
+  assessment and external links are in `docs/bds-source-audit.md`.
+- Current production data after fast-forwarding the successful 2026-09-11 BĐS
+  run: 419 district listing shards / 16,456 browseable listings across 52 old
+  source provinces and 27/34 post-merger provinces. Only 101 districts and
+  13/34 current provinces cross the 20-listing per-category aggregate floor;
+  `bds.json` has 197 district/type rows and 32,571 filtered sale observations.
+- Fixed a real access gap in `apps/bds/index.html`: thin district shards were
+  published but impossible to reach because every UI entry point came from
+  the >=20-sample aggregate. Province profiles now list every browseable
+  district, including thin ones, and open a listings-only drawer without
+  inventing a median. KPIs separately state `Tỉnh đủ mẫu` (13/34) and `Tỉnh có
+  tin để mở` (27/34). The method text also makes clear that Chợ Tốt/Nhà Tốt is
+  one feed and links to the source.
+- Official-source boundary: `land_price.json` parses tables for 33/34 current
+  provinces, but the HTML mirror lags primary gazettes. Validation currently
+  reports 31 stale-document district comparisons, 33 comparison districts and
+  655 matched streets. Only HCMC has a primary gazette-verified current table
+  citation in `province_profiles.json`; Hà Nội and Đà Nẵng are secondary
+  citations, and the remaining 31 profiles intentionally stay blank.
+- Added `.github/workflows/land-price.yml`: a monthly, serialized refresh of
+  the state land-price mirror plus build/validation/commit. `daily-bds.yml` now
+  validates `land_price.json` too, so the UI's secondary anchor cannot silently
+  become malformed. README's obsolete 5-sample claim was corrected to the
+  actual 20-sample aggregate contract; `CLAUDE.md` gained the monthly commands
+  and current 52-region discovery count.
+- Third-party research: Homedy is the first pilot candidate because its public
+  daily detail sitemaps and pages expose listing ID, price, price/m², area and
+  location, including provinces where Chợ Tốt is thin. Do **not** merge it
+  directly into the current median. First confirm reuse terms, crawl three thin
+  provinces plus HCMC as duplicate control, report cross-source overlap and
+  source-specific medians, and only continue if it materially raises the count
+  of >=20-sample cells. Mogi is useful as an HCMC/Hà Nội benchmark; its robots
+  policy disallows API/Property routes and its price model combines Mogi with
+  Muaban, so those two are not independent sources. Batdongsan.com.vn actively
+  returns a Cloudflare challenge; use its attributed market reports, never
+  bypass the block.
+- Inspected the daily crawler in `D:\CODE\WEB\NEWS`. Reuse its robots/sitemap,
+  throttling and source-health patterns, but not its article extractor or
+  article schema. Its Playwright fallback currently lacks a local browser
+  binary; do not install/use one to evade Batdongsan.com's active challenge.
+- Added `pipeline/sources/homedy.py`, a bounded probe with no warehouse writes.
+  A polite live run (`--days 1 --max-listings 3 --delay 1`) parsed 3/3 current
+  listings with price, area, category and complete province/district. An
+  earlier aggressive 30-URL run at a 0.2-second delay parsed 26/30 and received
+  four HTTP-200 block pages; the probe now recognizes that response and stops.
+  Keep future checks slow and incremental from daily sitemap URLs.
+- Do not schedule or merge Homedy yet. First confirm terms/permission and change
+  `re_listing` identity to include the source (its current `(list_id,
+  fetched_at)` key can collide across sites), then implement source-local and
+  cross-source deduplication and publish source-specific medians/counts.
+- Verification completed: all 35 inline scripts parse; `check_linkable`
+  passes; targeted validation passes for `bds.json`, all 419 listing shards,
+  `province_profiles.json` and `land_price.json` (with the honest 31-document
+  lag warning); Python compiles; both workflow YAML and `git diff --check`
+  pass. Fresh Chrome visual QA at 1600x1400 opened Bắc Ninh, which has no
+  aggregate for the selected category, and displayed 11 browseable thin
+  districts plus the new 27/34 coverage KPI without overflow.
+- Changed files in this round: `apps/bds/index.html`, `README.md`, `CLAUDE.md`,
+  `.github/workflows/daily-bds.yml`, new `.github/workflows/land-price.yml`, new
+  `docs/bds-source-audit.md`, new probe `pipeline/sources/homedy.py`, and this
+  handoff.
 
 ## 2026-09-08 VN ticker navigation, freshness and evidence
 
