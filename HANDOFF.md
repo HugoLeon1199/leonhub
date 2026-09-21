@@ -34,8 +34,12 @@
 - Remaining: restore isolated MT5 IPC and implement continuous XAU HTTPS feed/
   chart; event calendar; native PP frames; full-EA/out-of-sample and demo
   validation. This release does not establish profitable EA gating.
-- Publication: authorized by the user's earlier push request; pending this
-  implementation commit's Pages verification. Preserve all unrelated BDS edits.
+- Publication verified: implementation commit
+  `13068b6060647fba78711b586ae265187b50cdd8` is on origin/master. Pages run
+  `35582775865` and App syntax run `35582777198` succeeded. Public Chart HTML,
+  both JS modules, CSS, XAU status, flows and crypto context returned HTTP 200
+  and matched local normalized content, including correct module MIME types.
+  This follow-up records verification only. Preserve all unrelated BDS edits.
   Exact rules, commands, dated probe and continuation notes are in
   `docs/chart-decision-implementation.md`.
 
