@@ -1,7 +1,7 @@
 {
   "version": "ai-regime-1.0.0",
-  "updated_at": "2026-09-22T07:33:19+00:00",
-  "valid_until": "2026-09-23T13:33:19+00:00",
+  "updated_at": "2026-09-23T16:09:00+00:00",
+  "valid_until": "2026-09-24T22:09:00+00:00",
   "author": "gpt-plus",
   "assets": {
     "XAU": {
@@ -9,69 +9,33 @@
       "allow_new_entries": false,
       "direction": 0,
       "confidence": "low",
-      "reason_vi": "Không đọc được nội dung fx.json nên không xác minh được updated_at, DXY và giá vàng COMEX từ nguồn hệ thống bắt buộc. Dữ liệu web riêng lẻ không đủ để thay thế nguồn này, vì vậy áp dụng fail-safe UNKNOWN và chặn lệnh mới.",
+      "reason_vi": "Không đọc được ai_snapshot.json từ nguồn hệ thống trong lần chạy này nên không thể xác minh built_at, DXY và gold_comex. Theo fail-safe, không dùng dữ liệu web thay thế snapshot và chặn lệnh mới.",
       "evidence": [
-        {
-          "label": "Dữ liệu hệ thống XAU",
-          "value": "fx.json không trích được nội dung; không dùng",
-          "observed": "2026-09-22",
-          "source": "fx.json"
-        }
+        {"label": "AI snapshot", "value": "không đọc được; không dùng", "observed": "2026-09-23", "source": "ai_snapshot.json"}
       ],
-      "rule_check": {
-        "engine_state": "",
-        "agrees": null
-      }
+      "rule_check": {"engine_state": "", "agrees": null}
     },
     "BTC": {
       "state": "UNKNOWN",
       "allow_new_entries": false,
       "direction": 0,
       "confidence": "low",
-      "reason_vi": "GEX BTC còn mới lúc 04:29 UTC, nhưng không đọc được nội dung flows.json và crypto/context.json để kiểm tra dòng tiền ETF và bối cảnh bắt buộc. Theo fail-safe, không suy trạng thái giao dịch chỉ từ GEX và tin web nên giữ UNKNOWN.",
+      "reason_vi": "Không đọc được ai_snapshot.json nên không thể xác minh GEX, ETF flow, crypto context và độ tươi của các số liệu BTC. Theo fail-safe, không dùng dữ liệu web thay thế snapshot và chặn lệnh mới.",
       "evidence": [
-        {
-          "label": "GEX BTC",
-          "value": "spot 85,543.75; gamma_flip 71,484.83; updated_at 04:29 UTC, còn hạn",
-          "observed": "2026-09-22",
-          "source": "gex_btc.json"
-        },
-        {
-          "label": "Nguồn bắt buộc còn thiếu",
-          "value": "flows.json và crypto/context.json không trích được nội dung; không dùng",
-          "observed": "2026-09-22",
-          "source": "data-read"
-        }
+        {"label": "AI snapshot", "value": "không đọc được; không dùng", "observed": "2026-09-23", "source": "ai_snapshot.json"}
       ],
-      "rule_check": {
-        "engine_state": "",
-        "agrees": null
-      }
+      "rule_check": {"engine_state": "", "agrees": null}
     },
     "ETH": {
       "state": "UNKNOWN",
       "allow_new_entries": false,
       "direction": 0,
       "confidence": "low",
-      "reason_vi": "GEX ETH còn mới lúc 04:30 UTC, nhưng không đọc được nội dung flows.json và crypto/context.json để kiểm tra dòng tiền ETF và bối cảnh bắt buộc. Theo fail-safe, không suy trạng thái giao dịch chỉ từ GEX và tin web nên giữ UNKNOWN.",
+      "reason_vi": "Không đọc được ai_snapshot.json nên không thể xác minh GEX, ETF flow, crypto context và độ tươi của các số liệu ETH. Theo fail-safe, không dùng dữ liệu web thay thế snapshot và chặn lệnh mới.",
       "evidence": [
-        {
-          "label": "GEX ETH",
-          "value": "spot 2,735.42; gamma_flip 2,242.93; updated_at 04:30 UTC, còn hạn",
-          "observed": "2026-09-22",
-          "source": "gex_eth.json"
-        },
-        {
-          "label": "Nguồn bắt buộc còn thiếu",
-          "value": "flows.json và crypto/context.json không trích được nội dung; không dùng",
-          "observed": "2026-09-22",
-          "source": "data-read"
-        }
+        {"label": "AI snapshot", "value": "không đọc được; không dùng", "observed": "2026-09-23", "source": "ai_snapshot.json"}
       ],
-      "rule_check": {
-        "engine_state": "",
-        "agrees": null
-      }
+      "rule_check": {"engine_state": "", "agrees": null}
     }
   }
 }
