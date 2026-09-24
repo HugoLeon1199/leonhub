@@ -29,8 +29,19 @@
 - Publication checkout: `D:\CODE\WEB\Chart_web_gvr_update`, branch
   `fix/gvr-stock-chart`, based on origin/master. Original dirty worktree and its
   staged research removals/BDS/Chart/AI changes remain intact and excluded.
-- Next: verify Pages publication and run the repaired VN daily workflow. Full
-  market static freshness is not restored until that workflow completes.
+- Publication verified: `e594fc7` reached origin/master; Pages run
+  `35963706754` and App syntax run `35963707411` succeeded. Production Stocks
+  HTML, JS, CSS and GVR JSON all returned HTTP 200 and matched the release;
+  JS/CSS MIME types are correct. VPS history permits the production origin
+  (`Access-Control-Allow-Origin: *`), with 271 valid bars in a 400-day query.
+- Follow-up: ticker chart copy no longer promises five years that the source
+  does not return, and labels intraday prices as an unclosed daily candle.
+- Recovery run `35963715957` was dispatched on master and passed reference
+  restoration/quote collection; it is currently backfilling market history.
+  Full-market static freshness is not restored until it completes. Run URL:
+  https://github.com/HugoLeon1199/leonhub/actions/runs/35963715957
+  If cache loss also removed dossiers, the daily run deliberately preserves
+  existing files; monthly company recollection remains the recovery route.
 
 
 ## 2026-09-21 Chart decision panel implementation
