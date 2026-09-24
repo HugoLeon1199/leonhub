@@ -107,7 +107,9 @@ def to_quote(rec: dict[str, Any], as_of: date, fetched_at: datetime) -> dict[str
         "open_price": _price(rec.get("openPrice")),
         "high": _price(rec.get("highPrice")),
         "low": _price(rec.get("lowPrice")),
-        "volume": _num(rec.get("lot")),
+        # Board `lot` is ten shares; daily UDF `v` is already shares.
+        # Rechecked against simultaneous GVR/FPT/VCB history on 2026-09-24.
+        "volume": _scaled(rec.get("lot"), 10.0),
         # Foreign value arrives in plain VND already, unlike the price fields.
         "value": None,             # not published per symbol on this endpoint
         "listed_share": None,      # Vietcap supplies it
@@ -321,11 +323,14 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     import json
-    print(json.dumps(collect(
+    result = collect(
         symbols=[s.strip().upper() for s in args.symbols.split(",")] if args.symbols else None,
         dry_run=args.dry_run,
         delay=args.delay,
-    ), indent=2, ensure_ascii=False))
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    if not result.get("quotes"):
+        raise SystemExit("VPS returned no usable quotes")
 
 
 if __name__ == "__main__":

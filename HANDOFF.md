@@ -1,5 +1,38 @@
 # Handoff
 
+## 2026-09-24 GVR Stocks chart and refresh recovery
+
+- Fixed `hub/?tab=stocks&s=GVR`: `s` now initializes the search. Exact-symbol
+  searches show a daily candlestick/volume panel (1/3/6 months, 1 year), manual
+  refresh, full company name, source-session/check timestamps, OHLC readout,
+  and direct Chart/dossier links. Failed or old VPS responses are explicit.
+- Published table was stuck at September 9. Added a prominent stale-data notice
+  and kept browser prices separate from dated fundamentals/foreign-flow data.
+- Refreshed GVR company, ownership, events, statements and ratios from Vietcap;
+  rebuilt its dossier. Local GVR daily history and board also refreshed.
+- Daily CI diagnosis: VNStock listing request fails; SSI writes quotes but the
+  restored warehouse has no company directory, so stocks/signals/dossiers build
+  empty and validation blocks publication. Added dated reference/share-count
+  recovery from our published artifact and VPS board fallback (nonzero exit on
+  zero quotes). Fundamental collection also runs on manual recovery. Stocks
+  publication now rejects a >10% loss in universe/fundamental coverage. Missing
+  company warehouses preserve existing dossiers until monthly recollection.
+- VPS board `lot` is ten shares: simultaneous GVR/FPT/VCB comparisons with daily
+  history all gave exactly 10.0. Corrected total volume to shares; foreign/depth
+  units are unchanged. No full-market historical foreign-flow reconstruction.
+- Changed: Stocks HTML and price-preview JS/CSS/tests; daily-vn workflow;
+  vps_board and stocks_build; vn_reference_restore tool/tests; GVR dossier.
+- Verification: 2 JS data-contract tests, 3 Python recovery/volume/publication
+  tests, 35 inline script parses, shared link check and targeted JSON validators
+  passed. Live GVR chart source and all three volume probes returned usable data.
+  Browser visual QA was unavailable because no browser is connected.
+- Publication checkout: `D:\CODE\WEB\Chart_web_gvr_update`, branch
+  `fix/gvr-stock-chart`, based on origin/master. Original dirty worktree and its
+  staged research removals/BDS/Chart/AI changes remain intact and excluded.
+- Next: verify Pages publication and run the repaired VN daily workflow. Full
+  market static freshness is not restored until that workflow completes.
+
+
 ## 2026-09-21 Chart decision panel implementation
 
 - Implemented the first research version of the requested BTC/ETH/XAU action

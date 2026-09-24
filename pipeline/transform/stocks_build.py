@@ -22,7 +22,7 @@ import sys
 from typing import Any
 
 from pipeline.core import warehouse as wh
-from pipeline.publish.emit import write_json
+from pipeline.publish.emit import write_json, read_json
 
 log = logging.getLogger(__name__)
 
@@ -569,6 +569,15 @@ def build(dry_run: bool = False) -> dict[str, Any]:
     }
 
     if not dry_run:
+        previous = read_json("stocks.json") or {}
+        old_rows = previous.get("rows", []) if isinstance(previous, dict) else previous
+        # A cache eviction or source outage must not publish a superficially
+        # successful empty/price-only replacement for the existing screener.
+        old_fundamentals = sum(1 for r in old_rows if "pe" in r or "pb" in r)
+        if not out or len(out) < len(old_rows) * 0.9:
+            raise RuntimeError("Stock universe lost over 10%; preserving published stocks.json")
+        if stats["with_fundamentals"] < old_fundamentals * 0.9:
+            raise RuntimeError("Fundamental coverage lost over 10%; preserving published stocks.json")
         # Wrapped rather than a bare array: without a top-level `updated_at` the
         # page cannot tell a reader how old the numbers are, and a stale file
         # looks identical to a fresh one.

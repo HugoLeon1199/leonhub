@@ -123,6 +123,7 @@ footer{
 }
 footer b{color:var(--text); font-weight:600}
 </style>
+<link rel="stylesheet" href="./price-preview.css">
 </head>
 <body>
 
@@ -146,6 +147,8 @@ footer b{color:var(--text); font-weight:600}
 </div>
 
 <div class="presets" id="presets"></div>
+<section id="pricePreview" class="price-preview" aria-label="Biểu đồ mã đang chọn" hidden></section>
+<div id="dataHealth" class="data-health" role="status" hidden></div>
 
 <!-- The rules, on the page rather than only in a title attribute. Tooltips are
      invisible on touch and unsearchable, and a screener whose filters cannot be
@@ -165,14 +168,16 @@ footer b{color:var(--text); font-weight:600}
 </div>
 
 <footer>
-  <span>Nguồn: <b>Vietcap</b> qua pipeline LEON</span>
+  <span>Nguồn: <b>Vietcap / VPS / SSI</b> qua pipeline LEON; biểu đồ từ VPS</span>
   <span>Cập nhật: <b id="upd">—</b></span>
   <span id="cover"></span>
   <span>Số liệu tham khảo, không phải khuyến nghị đầu tư.</span>
 </footer>
 
-<script>
+<script type="module">
 "use strict";
+import {createPricePreview} from "./price-preview.js";
+const pricePreview = createPricePreview(document.getElementById("pricePreview"));
 
 /* Columns: `k` is the JSON key, `p` names its percentile companion where one
    exists. Percent-typed ratios arrive already converted by the pipeline. */
@@ -324,6 +329,11 @@ fetch("../../data/stocks.json", {cache:"no-cache"})
       ? new Date(META.updated_at).toLocaleString("vi-VN", {timeZone:"Asia/Ho_Chi_Minh", hour12:false}) + " ICT"
       : "chưa có giờ đóng gói";
     el("upd").textContent = `phiên ${session} · đóng gói ${built}`;
+    const age = (Date.now() - Date.parse(`${META.as_of}T00:00:00+07:00`)) / 86400000;
+    if(!Number.isFinite(age) || age > 4){
+      el("dataHealth").hidden = false;
+      el("dataHealth").textContent = `Bảng tổng hợp chưa có phiên mới (phiên ${session}). Biểu đồ mã được kiểm tra riêng từ VPS; chỉ số và dòng tiền bên dưới vẫn theo ảnh chụp đã ghi ngày.`;
+    }
     const withF = rows.filter(r => r.pe != null || r.pb != null).length;
     const priced = rows.filter(r => r.p != null).length;
     // "Có khớp lệnh" (had a matched trade) is only true of rows with neither
@@ -541,6 +551,8 @@ function cell(row, col){
 }
 
 function render(){
+  const selected = el("q").value.trim().toUpperCase();
+  pricePreview.select(ROWS.find(r => r.s === selected), META);
   const f = filters();
   const rows = ROWS.filter(r => passes(r, f));
 
@@ -586,6 +598,7 @@ function syncUrl(){
 
 function readUrl(){
   const p = new URLSearchParams(location.search);
+  if(!p.has("q") && p.get("s")) el("q").value = p.get("s").toUpperCase();
   FILTER_IDS.forEach(k => { if(p.get(k)) el(k).value = p.get(k); });
   // Comma-separated, and still accepts a single id from an older shared link.
   (p.get("preset") || "").split(",").filter(Boolean).forEach(id => {

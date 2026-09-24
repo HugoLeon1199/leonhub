@@ -55,6 +55,9 @@ jobs:
           key: warehouse-${{ github.run_id }}
           restore-keys: warehouse-
 
+      - name: Recover missing published company references after cache eviction
+        run: python -m pipeline.tools.vn_reference_restore
+
       - name: Collect price board and foreign flow
         id: vietcap_board
         run: python -m pipeline.sources.vn_equity --what board
@@ -63,17 +66,17 @@ jobs:
       # Second source: adds book depth and foreign ownership room, and
       # cross-checks the first — the two agreed to 0.0007% on market-wide
       # foreign net when this was set up.
-      - name: Collect SSI board
-        id: ssi_board
-        run: python -m pipeline.sources.ssi_board --with-depth
+      - name: Collect VPS board and depth
+        id: vps_board
+        run: python -m pipeline.sources.vps_board
         continue-on-error: true
 
       # Vietcap/VNStock occasionally returns an HTML/error body where its
-      # wrapper expects JSON. SSI writes the same eq_quote contract, so it is a
+      # wrapper expects JSON. VPS writes the same eq_quote contract, so it is a
       # valid daily fallback. Do not hide a total outage: stop when neither
       # source produced a usable board.
       - name: Require at least one quote source
-        if: steps.vietcap_board.outcome != 'success' && steps.ssi_board.outcome != 'success'
+        if: steps.vietcap_board.outcome != 'success' && steps.vps_board.outcome != 'success'
         run: exit 1
 
       # Fills any ticker whose price history is still thin. Skips those already
@@ -85,7 +88,6 @@ jobs:
         run: python -m pipeline.sources.vn_history --delay 0.3
 
       - name: Collect quarterly fundamentals
-        if: inputs.fundamentals || github.event_name == 'schedule'
         run: python -m pipeline.sources.vci_direct --skip-existing --delay 0.3
 
       - name: Build stocks.json
@@ -97,7 +99,20 @@ jobs:
         run: python -m pipeline.transform.breadth_build
 
       - name: Build lazy per-ticker ratio history
-        run: python -m pipeline.transform.ticker_details_build
+        run: |
+          python - <<'PY'
+          from pipeline.core import warehouse as wh
+          from pipeline.transform.ticker_details_build import build
+          from pipeline.publish.emit import read_json
+          con = wh.connect_reader()
+          count = con.execute("SELECT count(DISTINCT symbol) FROM eq_company").fetchone()[0]
+          con.close()
+          expected = len((read_json("stocks.json") or {}).get("rows", []))
+          if count >= expected * 0.8:
+              print(build())
+          else:
+              print("::warning::Company warehouse incomplete; preserving published dossiers. Run monthly company collection to recover.")
+          PY
 
       # Runs after the history backfill: signals are evaluated bar by bar over
       # the point-in-time warehouse, so they need the prices to be in first.
